@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Marktdaten und Ergebnisse werden nicht versioniert.
+# Fuehrender Slash ist wichtig: 'data/' wuerde sonst auch src/qt/data/ treffen.
+/data/
+/reports/
+/.llm_cache/
+
+.env
+.DS_Store
