@@ -187,5 +187,51 @@ Damit wird aus "wahrscheinlichster Verlauf" etwas Rechenbares.
 | `qt.live` | Runner, CCXT-Broker, Reconciliation, Kill-Switch |
 | `qt.report` | Tearsheets, Tagesreport |
 
-Gebaut sind aktuell: `core`, `data`, `features`, `strategy`, `backtest`, `report`.
-Der Rest ist in `ROADMAP.md` beschrieben.
+Gebaut sind aktuell: `core`, `data`, `features`, `strategy`, `backtest`,
+`portfolio`, `report`. Der Rest ist in `ROADMAP.md` beschrieben.
+
+---
+
+## Die Portfolio-Schicht (Phase 2)
+
+`qt.portfolio.base` definiert die Verträge, gegen die alles Weitere gebaut wird:
+
+| Baustein | Rolle |
+|---|---|
+| `Allocator` | verteilt Kapital auf Strategien — ab Phase 3 ein LLM |
+| `AllocationContext` | was der Allokator sehen darf; strikt Point-in-Time |
+| `combine()` | Strategie-Gewichte × Kapitalanteile → Portfolio-Gewichte |
+| `RiskLimits` | beschneidet das Ergebnis; deterministisch und überprüfbar |
+
+`qt.backtest.portfolio_engine` verdrahtet sie. Drei Punkte, die dort nicht
+offensichtlich sind:
+
+**Der Allokator läuft auf einem langsameren Takt als die Strategien.**
+`allocate_every` zählt Bars des gröbsten Timeframes im Lauf. Ab Phase 3 ist das
+zwingend — ein LLM-Aufruf pro Minutenbar ist weder bezahlbar noch sinnvoll.
+
+**Die Papier-Renditen für den Allokator sind brutto.** Würde man ihnen Kosten
+aufbürden, hinge der Vergleich zwischen Strategien an der Positionsgröße, die
+der Allokator selbst vergeben hat — eine Rückkopplung, in der eine zufällig
+klein gestartete Strategie klein bliebe. Die tatsächliche Kontoentwicklung
+enthält selbstverständlich alle Kosten.
+
+**Die Ausgabe des Allokators wird geprüft, nicht geglaubt.** `nan`, `inf`,
+unbekannte Strategie-IDs und Summen über 100% werden abgefangen; im Zweifel
+fällt das Portfolio auf Gleichgewichtung zurück statt in einen undefinierten
+Zustand zu geraten. Das ist die Vorbereitung darauf, dass an dieser Stelle bald
+ein Sprachmodell steht.
+
+### Walk-Forward
+
+`qt.backtest.walkforward` ist die einzige Quelle belastbarer Zahlen im System.
+Alles, was `qt backtest` ausgibt, ist In-Sample.
+
+Zwei Details entscheiden über die Gültigkeit: der Warmup jedes Fensters liegt
+**vor** dem Testfenster (sonst verbrennt man dessen Anfang), und jedes Fenster
+bekommt eine **frische Strategie-Instanz** (sonst wandert Zustand über
+Fenstergrenzen). Beides ist getestet, nicht nur beabsichtigt.
+
+Aussagekräftiger als der Gesamtsharpe ist die Streuung über die Fenster: eine
+Strategie, die in einem von siebzehn Fenstern alles verdient, ist eine
+Zufallsstichprobe und keine Kante.

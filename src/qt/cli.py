@@ -116,6 +116,153 @@ def backtest(
     typer.echo(f"\nTearsheet: {path}")
 
 
+@app.command("wf")
+def walkforward(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "trend",
+    symbol: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "4h",
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 2000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 500,
+    step: Annotated[int | None, typer.Option(help="Schrittweite, Default = test")] = None,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars zwischen Train und Test")] = 0,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Walk-Forward laufen lassen -- die einzigen belastbaren Zahlen im System.
+
+    Alles, was `qt backtest` ausgibt, ist In-Sample und damit optimistisch.
+    Erst getrennte Out-of-Sample-Fenster sagen etwas ueber die Zukunft.
+    """
+    from qt.backtest.walkforward import InsufficientDataError, walk_forward
+    from qt.data.store import read_bars, to_bars
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    symbols = _split(symbol)
+    cls = get(strategy)
+
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbols
+    }
+
+    try:
+        result = walk_forward(
+            lambda: cls(symbols, tf),
+            bars,
+            train_bars=train,
+            test_bars=test,
+            step_bars=step,
+            embargo_bars=embargo,
+        )
+    except InsufficientDataError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"\n{result.strategy}  |  {', '.join(result.symbols)}  |  {result.timeframe}")
+    typer.echo(
+        f"Train {result.train_bars} / Test {result.test_bars} / "
+        f"Step {result.step_bars} / Embargo {result.embargo_bars} Bars"
+    )
+    typer.echo("=" * 78)
+
+    frame = result.window_frame()
+    typer.echo(
+        f"  {'#':>2} {'Test-Beginn':<12} {'Rendite':>10} {'Sharpe':>8} "
+        f"{'MaxDD':>9} {'Trades':>7}"
+    )
+    for row in frame.itertuples(index=False):
+        typer.echo(
+            f"  {row.window:>2} {row.test_start:%Y-%m-%d}   {row._3:>9.2%} "
+            f"{row.sharpe:>8.2f} {row.max_dd:>9.2%} {row.trades:>7,}"
+        )
+
+    typer.echo("-" * 78)
+    typer.echo("  Verkettete Out-of-Sample-Kurve:")
+    typer.echo(result.metrics.table())
+
+    positive = int((frame["sharpe"] > 0).sum())
+    typer.echo(
+        f"\n  Fenster mit positivem Sharpe: {positive} von {result.n_windows}"
+    )
+    typer.echo(
+        "  Streuung ueber die Fenster sagt mehr als der Gesamtwert -- eine "
+        "Strategie,\n  die in einem Fenster alles verdient, ist eine Stichprobe "
+        "und keine Kante."
+    )
+
+
+@app.command("portfolio")
+def portfolio(
+    strategies: Annotated[str, typer.Option(help="Strategienamen, kommagetrennt")] = "trend,meanrev",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD,ETH/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "4h",
+    allocator: Annotated[str, typer.Option(help="Siehe qt allocators")] = "equal_weight",
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+    cash: Annotated[float, typer.Option(help="Startkapital")] = 100_000.0,
+    allocate_every: Annotated[int, typer.Option(help="Allokations-Takt in Bars")] = 1,
+    no_risk: Annotated[bool, typer.Option("--no-risk", help="Risk-Engine abschalten")] = False,
+    out: Annotated[Path | None, typer.Option(help="Pfad fuer das Tearsheet-PNG")] = None,
+) -> None:
+    """Mehrere Strategien unter einem Allokator laufen lassen."""
+    from qt.backtest.portfolio_engine import run_portfolio_backtest
+    from qt.core.config import BacktestConfig
+    from qt.data.store import read_bars, to_bars
+    from qt.portfolio import baselines
+    from qt.report.tearsheet import print_summary, render
+    from qt.strategy.registry import get as get_strategy
+    from qt.strategy.registry import load_library
+
+    load_library()
+    symbol_list = _split(symbols)
+    strategy_map = {
+        name: get_strategy(name)(symbol_list, tf) for name in _split(strategies)
+    }
+
+    bars = {}
+    for sym in symbol_list:
+        df = read_bars(sym, tf, start=since, end=until)
+        bars[(sym, tf)] = to_bars(sym, tf, df)
+
+    risk = None if no_risk else _default_risk()
+    result = run_portfolio_backtest(
+        strategy_map,
+        bars,
+        baselines.get(allocator)(),
+        risk=risk,
+        cfg=BacktestConfig(initial_cash=cash),
+        allocate_every=allocate_every,
+    )
+
+    print_summary(result)
+    if result.risk_events:
+        typer.echo(f"\n  Risikoeingriffe: {len(result.risk_events)}")
+        for _, reason in result.risk_events[:3]:
+            typer.echo(f"    {reason}")
+    typer.echo(f"\nTearsheet: {render(result, out)}")
+
+
+def _default_risk():
+    """Risk-Engine mit Standardgrenzen, falls das Modul schon existiert."""
+    try:
+        from qt.portfolio.risk import RiskEngine
+    except ImportError:
+        return None
+    return RiskEngine()
+
+
+@app.command("allocators")
+def list_allocators() -> None:
+    """Verfuegbare Allokatoren anzeigen."""
+    from qt.portfolio import baselines
+
+    for name in baselines.names():
+        cls = baselines.get(name)
+        doc = (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else ""
+        typer.echo(f"  {name:<14} {doc}")
+
+
 @app.command("strategies")
 def list_strategies() -> None:
     """Registrierte Strategien anzeigen."""

@@ -43,9 +43,17 @@ class SimBroker:
 
         Es passiert hier bewusst nichts weiter: die Verzoegerung bis zum
         naechsten Bar-Open *ist* das Realismusmodell.
+
+        Eine bereits vorgemerkte Order desselben Symbols wird **ersetzt**,
+        nicht ergaenzt. Alle Orders im System sind Differenzen zu einem
+        Zielgewicht -- zwei aufeinanderfolgende Vormerkungen sind also zwei
+        Schaetzungen derselben Absicht, nicht zwei Absichten. Wuerden sie
+        sich addieren, verdoppelte das Portfolio seine Position, sobald zwei
+        Bars desselben Symbols (etwa 1h und 4h) gleichzeitig schliessen.
         """
         if order.qty == 0:
             return
+        self._pending = [(o, s) for o, s in self._pending if s != order.symbol]
         self._pending.append((order, order.symbol))
 
     def execute_pending(self, symbol: str, open_price: float, ts: datetime) -> list[Fill]:

@@ -9,19 +9,44 @@ zufaellig long war.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import matplotlib
 
 matplotlib.use("Agg")  # kein Display in dieser Umgebung
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402  (muss nach use("Agg") kommen)
 import pandas as pd
 
-from qt.backtest.engine import BacktestResult
 from qt.backtest.metrics import Metrics, buy_and_hold, compute, drawdown
 from qt.core.config import REPORT_DIR
 
 
-def summarise(result: BacktestResult) -> tuple[Metrics, Metrics | None]:
+@runtime_checkable
+class Reportable(Protocol):
+    """Was ein Lauf mitbringen muss, damit ein Tearsheet daraus wird.
+
+    Als Protokoll formuliert statt als gemeinsame Basisklasse, damit
+    `BacktestResult` (eine Strategie) und `PortfolioResult` (mehrere unter
+    einem Allokator) hier gleich behandelt werden, ohne eine Vererbungs-
+    hierarchie zwischen zwei sonst unabhaengigen Modulen zu erzwingen.
+    """
+
+    equity: pd.DataFrame
+    symbols: list[str]
+    timeframe: str
+    warmup_end: object
+
+    @property
+    def strategy(self) -> str: ...
+
+    @property
+    def n_trades(self) -> int: ...
+
+    @property
+    def fees_paid(self) -> float: ...
+
+
+def summarise(result: Reportable) -> tuple[Metrics, Metrics | None]:
     """Kennzahlen der Strategie und -- wenn ein Preis vorliegt -- von Buy-&-Hold."""
     equity = result.equity.set_index("ts")["equity"]
     strat = compute(
@@ -41,7 +66,7 @@ def summarise(result: BacktestResult) -> tuple[Metrics, Metrics | None]:
     return strat, bh_metrics
 
 
-def _price_series(result: BacktestResult) -> pd.Series | None:
+def _price_series(result: Reportable) -> pd.Series | None:
     """Preisreihe fuer den Buy-&-Hold-Vergleich.
 
     Nur sinnvoll bei einem einzelnen Symbol -- bei mehreren waere ungeklaert,
@@ -54,7 +79,7 @@ def _price_series(result: BacktestResult) -> pd.Series | None:
     return result.equity.set_index("ts")[price_cols[0]].dropna()
 
 
-def render(result: BacktestResult, out_path: Path | None = None) -> Path:
+def render(result: Reportable, out_path: Path | None = None) -> Path:
     """Tearsheet erzeugen und als PNG speichern."""
     strat, bh_metrics = summarise(result)
     df = result.equity.set_index("ts")
@@ -123,13 +148,24 @@ def render(result: BacktestResult, out_path: Path | None = None) -> Path:
     return out_path
 
 
-def _default_path(result: BacktestResult) -> Path:
-    name = result.strategy.split("(")[0]
-    symbols = "_".join(s.replace("/", "-") for s in result.symbols)
+def _default_path(result: Reportable) -> Path:
+    name = _slug(result.strategy.split("(")[0])
+    symbols = "_".join(_slug(s) for s in result.symbols)
     return REPORT_DIR / f"{name}_{symbols}_{result.timeframe}.png"
 
 
-def print_summary(result: BacktestResult) -> None:
+def _slug(text: str) -> str:
+    """Dateinamentauglicher Name.
+
+    Portfolio-Laeufe heissen z.B. "equal_weight[meanrev, trend]" -- Klammern
+    und Leerzeichen im Dateinamen brechen jede Shell-Pipeline, die spaeter
+    mit den Reports arbeitet.
+    """
+    keep = [c if (c.isalnum() or c in "-_") else "-" for c in text]
+    return "".join(keep).strip("-").replace("--", "-")
+
+
+def print_summary(result: Reportable) -> None:
     """Kennzahlen auf die Konsole, Strategie neben Buy-&-Hold."""
     strat, bh = summarise(result)
     print(f"\n{result.strategy}  |  {', '.join(result.symbols)}  |  {result.timeframe}")

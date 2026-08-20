@@ -5,6 +5,108 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-014 — Positionsgrößen werden gegen Marktwerte gerechnet, nicht Einstände
+**Datum:** 2026-08-20
+
+**Der Fehler:** `_rebalance_order` bewertete das Eigenkapital mit
+`broker.equity({symbol: reference_price})` — also nur mit dem Preis des gerade
+schliessenden Symbols. `SimBroker.equity` fällt für alle übrigen Positionen auf
+deren **Einstandspreis** zurück. Die Positionsgröße hing damit an einem
+Eigenkapital, in dem der Rest des Portfolios zu historischen Kursen stand.
+
+**Warum er so lange unsichtbar war:** Bei einem einzelnen Symbol ist der Ausdruck
+korrekt — es gibt keine anderen Positionen. Phase 1 hatte nur Einzelsymbol-Läufe.
+Der Fehler entstand nicht in Phase 2, er wurde dort erst sichtbar.
+
+**Auswirkung:** In einem Testfall mit einem verdreifachten und einem flachen
+Symbol lag die Zielposition bei 32,9% statt 50% — das Portfolio sizete dauerhaft
+zu klein, ohne dass irgendetwas fehlschlug.
+
+**Konsequenz:** Beide Engines bewerten jetzt mit den letzten bekannten Preisen
+**aller** Symbole. Festgenagelt durch
+`test_position_sizing_values_the_whole_portfolio_at_market`, per Mutation
+gegengeprüft.
+
+**Zu lernen:** Ein Ausdruck, der für den Einzelfall korrekt ist, ist deshalb
+nicht allgemein korrekt. Multi-Symbol-Tests gehören auch dann geschrieben, wenn
+das System noch einsymbolig ist.
+
+---
+
+## ADR-013 — Die Risk-Engine ist die wirksamste Komponente im System
+**Datum:** 2026-08-20
+
+**Messung** (Portfolio aus `trend` + `meanrev`, BTC/USD + ETH/USD, 4h, 2019–2026):
+
+| Lauf | Gesamtrendite | Vola p.a. | Max Drawdown |
+|---|---|---|---|
+| `vol_parity`, ohne Risk-Engine | −99,68% | 32,8% | **−99,72%** |
+| `equal_weight`, mit Risk-Engine | −16,90% | 3,7% | **−20,11%** |
+
+Identische Strategien, identische Daten. Der Unterschied ist ausschliesslich
+die Risikoschicht.
+
+**Was das heisst:** Die Risk-Engine hat aus einem Totalverlust einen
+überschaubaren verwandelt. Sie macht schlechte Strategien nicht gut — der
+Sharpe bleibt negativ — aber sie sorgt dafür, dass man einen Fehler überlebt
+und korrigieren kann.
+
+**Warum das für Phase 3 zentral ist:** Genau diese Schicht steht zwischen dem
+LLM-Allokator und dem Konto. Der Befund ist der empirische Beleg dafür, dass
+die Reihenfolge "Allokator schlägt vor, Risk-Engine entscheidet" richtig
+herum ist.
+
+**Offener Punkt:** Die realisierte Vola von 3,7% liegt weit unter dem Ziel von
+20%. Die Engine drosselt härter als beabsichtigt — 27.648 Eingriffe im Lauf,
+der Symbol-Cap von 25% greift bei praktisch jedem Bar. Bei nur zwei Symbolen
+ist dieser Default zu eng; er unterstellt ein breiteres Universum. Vor Phase 3
+kalibrieren, sonst misst man den LLM-Allokator durch eine viel zu enge Blende.
+
+---
+
+## ADR-012 — Warmup wartet auf die langsamste Strategie
+**Datum:** 2026-08-20
+
+**Warum:** Würde das Portfolio starten, sobald *eine* Strategie warm ist, bekäme
+eine noch blinde Strategie bereits Kapital. Ihr Nullgewicht sähe aus wie eine
+bewusste Flat-Entscheidung und verwässerte das Portfolio, ohne dass es in den
+Kennzahlen auffiele.
+
+**Konsequenz:** Die langsamste Strategie bestimmt den Start (`meanrev` mit 194
+Bars Warmup). Der Preis ist verlorene Historie am Anfang — akzeptiert.
+
+---
+
+## ADR-011 — Papier-Renditen für den Allokator sind brutto
+**Datum:** 2026-08-20
+
+**Warum:** Der Allokator vergleicht Strategien anhand ihrer Renditereihen. Würde
+man diesen Reihen Kosten aufbürden, hinge der Vergleich an der Positionsgröße,
+die der Allokator gerade selbst vergeben hat — eine Rückkopplung, in der eine
+zufällig klein gestartete Strategie dauerhaft klein bliebe.
+
+**Konsequenz:** `_accrue_paper_returns` in `portfolio_engine.py` rechnet ohne
+Kosten. Die tatsächliche Kontoentwicklung enthält selbstverständlich alle
+Kosten; nur dieser Vergleichsmaßstab ist brutto. Im Docstring vermerkt, damit
+es niemand später "korrigiert".
+
+---
+
+## ADR-010 — Vorgemerkte Orders werden ersetzt, nicht addiert
+**Datum:** 2026-08-20
+
+**Warum:** Alle Orders im System sind Differenzen zu einem Zielgewicht. Zwei
+aufeinanderfolgende Vormerkungen für dasselbe Symbol sind zwei Schätzungen
+derselben Absicht, nicht zwei Absichten. Beim Portfolio-Lauf mit gemischten
+Timeframes schliessen 1h- und 4h-Bar desselben Symbols gleichzeitig — bei
+additiver Semantik verdoppelte das Portfolio dann seine Position.
+
+**Konsequenz:** `SimBroker.submit()` verwirft eine bestehende Vormerkung
+desselben Symbols. Für den Einzelstrategie-Lauf ändert sich nichts, dort gab
+es nie zwei Vormerkungen zwischen zwei Ausführungen.
+
+---
+
 ## ADR-008 — Rebalancing-Band statt exaktem Zielgewicht
 **Datum:** 2026-08-19
 

@@ -102,7 +102,13 @@ def run_backtest(
         # 4. Entscheidung -- erst nach dem Warmup zaehlt sie.
         warm = bars_seen[bar.symbol] >= strategy.warmup_bars
         if warm:
-            if warmup_end is None:
+            # Der Lauf gilt erst als warm, wenn **jedes** Symbol genug Historie
+            # hat. Beim ersten Symbol zu starten hiesse, die uebrigen mit
+            # Nullgewicht ins Portfolio zu nehmen -- das saehe wie eine
+            # Flat-Entscheidung aus statt wie fehlende Daten.
+            if warmup_end is None and all(
+                seen >= strategy.warmup_bars for seen in bars_seen.values()
+            ):
                 warmup_end = event.ts
             weight = clip_weight(strategy.on_bar(bar.symbol, store))
             if not math.isnan(weight):
@@ -110,7 +116,9 @@ def run_backtest(
 
         # 5. Differenz zwischen Ziel- und Ist-Position vormerken.
         if warm:
-            order = _rebalance_order(broker, bar.symbol, target[bar.symbol], bar.close, cfg)
+            order = _rebalance_order(
+                broker, bar.symbol, target[bar.symbol], bar.close, last_price, cfg
+            )
             if order is not None:
                 broker.submit(order)
 
@@ -146,6 +154,7 @@ def _rebalance_order(
     symbol: str,
     target_weight: float,
     reference_price: float,
+    prices: dict[str, float],
     cfg: BacktestConfig,
 ) -> Order | None:
     """Order, die die Ist-Position auf das Zielgewicht bringt.
@@ -159,7 +168,12 @@ def _rebalance_order(
     naechste Bewertung erzeugt sofort wieder eine Mikro-Order. Das haelt das
     Gewicht perfekt -- und zahlt dafuer bei jedem Bar Gebuehren (ADR-008).
     """
-    equity = broker.equity({symbol: reference_price})
+    # Bewertung mit den **letzten bekannten Preisen aller** Symbole. Wuerde
+    # hier nur der Preis des aktuellen Symbols stehen, faellt SimBroker.equity
+    # fuer alle uebrigen Positionen auf deren Einstandspreis zurueck -- die
+    # Positionsgroesse haenge dann an einem Eigenkapital, in dem der Rest des
+    # Portfolios zu historischen Kursen steht.
+    equity = broker.equity({**prices, symbol: reference_price})
     if equity <= 0 or reference_price <= 0:
         return None
 

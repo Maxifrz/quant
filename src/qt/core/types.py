@@ -1,7 +1,7 @@
 """Die Begriffe, die alle Module teilen.
 
 Bewusst schlank gehalten: je mehr hier steht, desto mehr muss beim Umbau
-mitwandern. Alles, was nur ein Modul braucht, gehört dorthin.
+mitwandern. Alles, was nur ein Modul braucht, gehoert dorthin.
 """
 
 from __future__ import annotations
@@ -140,10 +140,15 @@ class PortfolioSnapshot:
 
     @property
     def gross_exposure(self) -> float:
-        """Brutto-Exposure als Bruchteil des Eigenkapitals."""
+        """Brutto-Exposure als Bruchteil des Eigenkapitals.
+
+        Bei nicht-positivem Eigenkapital ist der Quotient nicht definiert.
+        `inf` statt 0.0, weil 0.0 sich als "keine Position" laese -- ein
+        gesprengtes Konto darf im Report nicht harmlos aussehen.
+        """
         eq = self.equity
         if eq <= 0:
-            return 0.0
+            return float("inf") if any(self.positions.values()) else 0.0
         return (
             sum(
                 abs(qty) * self.prices.get(sym, 0.0)

@@ -9,8 +9,9 @@ Das LLM handelt nicht selbst. Es entscheidet *worüber* gehandelt wird, nicht *w
 ausgeführt wird. Vorschläge des LLM laufen immer durch eine deterministische
 Risk-Engine, die sie beschneiden kann.
 
-**Status:** Phase 0 und 1 fertig — Datenpipeline und Backtest-Engine laufen.
-Der LLM-Teil ist Phase 3 und 5. Siehe [docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** Phase 0–2 fertig — Datenpipeline, Backtest-Engine, Portfolio-Schicht
+mit Walk-Forward, Baselines und Risk-Engine. Der LLM-Teil ist Phase 3 und 5.
+Siehe [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -23,10 +24,16 @@ uv sync --extra dev
 uv run qt data pull --symbols "BTC/USD,ETH/USD" --tf "1h,4h,1d" --since 2019-01-01
 uv run qt data report
 
-# Backtest laufen lassen
+# Einzelne Strategie (In-Sample -- nur zur Anschauung)
 uv run qt strategies
-uv run qt backtest --strategy trend   --symbol BTC/USD --tf 4h
-uv run qt backtest --strategy meanrev --symbol ETH/USD --tf 1h
+uv run qt backtest --strategy trend --symbol BTC/USD --tf 4h
+
+# Walk-Forward: die einzigen belastbaren Zahlen im System
+uv run qt wf --strategy trend --symbol BTC/USD --tf 4h --train 3000 --test 800 --embargo 50
+
+# Portfolio aus mehreren Strategien unter einem Allokator
+uv run qt allocators
+uv run qt portfolio --strategies trend,meanrev --symbols BTC/USD,ETH/USD --tf 4h
 
 uv run pytest -q
 ```
@@ -73,6 +80,21 @@ Forward-Paper-Trading gemessen, nicht am Backtest.
 
 ---
 
+## Der wichtigste Befund bisher
+
+Dieselben Strategien, dieselben Daten — der einzige Unterschied ist die Risikoschicht:
+
+| Lauf | Gesamtrendite | Max Drawdown |
+|---|---|---|
+| ohne Risk-Engine | −99,68% | −99,72% |
+| mit Risk-Engine | −16,90% | −20,11% |
+
+Sie macht schlechte Strategien nicht gut. Sie sorgt dafür, dass man einen Fehler
+überlebt und korrigieren kann. Genau diese Schicht steht ab Phase 3 zwischen dem
+LLM-Allokator und dem Konto.
+
+---
+
 ## Zu den Baseline-Strategien
 
 `trend` (Donchian-Breakout) und `meanrev` (z-Score-Reversion) sind **Testinstrumente
@@ -80,5 +102,9 @@ für die Engine, keine Handelsempfehlung.** Sie stehen hier, weil ihr Verhalten 
 verstanden ist und weil sie gegenläufige Regime-Profile haben — das ist der
 einfachste sinnvolle Testfall für einen Allokator.
 
-Ob eine Strategie tatsächlich Geld verdient, entscheidet frühestens Phase 2 mit
-Walk-Forward-Tests. In-Sample-Zahlen sagen darüber nichts aus.
+Der Walk-Forward-Test aus Phase 2 hat das bestätigt: `trend` erreicht über 17
+Out-of-Sample-Fenster −71,94% bei Sharpe −0,37, mit positivem Sharpe in nur 4 von
+17 Fenstern. Die In-Sample-Zahlen aus Phase 1 waren also nicht zu pessimistisch,
+sondern zu optimistisch.
+
+Alles, was `qt backtest` ausgibt, ist In-Sample. Belastbar ist nur `qt wf`.

@@ -47,9 +47,17 @@ class Strategy(ABC):
     def warmup_bars(self) -> int:
         """Bars, die vor dem ersten gueltigen Signal noetig sind.
 
-        Die Engine ruft `on_bar` schon vorher auf, damit sich interner Zustand
-        aufbauen kann -- aber Gewichte vor Ablauf des Warmups werden verworfen.
-        Ohne das haengt das Ergebnis davon ab, wo der Datensatz zufaellig beginnt.
+        Die Engine ruft `on_bar` **erst** auf, wenn so viele Bars des jeweiligen
+        Symbols vorliegen. Eine Strategie wird also nie nach einer Meinung
+        gefragt, die sie nicht bilden kann.
+
+        Zustandsaufbau geht dadurch nicht verloren: der Feature-Store enthaelt
+        beim ersten Aufruf bereits die gesamte bis dahin gesehene Historie,
+        inklusive der Warmup-Bars. Wer mehr Vorlauf braucht, gibt hier eine
+        groessere Zahl an.
+
+        Ohne diese Grenze haengt das Ergebnis davon ab, wo der Datensatz
+        zufaellig beginnt.
         """
 
     @abstractmethod

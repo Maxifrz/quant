@@ -2,16 +2,19 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0 und 1 sind fertig.** Nächster Schritt: **Phase 2 — Portfolio + Walk-Forward.**
+> **Phase 0, 1 und 2 sind fertig.** Nächster Schritt: **Phase 3 — LLM-Allokator.**
 >
-> Erster Handgriff:
-> `src/qt/backtest/walkforward.py` anlegen — rollierendes Fenster mit Purging und
-> Embargo, das `run_backtest()` aus `qt/backtest/engine.py` mehrfach über getrennte
-> Zeitfenster laufen lässt und die OOS-Segmente zu einer Equity-Curve zusammensetzt.
+> Erster Handgriff, vor allem anderen:
+> **Die Risk-Engine kalibrieren.** Der Symbol-Cap von 25% greift aktuell bei
+> praktisch jedem Bar (27.648 Eingriffe in einem Lauf), die realisierte Vola
+> landet bei 3,7% statt der angepeilten 20%. Bei nur zwei Symbolen ist der
+> Default zu eng. Konkret: `RiskConfig.max_weight_per_symbol` in
+> `src/qt/portfolio/risk.py` gegen die Zahl der gehandelten Symbole skalieren.
 >
-> **Mit im Gepäck aus Phase 1 (siehe ADR-009):** Umschlagshäufigkeit gehört ab sofort
-> in jede Bewertung. Bei 90 bps Round-Trip ist eine Strategie mit täglichem Umschlag
-> chancenlos, egal wie gut ihr Sharpe vor Kosten aussieht.
+> Grund für die Reihenfolge: Ein LLM-Allokator, der durch eine zu enge Blende
+> misst, produziert Ergebnisse, aus denen man nichts lernt.
+>
+> Danach: `src/qt/llm/briefing.py` — das Blind Briefing (ADR-003).
 
 ---
 
@@ -73,15 +76,39 @@ Strategie ohne Kosten trifft Buy-&-Hold auf 0,54% genau, mit genau einem Trade
 
 ---
 
-## ⬜ Phase 2 — Portfolio + Walk-Forward
+## ✅ Phase 2 — Portfolio + Walk-Forward
 
-- Mehrere Strategien parallel über mehrere Symbole und Timeframes
-- `qt.portfolio.risk` — Vol-Targeting, Exposure-Caps, Drawdown-Kill-Switch
-- `qt.backtest.walkforward` — rollierendes Fenster, Purging + Embargo gegen Leakage
-- `qt.portfolio.baselines` — Equal-Weight, Vol-Parity, Best-Single
+- `qt.portfolio.base` — Verträge: `Allocator`, `AllocationContext`, `RiskLimits`, `combine()`
+- `qt.backtest.portfolio_engine` — mehrere Strategien, gemischte Timeframes, ein Konto
+- `qt.backtest.walkforward` — rollierendes Fenster mit Purging und Embargo
+- `qt.portfolio.baselines` — Equal-Weight, Vol-Parity, Best-Single, Fixed
+- `qt.portfolio.risk` — Vol-Targeting, Symbol- und Brutto-Caps, Drawdown-Kill-Switch
 
-**Ergebnis:** ehrliche OOS-Zahlen statt In-Sample-Fantasie.
-**Vorführen:** `uv run qt wf --strategies trend,meanrev --symbols BTC/USD,ETH/USD`
+**Vorführen:**
+```bash
+uv run qt wf --strategy trend --symbol BTC/USD --tf 4h --train 3000 --test 800 --embargo 50
+uv run qt portfolio --strategies trend,meanrev --symbols BTC/USD,ETH/USD --tf 4h
+uv run qt allocators
+```
+
+### Ergebnisse
+
+**Walk-Forward `trend` BTC/USD 4h** (17 Fenster, Train 3000 / Test 800 / Embargo 50):
+OOS-Gesamtrendite −71,94%, Sharpe −0,37, **4 von 17 Fenstern mit positivem Sharpe**.
+Die In-Sample-Zahlen aus Phase 1 waren also nicht zu pessimistisch, sondern zu
+optimistisch. Genau dafür gibt es Walk-Forward.
+
+**Die Risk-Engine ist die wirksamste Komponente im System** (ADR-013):
+
+| Lauf | Gesamtrendite | Vola p.a. | Max Drawdown |
+|---|---|---|---|
+| `vol_parity`, ohne Risk-Engine | −99,68% | 32,8% | −99,72% |
+| `equal_weight`, mit Risk-Engine | −16,90% | 3,7% | −20,11% |
+
+Identische Strategien und Daten — der Unterschied ist allein die Risikoschicht.
+Sie macht schlechte Strategien nicht gut, aber sie sorgt dafür, dass man einen
+Fehler überlebt. Das ist der empirische Beleg dafür, dass "Allokator schlägt
+vor, Risk-Engine entscheidet" richtig herum gebaut ist.
 
 ## ⬜ Phase 3 — LLM-Allokator
 

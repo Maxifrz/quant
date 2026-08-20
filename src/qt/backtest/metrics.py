@@ -87,7 +87,8 @@ def compute(
     cagr = float((equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1) if years > 0 else 0.0
 
     ann_vol = float(returns.std(ddof=1) * np.sqrt(py))
-    sharpe = float(returns.mean() / returns.std(ddof=1) * np.sqrt(py)) if returns.std(ddof=1) > 0 else 0.0
+    sharpe_value = sharpe(returns.to_numpy(), timeframe)
+    sharpe_value = sharpe_value if np.isfinite(sharpe_value) else 0.0
 
     downside = returns[returns < 0]
     dd_std = downside.std(ddof=1) if len(downside) > 1 else 0.0
@@ -108,7 +109,7 @@ def compute(
         total_return=total_return,
         cagr=cagr,
         ann_vol=ann_vol,
-        sharpe=sharpe,
+        sharpe=sharpe_value,
         sortino=sortino,
         max_drawdown=max_dd,
         calmar=calmar,
@@ -117,6 +118,24 @@ def compute(
         turnover=turnover,
         fees_paid=fees_paid,
     )
+
+
+def sharpe(returns: np.ndarray, timeframe: str) -> float:
+    """Annualisierter Sharpe einer Renditereihe, `nan` wenn nicht bestimmbar.
+
+    Steht bewusst getrennt von `compute()` und arbeitet auf einem Array: die
+    Allokatoren in `qt.portfolio.baselines` brauchen den Sharpe einmal pro Bar
+    und Strategie und koennen dafuer nicht durch pandas gehen. Zwei getrennte
+    Sharpe-Definitionen im System waeren schlimmer -- sie laufen mit der Zeit
+    auseinander, und dann misst der Allokator etwas anderes als der Report.
+    """
+    values = np.asarray(returns, dtype=float)
+    if len(values) < 2 or not np.all(np.isfinite(values)):
+        return float("nan")
+    sd = values.std(ddof=1)
+    if sd <= 0:
+        return float("nan")
+    return float(values.mean() / sd * np.sqrt(bars_per_year(timeframe)))
 
 
 def drawdown(equity: pd.Series) -> pd.Series:
