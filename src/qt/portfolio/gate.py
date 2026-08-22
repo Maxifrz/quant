@@ -132,6 +132,11 @@ class GateWindow:
     `oos_equity` ist nach Bar-**Close**-Zeiten indiziert und beginnt mit dem
     Referenzpunkt unmittelbar vor dem Testfenster (siehe `_oos_segment`).
     Die Feldnamen `index` und `oos_equity` sind der Vertrag mit `_chain`.
+
+    `result` ist der ganze Lauf, also Vorlauf **und** Testfenster -- seine
+    Kennzahlen beziehen sich damit auf einen laengeren Zeitraum, als bewertet
+    wird. Es haengt hier fuer die Fehlersuche (Fills, Risikoeingriffe,
+    Allokationsverlauf); geurteilt wird ausschliesslich ueber `metrics`.
     """
 
     index: int
@@ -139,6 +144,7 @@ class GateWindow:
     test_end: datetime
     metrics: Metrics
     oos_equity: pd.Series
+    result: PortfolioResult
 
 
 @dataclass
@@ -306,16 +312,17 @@ class GateResult:
             if total and wins / total <= MIN_WINDOW_WIN_RATE:
                 reasons.append(
                     f"gewinnt nur {wins} von {total} Fenstern gegen {name} -- "
-                    "ein Vorsprung aus einem einzelnen Fenster ist eine "
-                    "Zufallsstichprobe"
+                    "ein Vorsprung, der nicht in der Mehrheit der Fenster steht, "
+                    "ist eine Zufallsstichprobe und keine Kante"
                 )
 
         floor = self._time_in_market_floor()
         if candidate.metrics.time_in_market < floor:
             reasons.append(
                 f"Zeit im Markt {candidate.metrics.time_in_market:.1%} liegt unter "
-                f"{floor:.1%} der Baselines -- das ist keine bessere Allokation, "
-                "sondern eine andere Strategie (ADR-016)"
+                f"der Untergrenze von {floor:.1%} (halbe mittlere Zeit im Markt der "
+                "Baselines) -- das ist keine bessere Allokation, sondern eine "
+                "andere Frage (ADR-016)"
             )
 
         return reasons
@@ -747,6 +754,7 @@ def _score_window(
             fees_paid=sum(fill.fee for fill in fills),
         ),
         oos_equity=oos_equity,
+        result=result,
     )
 
 

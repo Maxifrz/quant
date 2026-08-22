@@ -34,7 +34,7 @@ DOWN = "DOWN/USD"
 N_BARS = 500
 
 # Fenstergeometrie aller Tests: 4 Fenster, klein genug fuer schnelle Laeufe.
-TRAIN, TEST, EMBARGO = 40, 100, 0
+TRAIN, TEST, EMBARGO = 40, 100, 12
 
 
 def _bars(n: int = N_BARS) -> dict[tuple[str, str], list]:
@@ -278,6 +278,21 @@ def test_windows_do_not_overlap():
         )
 
 
+def test_embargo_pushes_the_test_window_back():
+    """Ohne Abstand zwischen Train und Test leckt Information ueber die Grenze.
+
+    Rollierende Features stecken unmittelbar nach dem Train-Ende noch in
+    denselben Fenstern wie die letzten Train-Bars.
+    """
+    plain = _gate(_good, [EqualWeight()])
+    embargoed = _gate(_good, [EqualWeight()], embargo_bars=EMBARGO)
+
+    first_plain = plain.candidate_entry.windows[0]
+    first_embargoed = embargoed.candidate_entry.windows[0]
+    assert first_embargoed.test_start > first_plain.test_start
+    assert embargoed.embargo_bars == EMBARGO
+
+
 def test_insufficient_data_is_loud():
     """Ein stiller Leerlauf saehe aus wie 'nichts gehandelt', nicht wie 'zu kurz'."""
     with pytest.raises(InsufficientDataError):
@@ -453,6 +468,35 @@ def test_no_strategy_state_leaks_across_windows_or_allocators():
 
     # Je Lauf zwei Strategien, die je bei 1 zu zaehlen beginnen.
     assert log.count(1) == result.n_windows * allocators * 2
+
+
+def test_the_kill_switch_does_not_leak_across_windows():
+    """Die Risk-Engine ist je Lauf frisch -- sonst legt ein Halt alles still.
+
+    Ihr Kill-Switch kennt bewusst keine automatische Entsperrung. Eine
+    geteilte Instanz waere deshalb der schlimmste Fall: der erste Halt in
+    Fenster 0 legte jedes folgende Fenster und jeden folgenden Allokator
+    lahm, die Tabelle zeigte lauter Nullen -- und nichts davon schluege fehl.
+    """
+    from qt.portfolio.risk import RiskConfig, RiskEngine
+
+    risk = RiskEngine(RiskConfig(max_drawdown=0.02))
+    result = _gate(_bad, [EqualWeight()], risk=risk)
+
+    for window in result.candidate_entry.windows:
+        halts = [r for _, r in window.result.risk_events if "Kill-Switch" in r]
+        assert halts, f"Fenster {window.index} hat gar nicht angehalten"
+        # Ein mitgeschleppter Halt meldete sich mit "Kill-Switch aktiv" schon
+        # beim ersten Bar; hier muss jedes Fenster den Drawdown selbst
+        # erreichen.
+        assert "Drawdown" in halts[0], (
+            f"Fenster {window.index} startet bereits angehalten -- der Halt aus "
+            "einem frueheren Fenster wurde mitgeschleppt"
+        )
+        assert window.result.fills, "Fenster hat nie eine Position eroeffnet"
+
+    # Die uebergebene Instanz selbst laeuft nie mit, sie ist nur die Vorlage.
+    assert not risk.halted
 
 
 def test_factories_that_share_instances_are_refused():
