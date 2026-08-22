@@ -229,7 +229,7 @@ def walk_forward(
         for index, start in enumerate(starts)
     ]
 
-    equity = _chain(windows, cfg.initial_cash)
+    equity = chain_returns(windows, cfg.initial_cash)
     metrics = compute(
         equity.set_index("ts")["equity"],
         probe.timeframe,
@@ -276,7 +276,7 @@ def _run_window(
     run_bars = {
         symbol: window
         for symbol, stream in bars.items()
-        if (window := _slice(stream, timeline[run_lo], timeline[test_hi]))
+        if (window := slice_bars(stream, timeline[run_lo], timeline[test_hi]))
     }
     result = run_backtest(make_strategy(), run_bars, cfg)
 
@@ -291,7 +291,7 @@ def _run_window(
         for bar in stream
         if bar.ts >= test_start
     )
-    oos_equity = _oos_segment(
+    oos_equity = oos_segment(
         result.equity.set_index("ts")["equity"], cutoff, cfg.initial_cash
     )
 
@@ -318,7 +318,7 @@ def _run_window(
     )
 
 
-def _oos_segment(equity: pd.Series, cutoff: pd.Timestamp, initial_cash: float) -> pd.Series:
+def oos_segment(equity: pd.Series, cutoff: pd.Timestamp, initial_cash: float) -> pd.Series:
     """Den Teil ab `cutoff`, normiert auf den letzten Stand davor.
 
     Der Referenzpunkt ist der Warmup-Ausgang: dort ist noch nichts gehandelt,
@@ -342,7 +342,7 @@ def _oos_segment(equity: pd.Series, cutoff: pd.Timestamp, initial_cash: float) -
     return segment / base * initial_cash
 
 
-def _chain(windows: list[WalkForwardWindow], initial_cash: float) -> pd.DataFrame:
+def chain_returns(windows: list[WalkForwardWindow], initial_cash: float) -> pd.DataFrame:
     """OOS-Segmente ueber ihre Renditen verketten.
 
     Multipliziert wird, nicht angehaengt: jedes Segment startet bei
@@ -381,7 +381,7 @@ def _timeline(bars: dict[str, list[Bar]]) -> list[datetime]:
     return sorted({bar.ts for stream in bars.values() for bar in stream})
 
 
-def _slice(stream: list[Bar], start: datetime, end: datetime) -> list[Bar]:
+def slice_bars(stream: list[Bar], start: datetime, end: datetime) -> list[Bar]:
     """Bars mit Open-Zeit in [start, end], Grenzen inklusive."""
     return [bar for bar in stream if start <= bar.ts <= end]
 
@@ -458,3 +458,17 @@ def _check_data(
             f"Es fehlen {needed - n_bars} Bars -- Zeitraum verlaengern, kleineren "
             "Timeframe waehlen oder die Fenster verkleinern."
         )
+
+
+# ---------------------------------------------------------------------------
+# Rueckwaertskompatible Namen
+# ---------------------------------------------------------------------------
+#
+# Diese drei Funktionen sind die einzige Definition von "OOS-Segment",
+# "Verkettung ueber Renditen" und "Bar-Ausschnitt" im System -- `qt.portfolio.gate`
+# baut darauf auf. Sie waren mit Unterstrich benannt, was jeden Aufrufer
+# ausserhalb dieses Moduls wie einen Regelbruch aussehen liess. Die alten Namen
+# bleiben, damit nichts bricht.
+_oos_segment = oos_segment
+_chain = chain_returns
+_slice = slice_bars

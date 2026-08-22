@@ -46,8 +46,20 @@ from qt.portfolio.base import (
 )
 from qt.strategy.base import Strategy, clip_weight
 
-# Wieviele vergangene Bar-Renditen je Strategie der Allokator sehen darf.
-RETURN_HISTORY = 512
+# Untergrenze der Renditehistorie je Strategie, die der Allokator sehen darf.
+#
+# Die tatsaechliche Laenge richtet sich nach `Allocator.warmup_bars` (siehe
+# `_history_length`). Ein fester Wert war hier ein stiller Fehler: `BestSingle`
+# verlangt 720 Bars, bekam aber nie mehr als 512 -- sein Sharpe blieb damit in
+# jedem Lauf `nan`, und die Baseline, die beziffern soll was Performance-Chasing
+# kostet, fiel unbemerkt auf Gleichgewichtung zurueck. Sie war eine zweite
+# Equal-Weight-Zeile, ohne dass irgendetwas fehlschlug.
+MIN_RETURN_HISTORY = 512
+
+# Zuschlag auf `warmup_bars`. Ein Allokator, der genau sein Fenster bekommt,
+# haette in jedem Aufruf exakt einen gueltigen Datenpunkt -- jede
+# Glaettung darueber waere wirkungslos.
+HISTORY_SLACK = 64
 
 
 @dataclass
@@ -63,7 +75,14 @@ class PortfolioResult:
     allocations: pd.DataFrame = field(default_factory=pd.DataFrame)
     risk_events: list[tuple[datetime, str]] = field(default_factory=list)
     warmup_end: datetime | None = None
+    # Timeframe der **Equity-Kurve**, nicht des Allokations-Takts.
+    #
+    # Die Kurve hat einen Punkt je eindeutiger Bar-Close-Zeit, also im
+    # feinsten vorkommenden Timeframe. Stuende hier der groebste (der Takt des
+    # Allokators), annualisierten Metriken und Tearsheet um genau dieses
+    # Verhaeltnis daneben -- bei 1h-Daten mit 1d-Takt um Faktor 24.
     timeframe: str = "1h"
+    allocation_timeframe: str = "1h"
     meta: dict = field(default_factory=dict)
 
     @property
@@ -129,8 +148,9 @@ def run_portfolio_backtest(
     # Zielgewicht je Strategie und Symbol.
     weights: dict[str, dict[str, float]] = {sid: {} for sid in strategy_ids}
     # Papier-Renditen je Strategie, ausschliesslich fuer die Allokation.
+    history = _history_length(allocator)
     returns: dict[str, deque[float]] = {
-        sid: deque(maxlen=RETURN_HISTORY) for sid in strategy_ids
+        sid: deque(maxlen=history) for sid in strategy_ids
     }
     allocation = {sid: 1.0 / len(strategy_ids) for sid in strategy_ids}
 
@@ -256,9 +276,22 @@ def run_portfolio_backtest(
         allocations=pd.DataFrame(alloc_rows),
         risk_events=risk_events,
         warmup_end=warmup_end,
-        timeframe=alloc_tf,
+        timeframe=min({tf for _, tf in bars}, key=timeframe_seconds),
+        allocation_timeframe=alloc_tf,
         meta={"n_events": len(events), "final_weights": final_weights},
     )
+
+
+def _history_length(allocator: Allocator) -> int:
+    """Wieviele Bar-Renditen je Strategie vorgehalten werden.
+
+    Richtet sich nach dem, was der Allokator selbst als Bedarf meldet. Ein
+    Allokator, der mehr Fenster verlangt als die Engine vorhaelt, rechnet
+    dauerhaft auf `nan` und faellt still auf sein Standardverhalten zurueck --
+    ohne Fehlschlag, ohne Warnung, nur mit einem falschen Ergebnis.
+    """
+    needed = int(getattr(allocator, "warmup_bars", 0) or 0)
+    return max(MIN_RETURN_HISTORY, needed + HISTORY_SLACK)
 
 
 def _check_coverage(

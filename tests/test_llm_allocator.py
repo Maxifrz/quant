@@ -204,19 +204,40 @@ def test_any_failure_falls_back_to_equal_weight(exc):
     assert allocator.telemetry.fallback_rate == 1.0
 
 
-def test_all_zero_proposal_falls_back():
-    """Ein Vorschlag, der sich zu null summiert, ist von einer verstuemmelten
-    Antwort nicht unterscheidbar -- im Zweifel nicht komplett flat gehen."""
-    zero = AllocationProposal(
+def test_explicit_flat_is_honoured():
+    """"Ich sehe gerade keine Kante" ist eine legitime Meinung.
+
+    Wuerde sie wie eine verstuemmelte Antwort behandelt, koennte der Allokator
+    nie aussteigen -- und ein Modell, das aussteigen will, bekaeme
+    ausgerechnet volle Gleichgewichtung.
+    """
+    flat = AllocationProposal(
         allocations=[
             {"strategy_id": "STRAT_A", "weight": 0.0},
             {"strategy_id": "STRAT_B", "weight": 0.0},
         ]
     )
-    allocator = LLMAllocator(client=StubClient(zero), min_history=10)
+    allocator = LLMAllocator(client=StubClient(flat), min_history=10)
+
+    assert allocator.allocate(make_ctx(n=300)) == {"meanrev": 0.0, "trend": 0.0}
+    assert allocator.telemetry.fallbacks == 0
+    assert allocator.telemetry.deliberate_flats == 1
+
+
+def test_partial_zero_proposal_falls_back():
+    """Nennt das Modell nur einen Teil der Strategien, bleibt es mehrdeutig.
+
+    Von einer halben oder abgeschnittenen Antwort ist das nicht zu
+    unterscheiden -- und im Zweifel gehoert das Portfolio nicht flat.
+    """
+    partial = AllocationProposal(
+        allocations=[{"strategy_id": "STRAT_A", "weight": 0.0}]
+    )
+    allocator = LLMAllocator(client=StubClient(partial), min_history=10)
 
     assert allocator.allocate(make_ctx(n=300)) == {"meanrev": 0.5, "trend": 0.5}
     assert allocator.telemetry.fallbacks == 1
+    assert allocator.telemetry.deliberate_flats == 0
 
 
 def test_valid_proposal_is_applied_and_resolved():

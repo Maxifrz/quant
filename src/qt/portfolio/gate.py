@@ -67,7 +67,6 @@ import pandas as pd
 from qt.backtest.costs import FillModel
 from qt.backtest.metrics import Metrics, compute
 from qt.backtest.portfolio_engine import (
-    RETURN_HISTORY,
     PortfolioResult,
     run_portfolio_backtest,
 )
@@ -789,8 +788,13 @@ def _warmup_slots(
     hinueber. Der Preis ist ein laengerer Vorlauf fuer alle -- also
     verbrauchte Historie, nicht verzerrte Ergebnisse.
 
-    Der Allokator-Anteil ist bei `RETURN_HISTORY` gedeckelt: die Engine haelt
-    nicht mehr Papier-Renditen vor, laengerer Vorlauf brauchte also nichts.
+    Der Allokator-Anteil ist **nicht** gedeckelt. Frueher stand hier ein
+    Deckel bei der festen Historienlaenge der Engine -- laengerer Vorlauf
+    haette nichts gebracht, weil die Engine ohnehin abschnitt. Genau dieser
+    Abschnitt war ein stiller Fehler: `BestSingle` verlangt 720 Bars, bekam
+    512, rechnete dauerhaft auf `nan` und war damit eine zweite
+    Equal-Weight-Zeile. Die Engine richtet die Historie inzwischen nach
+    `Allocator.warmup_bars`, also darf der Vorlauf das auch.
     """
     per_strategy = [
         math.ceil(s.warmup_bars * timeframe_seconds(s.timeframe) / slot_seconds)
@@ -798,9 +802,7 @@ def _warmup_slots(
     ]
     alloc_tf = max({tf for _, tf in bars}, key=timeframe_seconds)
     per_allocator = [
-        math.ceil(
-            min(a.warmup_bars, RETURN_HISTORY) * timeframe_seconds(alloc_tf) / slot_seconds
-        )
+        math.ceil(a.warmup_bars * timeframe_seconds(alloc_tf) / slot_seconds)
         for a in allocators
     ]
     return max(per_strategy, default=0) + max(per_allocator, default=0)

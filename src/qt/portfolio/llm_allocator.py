@@ -41,6 +41,7 @@ class AllocatorTelemetry:
     calls: int = 0
     cache_hits: int = 0
     fallbacks: int = 0
+    deliberate_flats: int = 0
     hallucinated_labels: int = 0
     reasons: list[str] = field(default_factory=list)
 
@@ -52,7 +53,8 @@ class AllocatorTelemetry:
         return (
             f"Aufrufe {self.calls}, davon aus Cache {self.cache_hits}, "
             f"Rueckfaelle auf Gleichgewichtung {self.fallbacks} "
-            f"({self.fallback_rate:.1%}), halluzinierte Labels "
+            f"({self.fallback_rate:.1%}), bewusste Ausstiege "
+            f"{self.deliberate_flats}, halluzinierte Labels "
             f"{self.hallucinated_labels}"
         )
 
@@ -128,10 +130,17 @@ class LLMAllocator(Allocator):
 
         total = sum(abs(v) for v in allocation.values())
         if total == 0:
-            # Das Modell will nichts allokieren. Als Meinung waere das
-            # legitim, aber es ist von einer leeren oder verstuemmelten
-            # Antwort nicht unterscheidbar -- und im Zweifel gehoert das
-            # Portfolio nicht komplett flat.
+            # "Ich sehe gerade keine Kante" ist eine legitime Meinung und muss
+            # umsetzbar sein -- sonst kann der Allokator nie aussteigen, und
+            # ein Modell, das aussteigen will, bekommt ausgerechnet volle
+            # Gleichgewichtung.
+            #
+            # Unterscheidbar ist das nur, wenn das Modell **jede** Strategie
+            # ausdruecklich mit 0 nennt. Eine leere oder halbe Antwort bleibt
+            # mehrdeutig, und im Zweifel gehoert das Portfolio nicht flat.
+            if proposal.is_deliberate_flat(brief.labels):
+                self.telemetry.deliberate_flats += 1
+                return {sid: 0.0 for sid in ids}
             return self._fallback(equal, "Vorschlag summierte sich zu null")
 
         return {sid: allocation.get(sid, 0.0) for sid in ids}

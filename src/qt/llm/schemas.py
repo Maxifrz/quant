@@ -89,6 +89,22 @@ class AllocationProposal(BaseModel):
         }
         return {sid: proposed.get(sid, 0.0) for sid in known_ids}
 
+    def is_deliberate_flat(self, known_ids: list[str]) -> bool:
+        """Wollte das Modell wirklich aussteigen -- oder ist die Antwort Muell?
+
+        "Ich sehe gerade keine Kante" ist eine legitime Meinung und muss
+        umsetzbar sein. Sie ist aber von einer leeren oder verstuemmelten
+        Antwort nur dann unterscheidbar, wenn das Modell **jede** bekannte
+        Strategie ausdruecklich mit 0 nennt. Fehlende Eintraege bleiben
+        mehrdeutig und zaehlen nicht als Ausstieg.
+        """
+        named = {e.strategy_id for e in self.allocations if e.strategy_id in known_ids}
+        if named != set(known_ids):
+            return False
+        return all(
+            e.weight == 0.0 for e in self.allocations if e.strategy_id in known_ids
+        )
+
     def unknown_labels(self, known_ids: list[str]) -> list[str]:
         """Labels, die das Modell erfunden hat. Gehoeren in den Report."""
         known = set(known_ids)

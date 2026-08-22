@@ -333,3 +333,61 @@ def test_position_sizing_values_the_whole_portfolio_at_market():
         "mit Einstandspreisen statt Marktwerten bewertet"
     )
     assert eth_qty.qty == eth_qty.qty  # kein nan
+
+
+def test_allocator_gets_the_history_it_declares():
+    """Die Engine muss so viel Renditehistorie vorhalten, wie der Allokator
+    per `warmup_bars` verlangt.
+
+    Der Fehler, den dieser Test festnagelt: die Historie war fest auf 512 Bars
+    gedeckelt, `BestSingle` verlangt 720. Sein Sharpe blieb damit in jedem Lauf
+    `nan`, und die Baseline, die beziffern soll was Performance-Chasing kostet,
+    fiel unbemerkt auf Gleichgewichtung zurueck. Sie war eine zweite
+    Equal-Weight-Zeile -- ohne dass irgendetwas fehlschlug.
+    """
+
+    class Hungry(Allocator):
+        name = "hungry"
+
+        def __init__(self, needs: int) -> None:
+            self.needs = needs
+            self.max_seen = 0
+
+        @property
+        def warmup_bars(self) -> int:
+            return self.needs
+
+        def allocate(self, ctx: AllocationContext) -> dict[str, float]:
+            self.max_seen = max(self.max_seen, ctx.history_length())
+            n = len(ctx.strategy_ids)
+            return {sid: 1.0 / n for sid in ctx.strategy_ids}
+
+    bars = _bars(1200)
+    hungry = Hungry(needs=720)
+    run_portfolio_backtest(_strategies(), bars, hungry)
+
+    assert hungry.max_seen >= hungry.warmup_bars, (
+        f"Allokator verlangt {hungry.warmup_bars} Bars, sah aber nur "
+        f"{hungry.max_seen} -- er rechnet dauerhaft auf nan"
+    )
+
+
+def test_equity_timeframe_is_the_finest_not_the_allocation_cadence():
+    """Die Equity-Kurve hat einen Punkt je Bar-Close -- also im feinsten
+    Timeframe, nicht im Takt des Allokators.
+
+    Stuende dort der groebste, annualisierten Metriken und Tearsheet um genau
+    dieses Verhaeltnis daneben; bei 1h-Daten mit 1d-Takt um Faktor 24.
+    """
+    bars = {
+        ("BTC/USD", "1h"): make_bars(400, symbol="BTC/USD", timeframe="1h", seed=1),
+        ("BTC/USD", "4h"): make_bars(100, symbol="BTC/USD", timeframe="4h", seed=1),
+    }
+    strategies = {
+        "fast": ConstantWeight(["BTC/USD"], "1h", weight=0.5),
+        "slow": ConstantWeight(["BTC/USD"], "4h", weight=0.5),
+    }
+    result = run_portfolio_backtest(strategies, bars, Equal())
+
+    assert result.timeframe == "1h"
+    assert result.allocation_timeframe == "4h"

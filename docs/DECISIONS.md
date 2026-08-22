@@ -5,6 +5,56 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-021 — Der Allokator darf aussteigen
+**Datum:** 2026-08-22
+
+**Der Fehler:** `LLMAllocator` behandelte jeden Vorschlag mit Summe null als
+unbrauchbar und ersetzte ihn durch Gleichgewichtung. „Ich sehe gerade keine
+Kante" und „meine Ausgabe ist Müll" waren derselbe Fall — ein Modell, das
+aussteigen wollte, bekam ausgerechnet **volle** Gleichgewichtung.
+
+**Die Schwierigkeit:** Beides ist tatsächlich schwer zu unterscheiden. Eine
+abgeschnittene Antwort sieht aus wie ein Ausstieg.
+
+**Die Lösung:** Ein Ausstieg zählt nur, wenn das Modell **jede** bekannte
+Strategie ausdrücklich mit Gewicht 0 nennt. Eine halbe oder leere Antwort
+bleibt mehrdeutig und fällt weiterhin auf Gleichgewichtung zurück — im Zweifel
+gehört das Portfolio nicht flat.
+
+`AllocatorTelemetry.deliberate_flats` zählt die Ausstiege getrennt von den
+Rückfällen, damit im Report unterscheidbar bleibt, ob der Allokator entschieden
+hat oder ausgefallen ist.
+
+---
+
+## ADR-020 — Die Engine richtet die Renditehistorie nach dem Allokator
+**Datum:** 2026-08-22
+
+**Der Fehler:** `RETURN_HISTORY` war fest auf 512 Bars gesetzt. `BestSingle`
+verlangt 720. Die Baseline sah damit **nie** genug Historie, ihr Sharpe blieb in
+jedem Lauf `nan`, und sie fiel unbemerkt auf Gleichgewichtung zurück.
+
+**Warum das ernst ist:** `BestSingle` ist eine der drei Baselines, die der
+LLM-Allokator laut ADR-004 schlagen muss. Sie war stillschweigend eine zweite
+Equal-Weight-Zeile — das Gate prüfte also gegen zwei unterschiedliche Baselines,
+nicht gegen drei, und behauptete das Gegenteil.
+
+**Messung:** In einem vollen Lauf über BTC/USD + ETH/USD, 4h, 2019–2026 wich
+`BestSingle` in **0 von 688** Allokationen von 50/50 ab. Nach der Korrektur:
+681 von 688.
+
+**Konsequenz:** Die Historienlänge folgt `Allocator.warmup_bars` plus Zuschlag.
+Ein Allokator, der mehr verlangt als die Engine vorhält, rechnet dauerhaft auf
+`nan` und fällt still auf sein Standardverhalten zurück — kein Fehlschlag, keine
+Warnung, nur ein falsches Ergebnis. Festgenagelt durch
+`test_allocator_gets_the_history_it_declares`.
+
+**Zu lernen:** Zwei Zahlen, die zueinander passen müssen und an verschiedenen
+Orten stehen, passen irgendwann nicht mehr zueinander. Der Bedarf gehört dorthin,
+wo er entsteht — und die Gegenseite muss ihn abfragen statt zu raten.
+
+---
+
 ## ADR-019 — Ohne API-Zugang gebaut, und das ist kein Provisorium
 **Datum:** 2026-08-20
 
