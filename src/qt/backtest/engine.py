@@ -24,6 +24,7 @@ from datetime import datetime
 import pandas as pd
 
 from qt.backtest.broker_sim import SimBroker
+from qt.backtest.costs import FillModel
 from qt.core.clock import BacktestClock
 from qt.core.config import BacktestConfig
 from qt.core.events import merge_bar_streams
@@ -62,6 +63,7 @@ def run_backtest(
     strategy: Strategy,
     bars: dict[str, list[Bar]],
     cfg: BacktestConfig | None = None,
+    fill_model: FillModel | None = None,
 ) -> BacktestResult:
     """Eine Strategie ueber historische Bars laufen lassen.
 
@@ -76,7 +78,7 @@ def run_backtest(
     events = merge_bar_streams(list(bars.values()))
     clock = BacktestClock(events[0].ts)
     store = FeatureStore(clock, maxlen=max(1000, strategy.warmup_bars * 3))
-    broker = SimBroker(cfg)
+    broker = SimBroker(cfg, fill_model)
 
     # Letzter bekannter Preis je Symbol, fuer die Equity-Bewertung.
     last_price: dict[str, float] = {}
@@ -92,7 +94,7 @@ def run_backtest(
         clock.advance(event.ts)
 
         # 2. Orders des vorherigen Bars auf diesem Open ausfuehren.
-        broker.execute_pending(bar.symbol, bar.open, bar.ts)
+        broker.execute_pending(bar.symbol, bar.open, bar.ts, bar.volume)
 
         # 3. Bar ist ab jetzt bekannt.
         store.on_bar(bar)

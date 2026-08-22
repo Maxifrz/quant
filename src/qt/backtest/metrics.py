@@ -30,6 +30,8 @@ class Metrics:
     max_drawdown: float
     calmar: float
     hit_rate: float
+    time_in_market: float
+    ann_vol_active: float
     n_trades: int
     turnover: float
     fees_paid: float
@@ -45,13 +47,23 @@ class Metrics:
             "Max Drawdown": self.max_drawdown,
             "Calmar": self.calmar,
             "Trefferquote": self.hit_rate,
+            "Zeit im Markt": self.time_in_market,
+            "Vola p.a. aktiv": self.ann_vol_active,
             "Trades": self.n_trades,
             "Umsatz": self.turnover,
             "Gebuehren": self.fees_paid,
         }
 
     def table(self) -> str:
-        pct = {"Gesamtrendite", "CAGR", "Vola p.a.", "Max Drawdown", "Trefferquote"}
+        pct = {
+            "Gesamtrendite",
+            "CAGR",
+            "Vola p.a.",
+            "Vola p.a. aktiv",
+            "Max Drawdown",
+            "Trefferquote",
+            "Zeit im Markt",
+        }
         money = {"Umsatz", "Gebuehren"}
         lines = []
         for key, value in self.as_dict().items():
@@ -77,7 +89,9 @@ def compute(
     """Kennzahlen aus einer Equity-Zeitreihe berechnen."""
     equity = equity.dropna()
     if len(equity) < 2:
-        return Metrics(len(equity), 0, 0, 0, 0, 0, 0, 0, 0, n_trades, turnover, fees_paid)
+        return Metrics(
+            len(equity), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, n_trades, turnover, fees_paid
+        )
 
     returns = equity.pct_change().dropna()
     py = bars_per_year(timeframe)
@@ -104,6 +118,20 @@ def compute(
     active = returns[returns != 0]
     hit_rate = float((active > 0).mean()) if len(active) else 0.0
 
+    # Zeit im Markt und die Vola *waehrend* dieser Zeit.
+    #
+    # Ohne diese beiden liest man `ann_vol` falsch. Eine Strategie, die zu 93%
+    # flat ist, zeigt eine annualisierte Vola von 3,7% -- was wie starke
+    # Drosselung aussieht, tatsaechlich aber Untaetigkeit misst. Waehrend sie
+    # tatsaechlich positioniert ist, liegt dieselbe Strategie bei 13,9%.
+    #
+    # Dieser Fehlschluss ist hier real passiert: die Risk-Engine wurde
+    # faelschlich fuer zu scharf gehalten (ADR-016).
+    time_in_market = float(len(active) / len(returns)) if len(returns) else 0.0
+    ann_vol_active = (
+        float(active.std(ddof=1) * np.sqrt(py)) if len(active) > 1 else 0.0
+    )
+
     return Metrics(
         n_bars=len(equity),
         total_return=total_return,
@@ -114,6 +142,8 @@ def compute(
         max_drawdown=max_dd,
         calmar=calmar,
         hit_rate=hit_rate,
+        time_in_market=time_in_market,
+        ann_vol_active=ann_vol_active,
         n_trades=n_trades,
         turnover=turnover,
         fees_paid=fees_paid,

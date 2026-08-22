@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from qt.backtest import costs
+from qt.backtest.costs import FillContext, FillModel, FlatFillModel
 from qt.core.config import BacktestConfig
 from qt.core.types import Fill, Order, Position
 
@@ -25,8 +26,11 @@ from qt.core.types import Fill, Order, Position
 class SimBroker:
     """Kontofuehrung mit simulierten Fills."""
 
-    def __init__(self, cfg: BacktestConfig) -> None:
+    def __init__(self, cfg: BacktestConfig, fill_model: FillModel | None = None) -> None:
         self.cfg = cfg
+        # Ohne explizites Modell das Verhalten aus Phase 1: konstanter
+        # Aufschlag, unabhaengig von der Ordergroesse.
+        self.fill_model = fill_model or FlatFillModel(cfg.costs)
         self.cash = cfg.initial_cash
         self.positions: dict[str, Position] = {}
         self.fills: list[Fill] = []
@@ -56,8 +60,19 @@ class SimBroker:
         self._pending = [(o, s) for o, s in self._pending if s != order.symbol]
         self._pending.append((order, order.symbol))
 
-    def execute_pending(self, symbol: str, open_price: float, ts: datetime) -> list[Fill]:
-        """Vorgemerkte Orders dieses Symbols auf dem Bar-Open ausfuehren."""
+    def execute_pending(
+        self,
+        symbol: str,
+        open_price: float,
+        ts: datetime,
+        bar_volume: float | None = None,
+    ) -> list[Fill]:
+        """Vorgemerkte Orders dieses Symbols auf dem Bar-Open ausfuehren.
+
+        `bar_volume` ist das Volumen des Bars, auf dem ausgefuehrt wird. Nur
+        groessenabhaengige Fill-Modelle werten es aus; das Flat-Modell
+        ignoriert es.
+        """
         if not self._pending:
             return []
 
@@ -68,19 +83,27 @@ class SimBroker:
 
         fills: list[Fill] = []
         for order, _ in ready:
-            fill = self._fill(order, open_price, ts)
+            fill = self._fill(order, open_price, ts, bar_volume)
             if fill is not None:
                 fills.append(fill)
         return fills
 
-    def _fill(self, order: Order, reference_price: float, ts: datetime) -> Fill | None:
+    def _fill(
+        self,
+        order: Order,
+        reference_price: float,
+        ts: datetime,
+        bar_volume: float | None = None,
+    ) -> Fill | None:
         notional = abs(order.qty) * reference_price
         if notional < self.cfg.min_trade_notional:
             # Zu klein: wuerde nur Gebuehren erzeugen und Rundungsrauschen
             # in echte Kosten verwandeln.
             return None
 
-        cost = costs.apply(reference_price, order.qty, self.cfg.costs)
+        cost = self.fill_model.fill(
+            reference_price, order.qty, FillContext(bar_volume=bar_volume)
+        )
 
         self.cash -= order.qty * cost.fill_price + cost.fee
         self.fees_paid += cost.fee

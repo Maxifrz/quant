@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from qt.backtest.broker_sim import SimBroker
+from qt.backtest.costs import FillModel
 from qt.core.clock import BacktestClock
 from qt.core.config import BacktestConfig
 from qt.core.events import merge_bar_streams
@@ -91,6 +92,7 @@ def run_portfolio_backtest(
     risk: RiskLimits | None = None,
     cfg: BacktestConfig | None = None,
     allocate_every: int = 1,
+    fill_model: FillModel | None = None,
 ) -> PortfolioResult:
     """Mehrere Strategien unter einem Allokator laufen lassen.
 
@@ -116,7 +118,7 @@ def run_portfolio_backtest(
     clock = BacktestClock(events[0].ts)
     max_warmup = max(s.warmup_bars for s in strategies.values())
     store = FeatureStore(clock, maxlen=max(1000, max_warmup * 3))
-    broker = SimBroker(cfg)
+    broker = SimBroker(cfg, fill_model)
 
     strategy_ids = sorted(strategies)
     symbols = sorted({sym for sym, _ in bars})
@@ -152,7 +154,7 @@ def run_portfolio_backtest(
         key = (bar.symbol, bar.timeframe)
         clock.advance(event.ts)
 
-        broker.execute_pending(bar.symbol, bar.open, bar.ts)
+        broker.execute_pending(bar.symbol, bar.open, bar.ts, bar.volume)
         store.on_bar(bar)
         bars_seen[key] += 1
 

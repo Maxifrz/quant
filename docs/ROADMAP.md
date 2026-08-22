@@ -4,17 +4,17 @@
 >
 > **Phase 0, 1 und 2 sind fertig.** Nächster Schritt: **Phase 3 — LLM-Allokator.**
 >
-> Erster Handgriff, vor allem anderen:
-> **Die Risk-Engine kalibrieren.** Der Symbol-Cap von 25% greift aktuell bei
-> praktisch jedem Bar (27.648 Eingriffe in einem Lauf), die realisierte Vola
-> landet bei 3,7% statt der angepeilten 20%. Bei nur zwei Symbolen ist der
-> Default zu eng. Konkret: `RiskConfig.max_weight_per_symbol` in
-> `src/qt/portfolio/risk.py` gegen die Zahl der gehandelten Symbole skalieren.
+> Erster Handgriff: `src/qt/llm/briefing.py` — das Blind Briefing (ADR-003).
+> Regime-Features, rollierende Strategie-Performance und Risikobudget-Auslastung,
+> anonymisiert und datumsfrei.
 >
-> Grund für die Reihenfolge: Ein LLM-Allokator, der durch eine zu enge Blende
-> misst, produziert Ergebnisse, aus denen man nichts lernt.
+> Danach `src/qt/llm/schemas.py` (pydantic-validierter Output) und
+> `src/qt/llm/cache.py` (Hash(Prompt) + Modell-ID → reproduzierbar und beim
+> zweiten Lauf kostenlos).
 >
-> Danach: `src/qt/llm/briefing.py` — das Blind Briefing (ADR-003).
+> **Nicht mehr nötig:** Die Risk-Engine zu kalibrieren stand hier als Vorarbeit.
+> Die Messung hat gezeigt, dass sie nicht zu scharf eingestellt ist — die
+> vermeintliche Drosselung war eine irreführende Kennzahl (ADR-016).
 
 ---
 

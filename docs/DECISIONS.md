@@ -5,6 +5,87 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-016 — Korrektur: die Risk-Engine drosselt nicht, die Kennzahl war irreführend
+**Datum:** 2026-08-20
+
+**Korrigiert:** die offene Frage in ADR-013 und den „HIER WEITER"-Schritt in
+ROADMAP.md. Beide behaupteten, der Symbol-Cap von 25% drossele zu hart, weil die
+realisierte Vola bei 3,7% statt der angepeilten 20% lag. **Das war falsch.**
+
+**Messung** (Portfolio `trend` + `meanrev`, BTC/USD + ETH/USD, 4h, 2019–2026):
+
+| Variante | Vola gesamt | Vola über aktive Bars | Bars mit Position |
+|---|---|---|---|
+| Symbol-Cap 25% (Default) | 3,7% | 13,9% | 7,3% |
+| Symbol-Cap 50% | 3,8% | — | — |
+| Symbol-Cap 100% (praktisch aus) | 3,8% | — | — |
+| Drawdown-Stop praktisch aus | 7,4% | 12,9% | 33,0% |
+
+Der Symbol-Cap macht 0,1 Prozentpunkte Unterschied. Er war nie die Ursache.
+
+**Die tatsächliche Erklärung:** Das Portfolio ist zu **92,7% flat** — teils weil
+die Strategien selbst meist kein Signal geben (`trend` ist zu 65% flat), teils weil
+der Kill-Switch früh auslöst. Annualisierte Volatilität über eine überwiegend
+flache Reihe misst vor allem Untätigkeit, nicht Drosselung. *Während* das
+Portfolio positioniert ist, liegt die Vola bei 13,6–13,9% — plausibel nahe am Ziel
+von 20%, der Rest ist Vol-Targeting, das seine Arbeit tut.
+
+**Konsequenz:** Zwei neue Kennzahlen in `qt.backtest.metrics`, **Zeit im Markt**
+und **Vola p.a. aktiv**. Ohne sie liest man `ann_vol` bei jeder überwiegend
+flachen Strategie falsch — was hier tatsächlich passiert ist und beinahe eine
+Kalibrierung ausgelöst hätte, die nichts repariert hätte.
+
+**Zu lernen:** Eine Kennzahl, die zwei Effekte vermischt (wie stark bin ich
+positioniert × wie oft bin ich positioniert), taugt nicht als Diagnose. Die
+Hypothese stand in der ROADMAP, klang plausibel und war ungeprüft — die Messung
+hat zehn Minuten gedauert und die geplante Arbeit überflüssig gemacht.
+
+---
+
+## ADR-015 — Fill-Modell als Abstraktion, mit größenabhängiger Variante
+**Datum:** 2026-08-20
+
+**Anlass:** Vergleich mit NautilusTrader. Dort ist das Fill-Modell ein Trait mit
+acht Implementierungen (gestufte Orderbuchtiefen, größenabhängig, probabilistisch
+mit gesetztem RNG-Seed). Bei uns war es eine feste Formel, die das **Volumen
+komplett ignorierte**. Übernommen ist die Struktur, nicht der Code — Nautilus
+steht unter LGPL-3.0.
+
+**Das Problem, das dabei sichtbar wurde:** Unter dem alten Modell liefert dieselbe
+Strategie bei 100.000 und bei 100.000.000 Startkapital **exakt dasselbe Ergebnis**
+(Faktor 0,457). Sie skaliert unendlich. Kapazität war im gesamten System nicht
+darstellbar.
+
+**Messung** (trend, BTC/USD 4h, 2019–2026):
+
+| Startkapital | flat | größenabhängig | Differenz |
+|---|---|---|---|
+| 100.000 | 0,457x | 0,364x | −20,3% |
+| 10.000.000 | 0,457x | 0,096x | −78,9% |
+| 100.000.000 | 0,457x | 0,028x | −93,9% |
+
+Die Zahlen sind nicht von Ausreißern getrieben: kein Bar hat Volumen 0, die
+Median-Beteiligung liegt bei 0,05% (p99: 1,6%), der Median-Aufschlag bei 2,31 bps.
+Über 820 Trades summiert sich das.
+
+**Modell:** Der zusätzliche Aufschlag wächst mit der **Wurzel** der
+Beteiligungsquote am Bar-Volumen — die Standardnäherung für Market Impact. Bei
+vierfacher Ordergröße verdoppelt sich der Aufschlag, er vervierfacht sich nicht.
+Ohne bekanntes Volumen fällt das Modell auf den konstanten Aufschlag zurück:
+eine Impact-Schätzung ohne Volumenbezug wäre geraten, und geraten ist schlechter
+als bescheiden.
+
+**Default bleibt `flat`.** Das größenabhängige Modell ist eine Näherung mit einem
+frei gewählten Parameter (`impact_bps=100`), der nicht kalibriert ist. Es als
+Default zu setzen hieße, einen geschätzten Wert wie eine Messung zu behandeln.
+Wählbar über `--fills size_aware`.
+
+**Konsequenz für Phase 5:** Der Research-Loop muss Kapazität mitbewerten. Eine
+Strategie, die bei 100k funktioniert und bei 10 Mio nicht, ist keine Kante,
+sondern eine Nische — und das gehört in die Registry.
+
+---
+
 ## ADR-014 — Positionsgrößen werden gegen Marktwerte gerechnet, nicht Einstände
 **Datum:** 2026-08-20
 
@@ -56,11 +137,10 @@ LLM-Allokator und dem Konto. Der Befund ist der empirische Beleg dafür, dass
 die Reihenfolge "Allokator schlägt vor, Risk-Engine entscheidet" richtig
 herum ist.
 
-**Offener Punkt:** Die realisierte Vola von 3,7% liegt weit unter dem Ziel von
-20%. Die Engine drosselt härter als beabsichtigt — 27.648 Eingriffe im Lauf,
-der Symbol-Cap von 25% greift bei praktisch jedem Bar. Bei nur zwei Symbolen
-ist dieser Default zu eng; er unterstellt ein breiteres Universum. Vor Phase 3
-kalibrieren, sonst misst man den LLM-Allokator durch eine viel zu enge Blende.
+**~~Offener Punkt~~ — erledigt, siehe ADR-016:** Die hier notierte Vermutung, die
+Engine drossele mit ihrem Symbol-Cap zu hart, hat sich als falsch erwiesen. Die
+3,7% waren ein Messartefakt einer zu 92,7% flachen Reihe; während das Portfolio
+positioniert ist, liegt die Vola bei 13,9%. Keine Kalibrierung nötig.
 
 ---
 

@@ -25,6 +25,19 @@ def _split(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+def _fill_model(name: str):
+    """Fill-Modell nach Namen. Siehe ADR-015 zur Wahl des Defaults."""
+    from qt.backtest.costs import FlatFillModel, SizeAwareFillModel
+
+    models = {"flat": FlatFillModel, "size_aware": SizeAwareFillModel}
+    try:
+        return models[name]()
+    except KeyError:
+        raise typer.BadParameter(
+            f"Unbekanntes Fill-Modell {name!r}. Verfuegbar: {sorted(models)}"
+        ) from None
+
+
 @data_app.command("pull")
 def data_pull(
     symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = DEFAULT_SYMBOLS,
@@ -86,6 +99,7 @@ def backtest(
     since: Annotated[str | None, typer.Option()] = None,
     until: Annotated[str | None, typer.Option()] = None,
     cash: Annotated[float, typer.Option(help="Startkapital")] = 100_000.0,
+    fills: Annotated[str, typer.Option(help="Fill-Modell: flat oder size_aware")] = "flat",
     out: Annotated[Path | None, typer.Option(help="Pfad fuer das Tearsheet-PNG")] = None,
 ) -> None:
     """Eine Strategie ueber gespeicherte Daten laufen lassen."""
@@ -110,7 +124,9 @@ def backtest(
             raise typer.Exit(code=1)
         bars[sym] = to_bars(sym, tf, df)
 
-    result = run_backtest(strategy_obj, bars, BacktestConfig(initial_cash=cash))
+    result = run_backtest(
+        strategy_obj, bars, BacktestConfig(initial_cash=cash), _fill_model(fills)
+    )
     print_summary(result)
     path = render(result, out)
     typer.echo(f"\nTearsheet: {path}")
@@ -202,6 +218,7 @@ def portfolio(
     until: Annotated[str | None, typer.Option()] = None,
     cash: Annotated[float, typer.Option(help="Startkapital")] = 100_000.0,
     allocate_every: Annotated[int, typer.Option(help="Allokations-Takt in Bars")] = 1,
+    fills: Annotated[str, typer.Option(help="Fill-Modell: flat oder size_aware")] = "flat",
     no_risk: Annotated[bool, typer.Option("--no-risk", help="Risk-Engine abschalten")] = False,
     out: Annotated[Path | None, typer.Option(help="Pfad fuer das Tearsheet-PNG")] = None,
 ) -> None:
@@ -233,6 +250,7 @@ def portfolio(
         risk=risk,
         cfg=BacktestConfig(initial_cash=cash),
         allocate_every=allocate_every,
+        fill_model=_fill_model(fills),
     )
 
     print_summary(result)
