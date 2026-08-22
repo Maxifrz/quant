@@ -5,6 +5,84 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-019 — Ohne API-Zugang gebaut, und das ist kein Provisorium
+**Datum:** 2026-08-20
+
+**Lage:** In der Bauumgebung gibt es keinen Anthropic-API-Schlüssel. Phase 3
+konnte deshalb vollständig gebaut und getestet, aber **nicht mit echten
+LLM-Antworten belegt** werden.
+
+**Konsequenz, die sich als Vorteil erwiesen hat:** Der gesamte Stapel läuft
+offline — `StubClient` für Tests, Antwort-Cache für wiederholte Läufe, und ein
+`LLMUnavailable`, das den Backtest nicht abbricht. Das ist genau die Bauform,
+die ADR-003 ohnehin verlangt (Reproduzierbarkeit) und die ein Live-System
+braucht (ein Modellausfall darf kein Systemausfall sein).
+
+Eine Testsuite, die einen Netzwerkzugang und einen Schlüssel braucht, wird
+irgendwann übersprungen. Diese hier nicht: 203 Tests laufen ohne beides.
+
+**Was offen bleibt:** Ob der LLM-Allokator die Baselines schlägt, ist
+ungeprüft. Der Stub gleichgewichtet, ist also per Konstruktion identisch zur
+Equal-Weight-Baseline. Sobald ein Schlüssel vorliegt:
+`ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines`.
+
+**Was das ausdrücklich nicht heißt:** Dass die Verdrahtung ungeprüft wäre. Ein
+ausfallender Client, ein halluziniertes Strategie-Label, ein Vorschlag mit
+Gewicht 1e9, eine Antwort die sich zu null summiert — all das ist getestet.
+Geprüft ist, dass ein schlechtes Modell das System nicht beschädigen kann.
+Ungeprüft ist nur, ob ein gutes Modell es verbessert.
+
+---
+
+## ADR-018 — Jeder Fehler des Allokators wird zu Gleichgewichtung
+**Datum:** 2026-08-20
+
+**Warum:** Ein Allokator, der bei einem Netzwerkfehler eine Exception wirft,
+reißt im Livebetrieb das ganze System mit — und zwar genau dann, wenn die
+Verbindung ohnehin schlecht ist. Ein Ausfall des Modells muss ein langweiliges
+Ereignis sein.
+
+**Konsequenz:** `LLMAllocator.allocate` fängt **jede** Exception, nicht nur
+`LLMUnavailable`, und gibt Gleichgewichtung zurück. Dasselbe gilt für einen
+Vorschlag, der sich zu null summiert: als Meinung wäre „gar nichts allokieren"
+legitim, aber von einer verstümmelten Antwort ist es nicht unterscheidbar.
+
+**Die Gefahr dabei, und ihr Gegenmittel:** Ein Allokator, der dauerhaft
+zurückfällt, ist heimlich eine Baseline — und wird für gut gehalten, weil er
+nie auffällt. Deshalb zählt `AllocatorTelemetry` die Rückfälle mit, und die
+Rückfallquote gehört in jeden Report. Eine Quote über null ist erklärungspflichtig.
+
+---
+
+## ADR-017 — Anonymisierung im Briefing ist eine Testsache, keine Vorsatzsache
+**Datum:** 2026-08-20
+
+**Warum:** Fragt man ein Sprachmodell „wie hättest du im März 2020 allokiert",
+weiß es die Antwort. Ein Briefing mit Datum, Asset- oder Strategienamen macht
+den Backtest des Allokators wertlos, **ohne dass irgendwo ein Bug ist**. Das ist
+die subtilste Fehlerquelle im ganzen Entwurf.
+
+**Konsequenz:** `qt.llm.briefing` erzeugt ausschließlich normalisierte
+Kennzahlen unter anonymen Labels. Nicht enthalten: Datumsangaben, Asset-Namen,
+Strategienamen, absolute Preise, der Kontostand. Fenster werden in **Bars**
+angegeben, nicht in Tagen — „30 Tage" wäre bereits eine Zeitangabe.
+
+Festgenagelt durch neun Tests, darunter einer, der prüft, dass ein Kontostand
+von 1.000 und einer von 50.000.000 dasselbe Briefing erzeugen.
+
+**Zwei Nebeneffekte derselben Bauweise:**
+- Zahlen werden auf drei Stellen gerundet. Exakte Fließkommawerte sind ein
+  Fingerabdruck, über den sich eine historische Periode identifizieren ließe.
+- Das Briefing ist für denselben Zustand bitgleich — Voraussetzung dafür, dass
+  der Antwort-Cache überhaupt trifft. Ein `datetime.now()` darin hätte einen
+  Cache mit 0% Trefferquote erzeugt, ohne dass etwas fehlschlägt.
+
+**Was das nicht löst:** Ein Einbruch von −50% bei verdreifachter Volatilität ist
+auch anonymisiert wiedererkennbar. Deshalb gilt unverändert: der Allokator wird
+primär am Forward-Paper-Trading gemessen, nicht am Backtest.
+
+---
+
 ## ADR-016 — Korrektur: die Risk-Engine drosselt nicht, die Kennzahl war irreführend
 **Datum:** 2026-08-20
 

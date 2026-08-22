@@ -102,37 +102,76 @@ ersten Bauphase und nicht ein späterer "Realismus-Layer".
 
 ---
 
-## Wo das LLM sitzt (Phase 3+)
+## Wo das LLM sitzt (Phase 3, gebaut)
+
+Die Kette vom Modell zum Konto, mit den Prüfstufen dazwischen:
+
+```
+AllocationContext                      (nur Point-in-Time-Daten)
+        ↓  qt.llm.briefing
+Blind Briefing                         anonym, datumsfrei, gerundet
+        ↓  qt.llm.cache                Treffer? → kein Modellaufruf
+        ↓  qt.llm.client               output_format legt das Schema fest
+AllocationProposal                     pydantic validiert ein zweites Mal
+        ↓  qt.portfolio.llm_allocator  erfundene Labels → verworfen
+        ↓                              jeder Fehler → Gleichgewichtung
+Allocation je Strategie
+        ↓  qt.portfolio.risk           beschneidet hart
+Zielgewichte je Symbol
+```
+
+Fünf Stufen, jede nimmt an, dass die vorherige Unsinn geliefert haben könnte.
 
 ### Blind Briefings
 
-Ein LLM kennt die Vergangenheit. Fragt man es "wie hättest du im März 2020 allokiert",
-weiß es die Antwort — und der Backtest des Allokators wird wertlos, ohne dass es
-irgendwo einen Bug gibt.
+Ein LLM kennt die Vergangenheit. Fragt man es "wie hättest du im März 2020
+allokiert", weiß es die Antwort — und der Backtest des Allokators wird wertlos,
+ohne dass es irgendwo einen Bug gibt.
 
-Gegenmittel: das Briefing enthält **keine Datumsangaben, keine Asset-Namen, keine
-News** — nur normalisierte Features unter anonymen Labels (`ASSET_1`, `STRAT_C`).
-Das LLM sieht ein Regime, keinen Zeitpunkt.
+Das Briefing enthält deshalb **keine Datumsangaben, keine Asset-Namen, keine
+Strategienamen, keinen Kontostand** — nur normalisierte Kennzahlen unter
+anonymen Labels (`STRAT_A`, `STRAT_B`). Fenster werden in Bars angegeben, nicht
+in Tagen; "30 Tage" wäre bereits eine Zeitangabe. Zahlen sind auf drei Stellen
+gerundet, weil exakte Fließkommawerte ein Fingerabdruck sind.
 
-Das entfernt das Problem nicht vollständig (markante Regime bleiben erkennbar).
-Deshalb gilt zusätzlich: **der Allokator wird primär am Forward-Paper-Trading
-gemessen, nicht am Backtest.**
+Das entfernt das Problem nicht vollständig — ein Einbruch von −50% bei
+verdreifachter Volatilität ist auch anonymisiert wiedererkennbar. Deshalb gilt
+zusätzlich: **der Allokator wird primär am Forward-Paper-Trading gemessen,
+nicht am Backtest.**
+
+Neun Tests halten das fest, darunter einer, der prüft, dass ein Kontostand von
+1.000 und einer von 50.000.000 dasselbe Briefing erzeugen.
 
 ### Reproduzierbarkeit
 
-Jeder LLM-Call wird gecached, Key = Hash(Prompt) + Modell-ID. Ein Backtest über den
-Allokator ist damit wiederholbar und beim zweiten Lauf kostenlos. Ohne Cache ist ein
-LLM-Backtest weder reproduzierbar noch bezahlbar.
+Jeder Aufruf wird gecacht, Key = Hash(Briefing + Systemprompt + Modell-ID +
+Effort + Schema-Version). Ein Backtest über den Allokator ist damit wiederholbar
+und beim zweiten Lauf kostenlos. Ohne Cache ist ein LLM-Backtest weder
+reproduzierbar noch bezahlbar.
+
+Dass das Briefing **bitgleich** sein muss, ist kein Nebenaspekt, sondern die
+Voraussetzung dafür: ein `datetime.now()` darin hätte einen Cache mit 0%
+Trefferquote erzeugt, ohne dass irgendetwas fehlschlägt.
+
+### Ausfall ist ein langweiliges Ereignis
+
+`LLMAllocator` fängt jede Exception und gibt Gleichgewichtung zurück. Ein
+Allokator, der bei einem Netzwerkfehler wirft, reißt im Livebetrieb das System
+mit — genau dann, wenn die Verbindung ohnehin schlecht ist.
+
+Die Kehrseite: ein Allokator, der dauerhaft zurückfällt, ist heimlich eine
+Baseline und wird für gut gehalten, weil er nie auffällt. Deshalb zählt
+`AllocatorTelemetry` die Rückfälle mit, und die Rückfallquote gehört in jeden
+Report.
 
 ### Das Gate
 
-Der LLM-Allokator geht nur in Produktion, wenn er **out-of-sample** die Baselines aus
-`qt.portfolio.baselines` schlägt: Equal-Weight, Vol-Parity, Best-Single-Strategy.
+Der LLM-Allokator geht nur weiter, wenn er **out-of-sample** die Baselines aus
+`qt.portfolio.baselines` schlägt: Equal-Weight, Vol-Parity, Best-Single. Alle
+drei, nicht die schwächste.
 
-Tut er das nicht, ist das ein Ergebnis und kein Fehler. Ein LLM, das nicht besser
-allokiert als Vol-Parity, gehört nicht in den Kreislauf.
-
----
+Tut er das nicht, ist das ein Ergebnis und kein Fehler. Ein LLM, das nicht
+besser allokiert als Vol-Parity, gehört nicht in den Kreislauf.
 
 ## Der Research-Loop (Phase 5)
 
@@ -188,7 +227,8 @@ Damit wird aus "wahrscheinlichster Verlauf" etwas Rechenbares.
 | `qt.report` | Tearsheets, Tagesreport |
 
 Gebaut sind aktuell: `core`, `data`, `features`, `strategy`, `backtest`,
-`portfolio`, `report`. Der Rest ist in `ROADMAP.md` beschrieben.
+`portfolio`, `llm`, `report`. Offen sind `sim`, `research`, `live` — siehe
+`ROADMAP.md`.
 
 ---
 

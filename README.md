@@ -9,8 +9,13 @@ Das LLM handelt nicht selbst. Es entscheidet *worüber* gehandelt wird, nicht *w
 ausgeführt wird. Vorschläge des LLM laufen immer durch eine deterministische
 Risk-Engine, die sie beschneiden kann.
 
-**Status:** Phase 0–2 fertig — Datenpipeline, Backtest-Engine, Portfolio-Schicht
-mit Walk-Forward, Baselines und Risk-Engine. Der LLM-Teil ist Phase 3 und 5.
+**Status:** Phase 0–3 gebaut — Datenpipeline, Backtest-Engine, Portfolio-Schicht
+mit Walk-Forward und Risk-Engine, und der LLM-Allokator samt Blind Briefing,
+Antwort-Cache und Gate.
+
+Der LLM-Teil ist **gebaut, aber in seiner Wirksamkeit ungeprüft**: in der
+Bauumgebung gab es keinen API-Schlüssel. Geprüft ist, dass ein schlechtes Modell
+nichts kaputtmachen kann — ungeprüft, ob ein gutes Modell etwas verbessert.
 Siehe [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
@@ -34,6 +39,9 @@ uv run qt wf --strategy trend --symbol BTC/USD --tf 4h --train 3000 --test 800 -
 # Portfolio aus mehreren Strategien unter einem Allokator
 uv run qt allocators
 uv run qt portfolio --strategies trend,meanrev --symbols BTC/USD,ETH/USD --tf 4h
+
+# LLM-Allokator gegen die Baselines antreten lassen (braucht API-Schluessel)
+ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines
 
 uv run pytest -q
 ```
@@ -74,9 +82,16 @@ schalten.
 
 **Das LLM kennt die Vergangenheit.** Fragt man es "wie hättest du im März 2020
 allokiert", weiß es die Antwort — der Backtest des Allokators wird wertlos, ohne dass
-irgendwo ein Bug ist. Gegenmittel ab Phase 3: Briefings ohne Datumsangaben, ohne
-Asset-Namen, nur normalisierte Features. Und: der Allokator wird primär am
+irgendwo ein Bug ist. Gegenmittel: das Briefing enthält keine Datumsangaben, keine
+Asset- oder Strategienamen, keinen Kontostand — nur normalisierte Kennzahlen unter
+anonymen Labels. Ein Test prüft, dass ein Kontostand von 1.000 und einer von
+50.000.000 dasselbe Briefing erzeugen. Und: der Allokator wird primär am
 Forward-Paper-Trading gemessen, nicht am Backtest.
+
+**Das Modell schlägt vor, es entscheidet nicht.** Fünf Stufen zwischen Antwort und
+Konto: Schema-Zwang, pydantic-Validierung, Verwerfen erfundener Labels, Rückfall auf
+Gleichgewichtung bei *jedem* Fehler, dann die Risk-Engine. Ein Ausfall des Modells
+ist ein langweiliges Ereignis, kein Systemausfall.
 
 ---
 

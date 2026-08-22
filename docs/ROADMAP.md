@@ -2,19 +2,24 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0, 1 und 2 sind fertig.** Nächster Schritt: **Phase 3 — LLM-Allokator.**
+> **Phase 0–3 sind gebaut.** Der LLM-Allokator läuft — aber **ungeprüft**, weil
+> in der Bauumgebung kein API-Schlüssel vorlag (ADR-019).
 >
-> Erster Handgriff: `src/qt/llm/briefing.py` — das Blind Briefing (ADR-003).
-> Regime-Features, rollierende Strategie-Performance und Risikobudget-Auslastung,
-> anonymisiert und datumsfrei.
+> Erster Handgriff, sobald ein Schlüssel da ist:
+> ```bash
+> ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines
+> ```
+> Das ist das Gate aus ADR-004. Es beantwortet die einzige Frage, die für den
+> Rest des Projekts zählt: **schlägt das Modell Equal-Weight und Vol-Parity
+> out-of-sample?** Ein Nein ist ein Ergebnis, kein Fehler — dann trägt die
+> LLM-Idee nicht, und Phase 4/5 stehen auf einem anderen Fundament.
 >
-> Danach `src/qt/llm/schemas.py` (pydantic-validierter Output) und
-> `src/qt/llm/cache.py` (Hash(Prompt) + Modell-ID → reproduzierbar und beim
-> zweiten Lauf kostenlos).
+> Achte im Ergebnis auf die **Rückfallquote** in der Telemetrie. Liegt sie über
+> null, hat der Allokator teilweise gleichgewichtet und ist insoweit heimlich
+> eine Baseline (ADR-018).
 >
-> **Nicht mehr nötig:** Die Risk-Engine zu kalibrieren stand hier als Vorarbeit.
-> Die Messung hat gezeigt, dass sie nicht zu scharf eingestellt ist — die
-> vermeintliche Drosselung war eine irreführende Kennzahl (ADR-016).
+> Danach: **Phase 4 — Pfad-Simulation.** Erster Handgriff dort
+> `src/qt/sim/bootstrap.py`, stationärer Block-Bootstrap.
 
 ---
 
@@ -110,18 +115,38 @@ Sie macht schlechte Strategien nicht gut, aber sie sorgt dafür, dass man einen
 Fehler überlebt. Das ist der empirische Beleg dafür, dass "Allokator schlägt
 vor, Risk-Engine entscheidet" richtig herum gebaut ist.
 
-## ⬜ Phase 3 — LLM-Allokator
+## 🟡 Phase 3 — LLM-Allokator (gebaut, Wirksamkeit ungeprüft)
 
-- `qt.llm.briefing` — Blind Briefing: Regime-Features, rollierende Strategie-Performance,
-  Risikobudget-Auslastung. Anonymisiert, datumsfrei (siehe ADR-003).
-- `qt.llm.schemas` — pydantic-validierter Output: `{strategy_id: weight}` + Begründung
-  + Confidence
-- `qt.llm.cache` — Cache über Hash(Prompt) + Modell-ID → Backtests reproduzierbar und
-  beim zweiten Lauf kostenlos
-- `qt.portfolio.llm_allocator` — Vorschlag → Risk-Clamps → Zielgewichte
+- `qt.llm.schemas` — pydantic-Modelle; erfundene Strategie-Labels werden
+  verworfen, nicht geraten
+- `qt.llm.briefing` — das Blind Briefing (ADR-017): anonym, datumsfrei,
+  gerundet, bitgleich für denselben Zustand
+- `qt.llm.cache` — Key aus Briefing + Systemprompt + Modell + Effort +
+  Schema-Version; macht Backtests reproduzierbar und beim zweiten Lauf gratis
+- `qt.llm.client` — strukturierte Ausgaben über `output_format`,
+  Prompt-Caching des eingefrorenen Systemprompts, `StubClient` für Läufe ohne
+  API-Zugang
+- `qt.portfolio.llm_allocator` — jeder Fehler wird zu Gleichgewichtung
+  (ADR-018), `AllocatorTelemetry` macht stille Rückfälle sichtbar
+- `qt.portfolio.gate` — der Out-of-Sample-Vergleich gegen die Baselines
 
-**Das Gate:** geht nur weiter, wenn der Allokator out-of-sample die Baselines schlägt.
-**Vorführen:** `uv run qt alloc --compare-baselines`
+**Vorführen:**
+```bash
+uv run qt alloc --compare-baselines            # das Gate aus ADR-004
+uv run qt allocators
+```
+
+### Was geprüft ist und was nicht
+
+**Geprüft** (31 Tests, keiner ruft ein Modell auf): dass ein *schlechtes* Modell
+das System nicht beschädigen kann. Ausfallender Client, halluziniertes Label,
+Gewicht 1e9, Antwort die sich zu null summiert, Cache mit falschem Modell — all
+das ist abgedeckt.
+
+**Nicht geprüft:** ob ein *gutes* Modell das System verbessert. In der
+Bauumgebung gab es keinen API-Schlüssel (ADR-019). Der `StubClient`
+gleichgewichtet und ist damit per Konstruktion identisch zur
+Equal-Weight-Baseline — er beweist die Verdrahtung, nicht die Idee.
 
 ## ⬜ Phase 4 — Pfad-Simulation
 

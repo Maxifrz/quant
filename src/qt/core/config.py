@@ -13,6 +13,14 @@ DATA_DIR = PROJECT_ROOT / "data"
 REPORT_DIR = PROJECT_ROOT / "reports"
 
 
+# Das Modell, das der Allokator ab Phase 3 befragt. Steht hier und nicht in
+# `qt.llm`, weil sowohl der Client als auch der Antwort-Cache es brauchen --
+# und zwei Stellen mit demselben Default laufen frueher oder spaeter
+# auseinander. Genau das waere hier teuer: der Cache wuerde dann die Antwort
+# eines anderen Modells liefern, ohne dass etwas fehlschlaegt.
+DEFAULT_LLM_MODEL = "claude-opus-5"
+
+
 class CostConfig(BaseModel):
     """Handelskosten. Defaults bewusst pessimistisch (siehe ARCHITECTURE.md).
 

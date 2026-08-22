@@ -270,6 +270,104 @@ def _default_risk():
     return RiskEngine()
 
 
+@app.command("alloc")
+def alloc(
+    strategies: Annotated[str, typer.Option(help="Strategienamen, kommagetrennt")] = "trend,meanrev",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD,ETH/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "4h",
+    candidate: Annotated[str, typer.Option(help="Zu pruefender Allokator: llm, oder ein Baseline-Name")] = "llm",
+    compare_baselines: Annotated[
+        bool, typer.Option("--compare-baselines", help="Gate-Lauf gegen die Baselines")
+    ] = False,
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 2000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 500,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 24,
+    allocate_every: Annotated[int, typer.Option(help="Allokations-Takt in Bars")] = 24,
+    model: Annotated[str, typer.Option(help="LLM-Modell")] = "claude-opus-5",
+    stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen den Stub laufen")] = False,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Das Gate aus ADR-004: schlaegt der Allokator die Baselines out-of-sample?
+
+    Ein Nein ist ein Ergebnis, kein Fehler. Ein Allokator, der Vol-Parity nicht
+    schlaegt, gehoert nicht in den Kreislauf.
+    """
+    from qt.data.store import read_bars, to_bars
+    from qt.llm.cache import LLMCache
+    from qt.llm.client import AllocatorClient, StubClient
+    from qt.portfolio import baselines
+    from qt.portfolio.gate import run_gate
+    from qt.portfolio.llm_allocator import LLMAllocator
+    from qt.portfolio.risk import RiskEngine
+    from qt.strategy.registry import get as get_strategy
+    from qt.strategy.registry import load_library
+
+    if not compare_baselines:
+        typer.echo(
+            "Ohne --compare-baselines gibt es nichts zu entscheiden.\n"
+            "Der Sinn dieses Befehls ist der Vergleich (ADR-004)."
+        )
+        raise typer.Exit(code=1)
+
+    load_library()
+    symbol_list = _split(symbols)
+    strategy_names = _split(strategies)
+
+    bars = {
+        (sym, tf): to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbol_list
+    }
+
+    def make_strategies():
+        return {name: get_strategy(name)(symbol_list, tf) for name in strategy_names}
+
+    allocator_telemetry = {}
+
+    def make_candidate():
+        if candidate != "llm":
+            return baselines.get(candidate)()
+        client = StubClient() if stub else AllocatorClient(model=model, cache=LLMCache(model=model))
+        instance = LLMAllocator(client=client)
+        allocator_telemetry["last"] = instance.telemetry
+        return instance
+
+    if candidate == "llm" and stub:
+        typer.echo(
+            "Hinweis: --stub gleichgewichtet und ist damit per Konstruktion "
+            "identisch zur Equal-Weight-Baseline.\n"
+            "Der Lauf prueft die Verdrahtung, nicht das Modell (ADR-019).\n"
+        )
+
+    result = run_gate(
+        candidate=make_candidate,
+        strategies=make_strategies,
+        bars=bars,
+        train_bars=train,
+        test_bars=test,
+        embargo_bars=embargo,
+        risk=RiskEngine,
+        allocate_every=allocate_every,
+        candidate_name=candidate,
+    )
+
+    typer.echo(result.table())
+    typer.echo()
+    typer.echo(result.verdict())
+
+    telemetry = allocator_telemetry.get("last")
+    if telemetry is not None and telemetry.calls:
+        typer.echo(f"\n  {telemetry.summary()}")
+        if telemetry.fallback_rate > 0:
+            typer.echo(
+                "  Achtung: eine Rueckfallquote ueber null heisst, der Allokator "
+                "hat teilweise\n  gleichgewichtet -- insoweit ist er heimlich eine "
+                "Baseline (ADR-018)."
+            )
+
+    raise typer.Exit(code=0 if result.passed() else 2)
+
+
 @app.command("allocators")
 def list_allocators() -> None:
     """Verfuegbare Allokatoren anzeigen."""
