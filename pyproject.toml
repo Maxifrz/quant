@@ -20,6 +20,11 @@ qt = "qt.cli:app"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Fuer qt.strategy.library.timesfm_strategy.TimesFMForecaster. Schwergewichtig
+# (zieht torch nach, mehrere GB inkl. Checkpoint) und deshalb keine
+# Standardabhaengigkeit -- ohne dieses Extra ist die Strategie ueber
+# NaiveForecaster trotzdem voll test- und lauffaehig. Siehe ADR-022.
+timesfm = ["timesfm[torch]>=2.0"]
 
 [build-system]
 requires = ["hatchling"]

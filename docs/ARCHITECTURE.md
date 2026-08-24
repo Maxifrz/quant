@@ -217,7 +217,7 @@ Damit wird aus "wahrscheinlichster Verlauf" etwas Rechenbares.
 | `qt.core` | Clock, Events, Typen, Config — die Begriffe, die alle teilen |
 | `qt.data` | Ingest (ccxt), Parquet-Store, Integritätsprüfung |
 | `qt.features` | Point-in-Time-Feature-Store, TA-Bausteine, Regime-Features |
-| `qt.strategy` | Strategie-Interface, Registry, Bibliothek |
+| `qt.strategy` | Strategie-Interface, Registry, Bibliothek (Trend, Mean-Reversion, TimesFM-Forecast) |
 | `qt.backtest` | Engine, SimBroker, Kosten, Metriken, Walk-Forward |
 | `qt.portfolio` | Baselines, LLM-Allokator, Risk-Engine |
 | `qt.sim` | Bootstrap, Regime-Modelle, Szenarien |

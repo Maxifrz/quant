@@ -5,6 +5,64 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-022 — TimesFM als optionale, offen als unzuverlaessig markierte Strategie
+**Datum:** 2026-08-24
+
+**Anlass:** Frage, ob ein Handelsbot auf Googles TimesFM
+(github.com/google-research/timesfm, ein vortrainiertes Zeitreihen-
+Foundation-Model) basieren koennte.
+
+**Antwort:** Als eine Strategie unter mehreren, nicht als Ersatz fuer das
+System. TimesFM liefert einen Renditen-Forecast, keine Positionsgroesse,
+keine Kostenabwaegung, kein Risikomanagement — das bleibt bei
+`qt.portfolio.risk` (ADR-002 gilt unveraendert).
+
+**Das ungeloeste Problem, offen dokumentiert statt verschwiegen:** Bei der
+LLM-Allokation laesst sich Lookahead durch Anonymisierung entschaerfen
+(ADR-003, ADR-017) — das Modell sieht Kennzahlen statt Rohdaten. Das
+funktioniert hier nicht: die Eingabe *ist* die Rohreihe (Log-Renditen), und
+TimesFM wurde auf einem grossen, nicht vollstaendig dokumentierten Korpus
+vortrainiert. Ob historische Krypto-Kursreihen darin enthalten waren, ist von
+aussen nicht feststellbar. Ein Backtest auf einem Zeitraum, der im
+Pretraining gewesen sein koennte, ist damit **strukturell nicht
+vertrauenswuerdig** — nicht wegen eines Bugs, sondern wegen der Natur eines
+Foundation Models. Es gibt dagegen keine Abhilfe im Code. Konsequenz: wie
+beim LLM-Allokator gilt **belastbar ist nur Forward-Paper-Trading, nicht der
+Backtest** — hier noch strikter, weil selbst die Milderung durch
+Anonymisierung fehlt.
+
+**Bauweise, dem Muster von Phase 3 folgend:**
+- `Forecaster`-Abstraktion (`qt.strategy.library.timesfm_strategy`), analog zu
+  `Allocator`/`AllocatorClient`: `TimesFMForecaster` (echt, lazy importiert) und
+  `NaiveForecaster` (Random-Walk-Vorhersage, fuer Tests und als ehrlicher
+  Platzhalter ohne Modellzugang).
+- Optionale Abhaengigkeit (`pyproject.toml` `[timesfm]`-Extra) — zieht `torch`
+  und ein mehrere-hundert-MB-Checkpoint nach, deshalb kein Standard-Paket.
+  Ohne installiertes `timesfm` ist die Strategie trotzdem voll test- und
+  lauffaehig (Default-Forecaster faellt beim ersten Aufruf sauber zurueck).
+- Kadenz statt Aufruf pro Bar (`forecast_every`): ein 200M-Parameter-Modell
+  braucht Sekunden pro Aufruf, bei zehntausenden Bars unbezahlbar. Dieselbe
+  Idee wie `allocate_every` in der Portfolio-Engine.
+- Ausfall ist ein langweiliges Ereignis (ADR-018-Muster): jeder Fehler des
+  Forecasters haelt das letzte Gewicht, mit **genau einer** Warnung statt
+  einer pro Bar oder einem Absturz. `ForecastTelemetry` zaehlt Aufrufe,
+  Cache-Treffer und Fehlschlaege — sonst faellt ein durchgehend ausfallender
+  Forecaster nicht auf.
+- Positionsgroesse skaliert mit der Konfidenz der Vorhersage (Quantil-
+  Spannweite), nicht binaer; Schwelle `min_edge_bps` default auf das Doppelte
+  der in ADR-009 gemessenen Round-Trip-Kosten gesetzt.
+
+**Ein Detail, das eine falsche Annahme verhindert hat:** Die Quantil-Spalten,
+die TimesFM zurueckgibt, sind in keiner mir vorliegenden Dokumentation
+erklaert. Nachgesehen im installierten Paketquellcode
+(`timesfm_2p5_torch.py`, `_compiled_decode`): Spalte 0 ist kein 10.-Perzentil
+wie naheliegend vermutet, sondern ein interner Rest ohne definierte
+Bedeutung fuer Aufrufer — die neun Quantile 0,1 bis 0,9 liegen in Spalte 1
+bis 9, Spalte 5 ist der Median. Ohne diesen Blick in den Code waere `q10`
+still falsch belegt gewesen.
+
+---
+
 ## ADR-021 — Der Allokator darf aussteigen
 **Datum:** 2026-08-22
 

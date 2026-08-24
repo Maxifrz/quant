@@ -110,6 +110,16 @@ LLM-Allokator und dem Konto.
 
 ---
 
+## Eine dritte, ausdruecklich unzuverlaessige Strategie
+
+`timesfm` bindet Googles TimesFM-Foundation-Model als Forecast-Strategie ein
+(`uv sync --extra timesfm`, sonst laeuft sie gegen einen Random-Walk-Platzhalter
+ohne Kante). Ihr Backtest ist **nicht vertrauenswuerdig**: das Modell wurde auf
+einem nicht dokumentierten Korpus vortrainiert, und ob historische Kursreihen
+darin enthalten waren, laesst sich von aussen nicht feststellen. Anders als beim
+LLM-Allokator gibt es hier keine Anonymisierung, die das mildern koennte — die
+Eingabe ist die Rohreihe. Siehe ADR-022.
+
 ## Zu den Baseline-Strategien
 
 `trend` (Donchian-Breakout) und `meanrev` (z-Score-Reversion) sind **Testinstrumente
