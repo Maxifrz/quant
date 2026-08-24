@@ -368,6 +368,140 @@ def alloc(
     raise typer.Exit(code=0 if result.passed() else 2)
 
 
+@app.command("sim")
+def sim(
+    symbol: Annotated[str, typer.Option(help="Ein Symbol")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "4h",
+    paths: Annotated[int, typer.Option(help="Anzahl simulierter Pfade")] = 10_000,
+    horizon: Annotated[int, typer.Option(help="Horizont in Bars")] = 180,
+    generator: Annotated[
+        str, typer.Option(help="stationary_bootstrap, iid_bootstrap, garch oder hmm")
+    ] = "stationary_bootstrap",
+    cvar_limit: Annotated[
+        float, typer.Option(help="CVaR-Grenze, negativ (z.B. -0.20 fuer -20%)")
+    ] = -0.20,
+    seed: Annotated[int, typer.Option(help="Zufallssaat -- gleicher Seed, gleiches Ergebnis")] = 0,
+    scenarios: Annotated[
+        bool, typer.Option("--scenarios", help="LLM Szenario-Priors setzen lassen")
+    ] = False,
+    stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen den Stub")] = False,
+    lookback: Annotated[int, typer.Option(help="Bars Historie fuer den Fit")] = 2000,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Pfad-Ensemble simulieren und die Allokation dazu bestimmen.
+
+    Beantwortet nicht "wo steht der Kurs", sondern "welches Exposure haelt
+    die Verlustgrenze ein und liefert dabei typischerweise am meisten".
+    """
+    import numpy as np
+
+    from qt.data.store import read_bars
+    from qt.sim.objective import optimise_allocation
+
+    df = read_bars(symbol, tf, start=since, end=until)
+    closes = df["close"].to_numpy()
+    if len(closes) < lookback + 2:
+        typer.echo(
+            f"Zu wenig Historie: {len(closes)} Bars, {lookback + 2} noetig. "
+            "Zeitraum erweitern oder --lookback senken."
+        )
+        raise typer.Exit(code=1)
+
+    returns = np.diff(closes[-(lookback + 1) :]) / closes[-(lookback + 1) : -1]
+
+    gen = _path_generator(generator)
+    typer.echo(f"Simuliere {paths:,} Pfade x {horizon} Bars mit {gen.describe()} ...")
+    try:
+        ensemble = gen.generate(returns, horizon=horizon, n_paths=paths, seed=seed)
+    except Exception as exc:
+        typer.echo(f"Simulation fehlgeschlagen ({type(exc).__name__}): {exc}")
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"  {ensemble.describe()}")
+
+    if scenarios:
+        ensemble = _apply_scenarios(ensemble, returns, tf, stub)
+
+    result = optimise_allocation(ensemble, cvar_limit=cvar_limit)
+
+    typer.echo("\n  Exposure   Median    CVaR    P(Verlust)  zulaessig")
+    typer.echo("  " + "-" * 52)
+    for score in result.scores:
+        mark = " <" if score.exposure == result.exposure else ""
+        ok = "ja " if score.feasible else "NEIN"
+        typer.echo(
+            f"  {score.exposure:>7.0%}  {score.median_return:>8.2%} "
+            f"{score.cvar:>8.2%}  {score.prob_loss:>9.1%}  {ok:>8}{mark}"
+        )
+
+    typer.echo(f"\n  CVaR-Grenze: {result.cvar_limit:.0%}")
+    typer.echo(f"  Ergebnis: {result.describe()}")
+    typer.echo(
+        "\n  Gehandelt wird die Verteilung, nicht ein Pfad: das Ergebnis ist das\n"
+        "  Exposure, das ueber alle simulierten Zukuenfte hinweg die Verlustgrenze\n"
+        "  haelt -- keine Prognose, wo der Kurs stehen wird."
+    )
+
+
+def _path_generator(name: str):
+    """Generator nach Namen. Import erst hier, damit `qt --help` schnell bleibt."""
+    from qt.sim.bootstrap import IIDBootstrap, StationaryBootstrap
+
+    builders = {
+        "stationary_bootstrap": StationaryBootstrap,
+        "iid_bootstrap": IIDBootstrap,
+    }
+    try:
+        from qt.sim.regimes import GARCHPaths, HMMRegimePaths
+
+        builders["garch"] = GARCHPaths
+        builders["hmm"] = HMMRegimePaths
+    except ImportError:
+        pass
+
+    try:
+        return builders[name]()
+    except KeyError:
+        raise typer.BadParameter(
+            f"Unbekannter Generator {name!r}. Verfuegbar: {sorted(builders)}"
+        ) from None
+
+
+def _apply_scenarios(ensemble, returns, tf: str, stub: bool):
+    """LLM Szenario-Priors setzen lassen und das Ensemble umgewichten.
+
+    Faellt bei jedem Problem auf das unveraenderte Ensemble zurueck -- ein
+    Ausfall des Modells darf die Simulation nicht wertlos machen, er macht
+    sie nur meinungslos.
+    """
+    from qt.llm.briefing import build_scenario_briefing
+    from qt.llm.cache import LLMCache
+    from qt.llm.client import LLMUnavailable, ScenarioClient, StubScenarioClient
+    from qt.sim.scenarios import apply_priors, from_proposal
+
+    client = StubScenarioClient() if stub else ScenarioClient(cache=LLMCache())
+    briefing = build_scenario_briefing(returns, ensemble, tf)
+
+    try:
+        proposal = client.propose(briefing)
+    except LLMUnavailable as exc:
+        typer.echo(f"\n  Szenario-Priors uebersprungen: {exc}")
+        return ensemble
+
+    priors, translation = from_proposal(proposal)
+    typer.echo(f"\n  Szenario: {proposal.regime or 'ohne Einordnung'}")
+    typer.echo(f"  {translation.summary()}")
+    if proposal.reasoning:
+        typer.echo(f"  {proposal.reasoning[:200]}")
+
+    tilted, tilt = apply_priors(ensemble, priors)
+    typer.echo(f"  {tilt.summary()}")
+    if priors:
+        typer.echo(f"  umgewichtet: {tilted.describe()}")
+    return tilted
+
+
 @app.command("allocators")
 def list_allocators() -> None:
     """Verfuegbare Allokatoren anzeigen."""

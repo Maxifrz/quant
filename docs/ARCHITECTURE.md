@@ -189,24 +189,68 @@ Deshalb ab Tag 1:
 
 ---
 
-## Pfad-Simulation (Phase 4)
+## Pfad-Simulation (Phase 4, gebaut)
 
-Die ursprüngliche Idee war, "den wahrscheinlichsten Verlauf zu traden". Genau so
-formuliert ist das der klassische Weg, Geld zu verlieren: ein einzelner prognostizierter
-Pfad ist eine Wette, keine Kante.
+Die ursprüngliche Projektidee war, "den wahrscheinlichsten Verlauf zu traden".
+Genau so formuliert ist das der klassische Weg, Geld zu verlieren: ein einzelner
+prognostizierter Pfad ist eine Wette, keine Kante. Wer ihn trifft, hatte Glück;
+wer ihn verfehlt, hat nichts, worauf er zurückfällt.
 
-Die tragfähige Version derselben Idee: ein **Ensemble** von Pfaden simulieren und eine
-Allokation wählen, die über das ganze Ensemble hinweg gut abschneidet.
+Die tragfähige Version derselben Idee: ein **Ensemble** möglicher Pfade erzeugen
+und die Allokation wählen, die über das ganze Ensemble hinweg gut abschneidet.
 
-- Stationärer Block-Bootstrap (erhält Autokorrelation und Vol-Clustering)
-- GARCH für Volatilitätspfade
-- HMM für Regime-Wechsel
-- Das LLM darf **Szenario-Priors** setzen ("Vol-Spike-Regime auf 30% gewichten"),
-  die das Ensemble umgewichten — es prognostiziert keinen Preis, es gewichtet
-  Möglichkeiten.
-- Zielfunktion: Median-Rendite unter CVaR-Nebenbedingung.
+```
+historische Renditen
+        ↓  qt.sim.bootstrap / qt.sim.regimes
+PathEnsemble                    viele mögliche Zukünfte, gleichgewichtet
+        ↓  qt.sim.scenarios     LLM gewichtet Möglichkeiten (kein Preis!)
+PathEnsemble                    umgewichtet, Verzerrung gedeckelt
+        ↓  qt.sim.objective
+Exposure                        Median maximiert unter CVaR-Grenze
+```
 
-Damit wird aus "wahrscheinlichster Verlauf" etwas Rechenbares.
+`PathEnsemble` hat bewusst **keine** Methode, die einen einzelnen "besten" Pfad
+zurückgibt. Das Interface lässt diese Antwort gar nicht erst zu.
+
+### Die vier Generatoren
+
+| Generator | Was er erhält | Grenze |
+|---|---|---|
+| `stationary_bootstrap` | Autokorrelation, Vol-Clustering | nur Regime, die vorkamen |
+| `iid_bootstrap` | nur die Randverteilung | Kontrast, kein Produktivmodell |
+| `garch` | Vola als Prozess mit Persistenz | Parametrisch, Verteilungsannahme |
+| `hmm` | diskrete Regimewechsel | Zustandszahl ist eine Setzung |
+
+Der i.i.d.-Bootstrap steht nicht da, weil er gut wäre, sondern damit "erhält
+Vol-Clustering" eine gemessene Aussage ist und keine Behauptung.
+
+### Die Grenze bezieht sich auf den Drawdown
+
+Ein Konto wird nicht am Ende des Horizonts liquidiert, sondern unterwegs. Ein
+Pfad, der zwischenzeitlich 60% verliert und bei −10% endet, ist real ein
+Totalschaden — die Endrendite sieht ihn nicht.
+
+Dazu kommt ein empirischer Grund (ADR-025): Block- und i.i.d.-Resampling
+unterscheiden sich beim kurzfristigen Drawdown deutlich, beim 5%-Quantil der
+Endrendite über lange Horizonte praktisch gar nicht. Eine Grenze auf der
+Endrendite misst also ausgerechnet die Größe, bei der die Modellwahl folgenlos
+bleibt.
+
+### Szenario-Priors: gewichten statt prognostizieren
+
+Ein Sprachmodell nach einem Kursziel zu fragen, wäre die schlechteste denkbare
+Verwendung: eine Punktprognose ohne Fehlerbalken aus einem Modell, das keine
+Preisreihen rechnet.
+
+Was es kann: sagen, welche *Art* von Verlauf gerade wahrscheinlicher ist. Ein
+Prior benennt eine messbare Pfad-Eigenschaft (`volatility`, `terminal_return`,
+`max_drawdown`), eine Richtung und eine Stärke — das Schema ist so geschnitten,
+dass eine Preisprognose gar nicht ausdrückbar ist.
+
+Drei Eigenschaften, die das gegenüber einer direkten Prognose hat: der Prior
+kann nicht ins Unendliche danebenliegen (er verschiebt nur Gewichte innerhalb
+eines Ensembles aus echten historischen Eigenschaften), er ist beschränkbar
+(`max_tilt`), und er ist im Nachhinein prüfbar.
 
 ---
 
@@ -220,14 +264,14 @@ Damit wird aus "wahrscheinlichster Verlauf" etwas Rechenbares.
 | `qt.strategy` | Strategie-Interface, Registry, Bibliothek (Trend, Mean-Reversion, TimesFM-Forecast) |
 | `qt.backtest` | Engine, SimBroker, Kosten, Metriken, Walk-Forward |
 | `qt.portfolio` | Baselines, LLM-Allokator, Risk-Engine |
-| `qt.sim` | Bootstrap, Regime-Modelle, Szenarien |
+| `qt.sim` | Pfad-Ensembles: Bootstrap, GARCH/HMM, Szenario-Priors, CVaR-Zielfunktion |
 | `qt.research` | Strategie-Generator, Sandbox, Screening, Registry |
 | `qt.llm` | Client, Briefing-Bau, Output-Schemas, Cache |
 | `qt.live` | Runner, CCXT-Broker, Reconciliation, Kill-Switch |
 | `qt.report` | Tearsheets, Tagesreport |
 
 Gebaut sind aktuell: `core`, `data`, `features`, `strategy`, `backtest`,
-`portfolio`, `llm`, `report`. Offen sind `sim`, `research`, `live` — siehe
+`portfolio`, `llm`, `sim`, `report`. Offen sind `research` und `live` — siehe
 `ROADMAP.md`.
 
 ---

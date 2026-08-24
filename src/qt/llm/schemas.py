@@ -109,3 +109,64 @@ class AllocationProposal(BaseModel):
         """Labels, die das Modell erfunden hat. Gehoeren in den Report."""
         known = set(known_ids)
         return sorted({e.strategy_id for e in self.allocations if e.strategy_id not in known})
+
+
+# ---------------------------------------------------------------------------
+# Szenario-Priors (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class ScenarioPriorProposal(BaseModel):
+    """Eine Lageeinschaetzung, uebersetzt in eine Gewichtsverschiebung.
+
+    Bewusst so eng geschnitten, dass eine **Preisprognose gar nicht
+    ausdrueckbar** ist: das Modell kann nur sagen, welche Eigenschaft eines
+    Pfades wahrscheinlicher wird und wie stark -- keinen Kurs, keinen
+    Zeitpunkt, keine Richtung des Marktes im ueblichen Sinn.
+
+    Das ist keine Bequemlichkeit, sondern der Zweck. Ein Sprachmodell nach
+    einem Kursziel zu fragen, ergaebe eine unpruefbare Punktprognose aus
+    einem Modell, das keine Preisreihen rechnet. Eine Aussage ueber die
+    *Verteilung* moeglicher Zukuenfte kann es dagegen sinnvoll treffen -- und
+    sie ist als Umgewichtung eines Ensembles darstellbar und im Nachhinein
+    ueberpruefbar.
+    """
+
+    feature: str = Field(
+        description=(
+            "Eigenschaft eines Pfades: 'volatility', 'terminal_return' oder "
+            "'max_drawdown'."
+        )
+    )
+    direction: str = Field(description="'higher' oder 'lower'.")
+    strength: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Ueberzeugung, nicht Verschiebung. 0 = keine Meinung.",
+    )
+    reason: str = Field(
+        default="", max_length=280, description="Ein Satz, worauf sich das stuetzt."
+    )
+
+    @field_validator("strength")
+    @classmethod
+    def finite_strength(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("strength muss endlich sein.")
+        return value
+
+
+class ScenarioProposal(BaseModel):
+    """Alle Priors eines Durchgangs plus die Einordnung dahinter."""
+
+    priors: list[ScenarioPriorProposal] = Field(
+        default_factory=list,
+        max_length=6,
+        description=(
+            "Leer ist eine gueltige Antwort: wenn nichts fuer eine "
+            "Verschiebung spricht, ist Gleichgewichtung richtig."
+        ),
+    )
+    regime: str = Field(default="", max_length=120)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    reasoning: str = Field(default="", max_length=2000)

@@ -5,6 +5,149 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-024 — Szenario-Priors gewichten Möglichkeiten, sie prognostizieren nichts
+**Datum:** 2026-08-24
+
+**Die Frage, die dahinter steht:** Was kann ein Sprachmodell bei einer
+Marktsimulation überhaupt beitragen?
+
+**Was es nicht kann:** einen Preis nennen. Das wäre eine Punktprognose ohne
+Fehlerbalken, aus einem Modell, das keine Preisreihen rechnet. Selbst wenn die
+Zahl gut klänge, wäre sie unprüfbar.
+
+**Was es kann:** eine Lageeinschätzung, die sich in Gewichte übersetzen lässt.
+Nicht „BTC steht in 30 Tagen bei X", sondern „das Marktbild spricht eher für
+erhöhte Volatilität als für Beruhigung". Das ist eine Aussage über die
+*Verteilung* möglicher Zukünfte — und genau die ist als Umgewichtung eines
+Pfad-Ensembles darstellbar.
+
+**Formal:** Ein Prior benennt eine messbare Pfad-Eigenschaft (`volatility`,
+`terminal_return`, `max_drawdown`), eine Richtung und eine Stärke. Das
+`ScenarioPriorProposal`-Schema ist so eng geschnitten, dass eine Preisprognose
+**gar nicht ausdrückbar ist** — das ist der Zweck, nicht eine Bequemlichkeit.
+
+Drei Eigenschaften, die diese Bauform gegenüber einer direkten Prognose hat:
+1. **Sie kann nicht ins Unendliche danebenliegen.** Ein Prior verschiebt
+   Gewichte innerhalb eines Ensembles aus echten historischen Eigenschaften.
+   Einen Pfad, den die Simulation nicht erzeugt hat, kann kein Prior herbeireden.
+2. **Sie ist beschränkbar.** `max_tilt` (Default 5,0) begrenzt die Verzerrung.
+   Eine Punktprognose hat keine solche Bremse.
+3. **Sie ist prüfbar.** Ein Prior sagt vorher, welche Region des Ensembles
+   wahrscheinlicher wird. Ob das eintrat, lässt sich hinterher messen.
+
+**Der Stub schlägt bewusst keine Priors vor.** Der neutrale Zustand ist das
+gleichgewichtete Ensemble. Ein Stub, der Priors erfände, würde in Läufen ohne
+API-Zugang eine Verzerrung einbauen, die im Ergebnis wie eine
+Modellentscheidung aussähe.
+
+**Halluzinierte Eigenschaften werden verworfen, nicht geraten** — dieselbe
+Haltung wie bei erfundenen Strategie-Labels (ADR-018). `TranslationReport`
+zählt die Ablehnungen mit: ohne diese Zahlen sieht ein Modell, dessen
+Vorschläge alle im Filter hängenbleiben, aus wie ein zurückhaltendes Modell.
+
+---
+
+## ADR-026 — Ruin ist absorbierend
+**Datum:** 2026-08-24
+
+**Der Fehler:** `PathEnsemble.terminal_returns()` und `equity_curves()`
+verketteten mit `prod(1 + r)` ohne Untergrenze. Zwei Bars mit −150% ergaben
+damit (−0,5)·(−0,5) = +0,25 — gemeldet als **−75% statt −100%**, mit einer
+Kapitalkurve `[1, −0,5, +0,25]`: negatives Kapital, das sich rechnerisch
+erholt.
+
+**Warum das ernst ist:** Es trifft ausgerechnet die schlimmsten Pfade — also
+genau die, auf die es beim CVaR ankommt — und es beschönigt sie. Das ist die
+eine Richtung, in die eine Risikorechnung nicht danebenliegen darf. Bei
+gehebeltem Exposure entstehen solche Pfade regelmäßig.
+
+**Die Korrektur:** `growth_factors()` schneidet den Wachstumsfaktor bei null
+ab; `terminal_returns` und `equity_curves` bauen darauf auf. Eine Kurve, die
+null erreicht, bleibt dort.
+
+Gefunden hat das ein Agent, der beim Bau der Zielfunktion gegen dieselbe
+Schnittstelle arbeitete und das Verhalten nachrechnete, statt es anzunehmen.
+
+---
+
+## ADR-025 — Die CVaR-Grenze bezieht sich auf den Drawdown, nicht auf die Endrendite
+**Datum:** 2026-08-24
+
+**Anlass:** Ein Messergebnis beim Bau des Block-Bootstraps, das gegen die
+Erwartung ausfiel.
+
+Die übliche Begründung für einen Block-Bootstrap lautet: ein i.i.d.-Resampling
+zerstört das Volatilitäts-Clustering und **unterschätzt damit die Tails**. Die
+Messung zeigt, dass das so pauschal nicht stimmt:
+
+| Kennzahl (Historie mit Regime-Clustering, 4.000 Pfade × 250 Bars) | stationär | i.i.d. |
+|---|---|---|
+| Median schlimmster 20-Bar-Verlust | −25,0% | −22,0% |
+| Median Max-Drawdown | −32,7% | −34,6% |
+| **p05 Endrendite** | **−50,5%** | **−51,1%** |
+
+Über kurze Fenster schlägt das Clustering klar durch. Beim 5%-Quantil der
+**End**rendite über 250 Bars ist der Effekt verschwunden, sogar minimal
+umgekehrt — die Vol-Mischung eines Pfades mittelt sich über viele Bars wieder
+aus, und ein Pfad mit vielen ruhigen Blöcken verliert zugleich weniger
+Volatilitäts-Drag.
+
+**Die Konsequenz:** Eine CVaR-Grenze auf der Endrendite misst ausgerechnet die
+Größe, bei der das Vol-Clustering — der ganze Grund für den Block-Bootstrap —
+keinen Unterschied macht. Sie wäre nicht falsch, aber sie ließe die Modellwahl
+folgenlos.
+
+**Dazu der praktische Grund:** Ein Konto wird nicht am Ende des Horizonts
+liquidiert, sondern unterwegs. Ein Pfad, der zwischenzeitlich 60% verliert und
+bei −10% endet, ist real ein Totalschaden (Margin Call, Kill-Switch,
+aufgegebener Anleger). Die Endrendite sieht ihn nicht.
+
+**Default ist deshalb `risk_basis="drawdown"`.** Messbarer Unterschied auf
+echten Daten (BTC/USD 4h, 8.000 Pfade, Horizont 180, Grenze −20%):
+
+| Basis | Exposure | Endrendite-CVaR | Drawdown-CVaR |
+|---|---|---|---|
+| `terminal` | 90% | −19,03% | **−25,22%** |
+| `drawdown` | 65% | −13,97% | −18,81% |
+
+Bei 90% Exposure verlieren die schlimmsten 5% der Pfade zwischenzeitlich über
+25% — ein Risiko, das die Endrendite-Grenze nicht sah. Beide Zahlen stehen
+immer im Ergebnis, damit sich hinterher beantworten lässt, wie es unter der
+anderen Annahme ausgefallen wäre.
+
+---
+
+## ADR-023 — Die Tilt-Begrenzung skaliert die Stärke, sie kappt keine Gewichte
+**Datum:** 2026-08-24
+
+**Der Fehler, den ich beim Bauen gemacht habe:** `max_tilt` war zunächst als
+Deckel auf die Gewichte umgesetzt — der Boden wurde auf `max/max_tilt`
+angehoben. Das klang vernünftig (erhält die Rangfolge, drängt nur die Extreme
+zusammen) und war falsch.
+
+**Warum:** Bei einem Prior der Stärke 0,8 und z-Scores über ±4 spannen die
+Rohgewichte einen Faktor von rund 600. Ein Deckel bei 5 trifft damit *fast
+alle* Pfade und setzt sie auf exakt denselben Wert. Die Verteilung war
+praktisch wieder gleichgewichtet — während der Report korrekt „Gewichtsspanne
+5.00x" meldete.
+
+**Wie es auffiel:** Ein Vol-Prior mit Stärke 0,8 bewegte die Quantile des
+Ensembles um **null** Prozentpunkte (p05 blieb bei −19,3%). Das sah aus wie
+„der Prior war eben schwach", nicht wie ein Fehler.
+
+**Die Korrektur:** Der gesamte Tilt wird im Logarithmus linear
+heruntergerechnet, bis die Spanne passt. Das erhält die *Form* der Gewichtung
+vollständig und schwächt nur ihre Ausprägung ab. Danach verschieben Priors die
+Verteilung sichtbar und monoton in der Stärke.
+
+**Zu lernen:** Eine Begrenzung, die ihre eigene Kennzahl erfüllt und trotzdem
+wirkungslos ist, ist die unangenehmste Sorte Fehler — sie meldet Erfolg. Der
+Test dazu (`test_tilt_limit_scales_rather_than_ties_paths_together`) prüft
+deshalb nicht die gemeldete Spanne, sondern dass die Gewichte noch
+unterscheidbar sind.
+
+---
+
 ## ADR-022 — TimesFM als optionale, offen als unzuverlaessig markierte Strategie
 **Datum:** 2026-08-24
 

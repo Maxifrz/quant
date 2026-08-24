@@ -164,8 +164,20 @@ class LLMCache:
 
     # -- Lesen und Schreiben ------------------------------------------------
 
-    def get(self, key: str) -> AllocationProposal | None:
+    def get(
+        self, key: str, model: type[BaseModel] = AllocationProposal
+    ) -> BaseModel | None:
         """Eintrag lesen, oder `None` wenn es keinen brauchbaren gibt.
+
+        `model` gibt an, gegen welches Schema der Eintrag validiert wird --
+        Default ist `AllocationProposal`, damit bestehende Aufrufer
+        unveraendert bleiben. Phase 4 legt mit `ScenarioProposal` ein zweites
+        Schema in denselben Cache; getrennt gehalten werden die beiden nicht
+        durch das Schema, sondern durch den Key (der Aufrufer nimmt `kind`
+        mit auf). Waere es umgekehrt, laege ein Szenario-Eintrag unter dem
+        Key einer Allokationsfrage -- und die Validierung wuerde ihn zwar
+        abweisen, aber erst nachdem er den richtigen Eintrag ueberschrieben
+        hat.
 
         Jeder denkbare Defekt -- fehlende Datei, Muell-Bytes, leere Datei,
         gueltiges JSON mit falschen Feldern, Eintrag eines anderen Modells --
@@ -199,11 +211,11 @@ class LLMCache:
             return self._broken()
 
         try:
-            return self._hit(AllocationProposal.model_validate(entry["value"]))
+            return self._hit(model.model_validate(entry["value"]))
         except (ValidationError, KeyError, TypeError):
             return self._broken()
 
-    def put(self, key: str, value: AllocationProposal) -> None:
+    def put(self, key: str, value: BaseModel) -> None:
         """Eintrag atomar schreiben: erst temporaer, dann `os.replace`.
 
         Wuerde direkt in die Zieldatei geschrieben, hinterliesse ein zur

@@ -13,6 +13,9 @@ dependencies = [
     "typer>=0.12",
     "matplotlib>=3.8",
     "anthropic>=0.40",
+    "scipy>=1.11",
+    "arch>=6.3",
+    "hmmlearn>=0.3",
 ]
 
 [project.scripts]
@@ -36,3 +39,6 @@ packages = ["src/qt"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+markers = [
+    "slow: Test mit spuerbarer Laufzeit (Simulationen in Produktionsgroesse).",
+]

@@ -9,9 +9,9 @@ Das LLM handelt nicht selbst. Es entscheidet *worüber* gehandelt wird, nicht *w
 ausgeführt wird. Vorschläge des LLM laufen immer durch eine deterministische
 Risk-Engine, die sie beschneiden kann.
 
-**Status:** Phase 0–3 gebaut — Datenpipeline, Backtest-Engine, Portfolio-Schicht
-mit Walk-Forward und Risk-Engine, und der LLM-Allokator samt Blind Briefing,
-Antwort-Cache und Gate.
+**Status:** Phase 0–4 gebaut — Datenpipeline, Backtest-Engine, Portfolio-Schicht
+mit Walk-Forward und Risk-Engine, der LLM-Allokator samt Blind Briefing,
+Antwort-Cache und Gate, sowie die Pfad-Simulation mit CVaR-Zielfunktion.
 
 Der LLM-Teil ist **gebaut, aber in seiner Wirksamkeit ungeprüft**: in der
 Bauumgebung gab es keinen API-Schlüssel. Geprüft ist, dass ein schlechtes Modell
@@ -42,6 +42,10 @@ uv run qt portfolio --strategies trend,meanrev --symbols BTC/USD,ETH/USD --tf 4h
 
 # LLM-Allokator gegen die Baselines antreten lassen (braucht API-Schluessel)
 ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines
+
+# Pfad-Ensemble simulieren und das zulaessige Exposure bestimmen
+uv run qt sim --symbol BTC/USD --tf 4h --paths 10000 --horizon 180
+uv run qt sim --generator garch --until 2024-12-31
 
 uv run pytest -q
 ```
@@ -107,6 +111,28 @@ Dieselben Strategien, dieselben Daten — der einzige Unterschied ist die Risiko
 Sie macht schlechte Strategien nicht gut. Sie sorgt dafür, dass man einen Fehler
 überlebt und korrigieren kann. Genau diese Schicht steht ab Phase 3 zwischen dem
 LLM-Allokator und dem Konto.
+
+---
+
+## Aus "wahrscheinlichster Verlauf" wird eine Verteilung
+
+Die ursprüngliche Idee war, den wahrscheinlichsten Kursverlauf zu prognostizieren
+und darauf zu setzen. Das ist der klassische Weg, Geld zu verlieren — ein
+einzelner Pfad ist eine Wette, keine Kante.
+
+`qt sim` macht daraus etwas Rechenbares: es erzeugt tausende mögliche Zukünfte
+(Block-Bootstrap, GARCH oder HMM) und bestimmt das Exposure, das über das ganze
+Ensemble hinweg die Verlustgrenze hält und dabei typischerweise am meisten
+liefert. **"Kein Trade" ist ein mögliches Ergebnis** — und auf den letzten 2000
+BTC-Bars (−44,8%) ist es das tatsächliche.
+
+Die Grenze bezieht sich auf den zwischenzeitlichen Drawdown, nicht auf die
+Endrendite: ein Konto wird unterwegs liquidiert, nicht am Ende des Horizonts
+(ADR-025).
+
+Ein LLM darf hier Szenario-Priors setzen — es **gewichtet Möglichkeiten, es
+prognostiziert keine Preise**. Das Schema ist so geschnitten, dass eine
+Preisprognose gar nicht ausdrückbar ist (ADR-024).
 
 ---
 

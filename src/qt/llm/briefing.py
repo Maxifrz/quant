@@ -235,3 +235,68 @@ def _round(value: float | None) -> float | None:
     if value is None or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     return round(float(value), ROUND)
+
+
+# ---------------------------------------------------------------------------
+# Szenario-Briefing (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+def build_scenario_briefing(returns: np.ndarray, ensemble, timeframe: str) -> str:
+    """Blind Briefing fuer die Szenario-Einschaetzung.
+
+    Denselben Regeln unterworfen wie das Allokations-Briefing (ADR-017):
+    keine Datumsangaben, keine Asset-Namen, keine absoluten Preise, Fenster
+    in Bars statt in Tagen, Zahlen gerundet, Schluessel sortiert.
+
+    Was zusaetzlich drinsteht, ist die **Beschreibung des simulierten
+    Ensembles** -- das Modell soll wissen, was die Simulation ohnehin schon
+    fuer moeglich haelt, bevor es Gewicht verschiebt. Ohne diesen Bezugspunkt
+    wuesste es nicht, ob "erhoehte Volatilitaet" gegenueber dem Ensemble eine
+    Verschiebung waere oder bereits dessen Normalfall.
+    """
+    values = np.asarray(returns, dtype=float)
+    values = values[np.isfinite(values)]
+
+    recent: dict[str, dict | None] = {}
+    for size in WINDOWS:
+        if len(values) < size:
+            recent[str(size)] = None
+            continue
+        chunk = values[-size:]
+        recent[str(size)] = {
+            "return": _round(float(np.prod(1 + chunk) - 1)),
+            "vol_annualised": _round(
+                float(chunk.std(ddof=1) * math.sqrt(bars_per_year(timeframe)))
+            ),
+            "hit_rate": _round(float((chunk > 0).mean())),
+        }
+
+    # Vola des juengsten Fensters relativ zum laengsten -- die eine Zahl, die
+    # ein Regime am ehesten beschreibt, ohne einen Zeitpunkt zu verraten.
+    vol_ratio = None
+    short, long = recent.get(str(WINDOWS[0])), recent.get(str(WINDOWS[-1]))
+    if short and long and long["vol_annualised"]:
+        vol_ratio = _round(short["vol_annualised"] / long["vol_annualised"])
+
+    terminal = ensemble.terminal_returns()
+    payload = {
+        "recent_market": recent,
+        "vol_short_vs_long": vol_ratio,
+        "simulated_ensemble": {
+            "n_paths": ensemble.n_paths,
+            "horizon_bars": ensemble.horizon,
+            "terminal_return_p05": _round(float(ensemble.quantile(0.05))),
+            "terminal_return_median": _round(float(ensemble.quantile(0.5))),
+            "terminal_return_p95": _round(float(ensemble.quantile(0.95))),
+            "path_vol_median": _round(float(np.median(ensemble.paths.std(axis=1, ddof=1)))),
+            "prob_loss": _round(float((terminal < 0).mean())),
+        },
+        "windows": list(WINDOWS),
+        "note": (
+            "Zeitraum, Maerkte und absolute Preise sind bewusst nicht "
+            "angegeben. Verschiebe Gewicht zwischen simulierten Pfaden; "
+            "prognostiziere keinen Preis. Keine Priors sind eine gute Antwort."
+        ),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ": "))

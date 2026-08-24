@@ -2,24 +2,22 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0–3 sind gebaut.** Der LLM-Allokator läuft — aber **ungeprüft**, weil
-> in der Bauumgebung kein API-Schlüssel vorlag (ADR-019).
+> **Phase 0–4 sind gebaut.** Nächster Schritt: **Phase 5 — Research-Loop.**
 >
-> Erster Handgriff, sobald ein Schlüssel da ist:
+> Erster Handgriff: `src/qt/research/sandbox.py` — die AST-Whitelist, die
+> LLM-generierte Strategie-Kandidaten prüft, bevor irgendetwas davon läuft.
+> Vor dem Generator, nicht danach: eine Sandbox, die erst nachgerüstet wird,
+> ist keine.
+>
+> Danach `qt.research.screening` mit der **Deflated Sharpe Ratio** gegen die
+> Anzahl *aller je getesteten* Kandidaten (ADR-005) — ohne die ist der
+> Research-Loop eine Overfitting-Maschine.
+>
+> **Weiterhin offen aus Phase 3:** Der LLM-Allokator ist gebaut, aber seine
+> Wirksamkeit ungeprüft (ADR-019, kein API-Schlüssel in der Bauumgebung):
 > ```bash
 > ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines
 > ```
-> Das ist das Gate aus ADR-004. Es beantwortet die einzige Frage, die für den
-> Rest des Projekts zählt: **schlägt das Modell Equal-Weight und Vol-Parity
-> out-of-sample?** Ein Nein ist ein Ergebnis, kein Fehler — dann trägt die
-> LLM-Idee nicht, und Phase 4/5 stehen auf einem anderen Fundament.
->
-> Achte im Ergebnis auf die **Rückfallquote** in der Telemetrie. Liegt sie über
-> null, hat der Allokator teilweise gleichgewichtet und ist insoweit heimlich
-> eine Baseline (ADR-018).
->
-> Danach: **Phase 4 — Pfad-Simulation.** Erster Handgriff dort
-> `src/qt/sim/bootstrap.py`, stationärer Block-Bootstrap.
 
 ---
 
@@ -148,15 +146,39 @@ Bauumgebung gab es keinen API-Schlüssel (ADR-019). Der `StubClient`
 gleichgewichtet und ist damit per Konstruktion identisch zur
 Equal-Weight-Baseline — er beweist die Verdrahtung, nicht die Idee.
 
-## ⬜ Phase 4 — Pfad-Simulation
+## ✅ Phase 4 — Pfad-Simulation
 
-- `qt.sim.bootstrap` — stationärer Block-Bootstrap (erhält Autokorrelation + Vol-Clustering)
-- `qt.sim.regimes` — GARCH für Vol-Pfade, HMM für Regime-Wechsel
-- `qt.sim.scenarios` — das LLM setzt Szenario-Priors, die das Pfad-Ensemble umgewichten
-- Zielfunktion: Median-Rendite unter CVaR-Nebenbedingung
+- `qt.sim.base` — `PathEnsemble`, `PathGenerator`, gewichtete Quantile. Das
+  Interface lässt die Antwort "ein einzelner bester Pfad" gar nicht erst zu.
+- `qt.sim.bootstrap` — stationärer Block-Bootstrap (Politis/Romano,
+  geometrische Blocklängen, zirkulär) plus i.i.d.-Bootstrap als Kontrast
+- `qt.sim.regimes` — GARCH(1,1) mit t-Innovationen für Vol-Pfade, HMM für
+  Regimewechsel
+- `qt.sim.scenarios` — Szenario-Priors: das LLM gewichtet Möglichkeiten,
+  es prognostiziert keinen Preis (ADR-024)
+- `qt.sim.objective` — Median-Rendite maximieren unter CVaR-Grenze auf dem
+  **Drawdown** (ADR-025), Kosten eingerechnet, "kein Trade" ist ein
+  mögliches Ergebnis
 
-**Vorführen:** `uv run qt sim --paths 10000 --horizon 30d`
-Neue Deps: `arch`, `hmmlearn`, `scipy`
+**Vorführen:**
+```bash
+uv run qt sim --symbol BTC/USD --tf 4h --paths 10000 --horizon 180
+uv run qt sim --generator garch --until 2024-12-31
+uv run qt sim --scenarios --stub          # LLM-Priors, ohne API-Zugang
+```
+
+### Was der erste echte Lauf zeigt
+
+Das System reagiert auf die Daten, nicht auf eine Meinung:
+
+| Fenster | BTC-Entwicklung | Ergebnis |
+|---|---|---|
+| letzte 2000 Bars | −44,8% | **kein Trade** |
+| bis Ende 2024 | bullisch | Exposure 65–90% je nach Risikobasis |
+
+Und die Modellwahl macht einen Unterschied: GARCH mit t-Innovationen erzeugt
+fettere Tails als der Bootstrap und lässt deshalb weniger Exposure zu
+(55% gegen 100% bei sonst gleichen Einstellungen).
 
 ## ⬜ Phase 5 — Research-Loop
 

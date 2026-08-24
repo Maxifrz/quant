@@ -256,3 +256,162 @@ class StubClient:
             from_cache=False,
             model="stub",
         )
+
+
+# ---------------------------------------------------------------------------
+# Szenario-Priors (Phase 4)
+# ---------------------------------------------------------------------------
+
+# Eingefroren wie SYSTEM_PROMPT -- jede Aenderung entwertet den Antwort-Cache
+# und beendet die Vergleichbarkeit mit frueheren Laeufen.
+SCENARIO_SYSTEM_PROMPT = """Du schaetzt ein, welche Art von Marktverlauf gerade
+wahrscheinlicher ist als sonst.
+
+Du bekommst normalisierte Kennzahlen der juengsten Marktentwicklung sowie eine
+Beschreibung der Verteilung simulierter Fortsetzungen. Zeitraum, Maerkte und
+absolute Preise sind bewusst nicht angegeben.
+
+**Du prognostizierst keinen Preis und keinen Zeitpunkt.** Das koenntest du
+nicht, und eine solche Zahl waere unpruefbar. Was du tust: du verschiebst
+Gewicht zwischen bereits simulierten Pfaden.
+
+Ein Prior benennt genau drei Dinge:
+- eine Eigenschaft eines Pfades: 'volatility' (wie stark er schwankt),
+  'terminal_return' (wo er endet) oder 'max_drawdown' (wie tief sein
+  groesster Ruecksetzer ist),
+- eine Richtung: 'higher' oder 'lower',
+- eine Staerke zwischen 0 und 1 -- deine Ueberzeugung, nicht die Verschiebung.
+  Wie stark sich das auswirkt, wird nachtraeglich gedeckelt.
+
+Regeln:
+- **Keine Priors sind eine gute Antwort.** Wenn die Kennzahlen keine
+  Abweichung vom Normalfall nahelegen, gib eine leere Liste zurueck. Ein
+  gleichgewichtetes Ensemble ist der ehrliche Ausgangszustand, kein
+  Eingestaendnis.
+- Hoechstens zwei bis drei Priors. Wer alles gleichzeitig behauptet, sagt
+  nichts.
+- Widersprechende Priors heben sich auf -- gib sie nicht beide an, um dich
+  abzusichern.
+- Staerke ueber 0.7 nur, wenn eine konkrete Kennzahl das traegt.
+- Begruende mit der Kennzahl, auf die du dich stuetzt, nicht mit einer
+  Erzaehlung ueber den Markt."""
+
+
+class ScenarioClient:
+    """Fragt das Modell nach Szenario-Priors.
+
+    Gleicher Aufbau wie `AllocatorClient` und aus demselben Grund: Cache vor
+    Aufruf, strukturierte Ausgabe, sprechender Fehler statt Absturz ohne
+    API-Zugang.
+    """
+
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        cache: "LLMCache | None" = None,
+        max_tokens: int = 4096,
+        effort: str = "medium",
+    ) -> None:
+        self.model = model
+        self.cache = cache
+        self.max_tokens = max_tokens
+        self.effort = effort
+        self._client = None
+
+    def propose(self, briefing: str) -> "ScenarioProposal":
+        from qt.llm.schemas import ScenarioProposal
+
+        key = self._cache_key(briefing)
+        if key is not None:
+            hit = self.cache.get(key, model=ScenarioProposal)
+            if hit is not None:
+                return hit
+
+        proposal = self._call(briefing)
+
+        if key is not None:
+            self.cache.put(key, proposal)
+        return proposal
+
+    def _cache_key(self, briefing: str) -> str | None:
+        if self.cache is None:
+            return None
+        return self.cache.key(
+            briefing,
+            system=SCENARIO_SYSTEM_PROMPT,
+            model=self.model,
+            effort=self.effort,
+            kind="scenario",
+        )
+
+    def _call(self, briefing: str) -> "ScenarioProposal":
+        from qt.llm.schemas import ScenarioProposal
+
+        client = self._ensure_client()
+        try:
+            response = client.messages.parse(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=[
+                    {
+                        "type": "text",
+                        "text": SCENARIO_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                thinking={"type": "adaptive"},
+                output_config={"effort": self.effort},
+                messages=[{"role": "user", "content": briefing}],
+                output_format=ScenarioProposal,
+            )
+        except Exception as exc:
+            raise LLMUnavailable(
+                f"Szenario-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
+            ) from exc
+
+        if response.stop_reason == "refusal":
+            raise LLMUnavailable("Das Modell hat die Szenario-Anfrage abgelehnt.")
+        parsed = response.parsed_output
+        if parsed is None:
+            raise LLMUnavailable("Szenario-Antwort enthielt kein auswertbares Schema.")
+        return parsed
+
+    def _ensure_client(self):
+        if self._client is not None:
+            return self._client
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
+        try:
+            self._client = anthropic.Anthropic()
+        except Exception as exc:
+            raise LLMUnavailable("Kein API-Zugang.") from exc
+        return self._client
+
+
+class StubScenarioClient:
+    """Deterministischer Ersatz: schlaegt **keine** Priors vor.
+
+    Bewusst so und nicht mit erfundenen Priors: der neutrale Zustand des
+    Systems ist das gleichgewichtete Ensemble. Ein Stub, der Priors
+    erfaendet, wuerde in Laeufen ohne API-Zugang eine Verzerrung einbauen,
+    die niemand beabsichtigt hat und die im Ergebnis wie eine
+    Modellentscheidung aussaehe.
+    """
+
+    model = "stub"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose(self, briefing: str) -> "ScenarioProposal":
+        from qt.llm.schemas import ScenarioProposal
+
+        self.calls += 1
+        return ScenarioProposal(
+            priors=[],
+            regime="stub",
+            confidence=0.0,
+            reasoning="Deterministischer Ersatz, kein Modellaufruf.",
+        )
