@@ -176,9 +176,20 @@ Das System reagiert auf die Daten, nicht auf eine Meinung:
 | letzte 2000 Bars | −44,8% | **kein Trade** |
 | bis Ende 2024 | bullisch | Exposure 65–90% je nach Risikobasis |
 
-Und die Modellwahl macht einen Unterschied: GARCH mit t-Innovationen erzeugt
-fettere Tails als der Bootstrap und lässt deshalb weniger Exposure zu
-(55% gegen 100% bei sonst gleichen Einstellungen).
+Und die Modellwahl macht einen Unterschied. Gleiche Daten, gleicher Horizont,
+gleiche CVaR-Grenze — nur der Generator variiert:
+
+| Generator | Exposure | zulässige Gitterpunkte |
+|---|---|---|
+| `iid_bootstrap` | 80% | 16 von 20 |
+| `hmm` | 80% | 16 von 20 |
+| `stationary_bootstrap` | 75% | 15 von 20 |
+| `garch` | **35%** | 7 von 20 |
+
+GARCH mit t-Innovationen erzeugt die fettesten Tails und lässt deshalb am
+wenigsten Exposure zu. Welches Modell recht hat, entscheidet diese Tabelle
+nicht — sie zeigt nur, dass die Wahl folgenreich ist und deshalb begründet
+werden muss.
 
 ## ⬜ Phase 5 — Research-Loop
 
