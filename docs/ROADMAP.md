@@ -14,10 +14,41 @@
 > Research-Loop eine Overfitting-Maschine.
 >
 > **Weiterhin offen aus Phase 3:** Der LLM-Allokator ist gebaut, aber seine
-> Wirksamkeit ungeprüft (ADR-019, kein API-Schlüssel in der Bauumgebung):
+> Wirksamkeit ungeprüft (ADR-019, kein API-Schlüssel in der Bauumgebung).
+> Erkundungslauf zuerst, er kostet wenige Dollar und beantwortet die Frage
+> vielleicht schon:
 > ```bash
-> ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines
+> ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines \
+>     --allocate-every 96 --effort low --model claude-sonnet-5
 > ```
+> Auf die letzte Zeile schauen: eine **Rückfallquote über 0%** heißt, der
+> Allokator war insoweit heimlich die Equal-Weight-Baseline (ADR-018) — dann
+> misst das Gate den Fallback und nicht das Modell.
+
+---
+
+## Was ein Gate-Lauf kostet
+
+Gemessen am Stub-Lauf über BTC/ETH 4h (16.712 Bars, 29 Fenster), Aufrufe je
+Fenster-Instanz zugeordnet:
+
+| Einstellung | LLM-Aufrufe | vs. Default |
+|---|---|---|
+| Default vor ADR-027 | 1450 | — |
+| Vorlauf-Verzicht (ADR-027, jetzt Standard) | **580** | −60% |
+| + `--allocate-every 96` | **145** | −90% |
+
+Das Briefing ist mit ~1200 Zeichen (≈340 Token) der billigste Teil und der
+falsche Ort zum Sparen — die Rechnung hängt an der **Zahl der Aufrufe** und am
+**Denk-Aufwand** (`--effort`, ADR-028).
+
+Zwei Dinge, die keine reinen Sparmaßnahmen sind:
+- `--allocate-every 96` testet einen *anderen* Allokator (wöchentlich statt
+  täglich). Beim Stub-Lauf stand ein Umsatz von 20,6 Mio. auf 100k
+  Startkapital — bei 90bps Round-Trip dreht die tägliche Taktung das Buch zu
+  Tode. Gut möglich, dass wöchentlich nicht nur billiger, sondern besser ist.
+- `--since` zu kürzen spart Fenster und damit statistische Evidenz. Falscher
+  Tausch.
 
 ---
 

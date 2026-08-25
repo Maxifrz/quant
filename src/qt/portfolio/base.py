@@ -60,6 +60,22 @@ class AllocationContext:
     equity: float
     current: Allocation = field(default_factory=dict)
     timeframe: str = "1h"
+    # Liegt dieser Aufruf im Vorlauf eines Fensters, wird also nicht bewertet?
+    #
+    # Das ist Information ueber die **Position im Lauf**, nicht ueber
+    # zukuenftige Daten: dass ein Fenster erst ab einem bestimmten Zeitpunkt
+    # zaehlt, steht vor dem ersten Bar fest und ist einem live laufenden
+    # System genauso bekannt. Kein Lookahead -- der Allokator erfaehrt hier
+    # nichts darueber, was nach `ts` passiert.
+    #
+    # Wozu: der Vorlauf richtet sich nach der langsamsten Komponente im Feld.
+    # Ein teurer Allokator wuerde sonst hunderte Male befragt, damit eine
+    # Baseline warmlaufen kann -- und keine dieser Antworten geht ins
+    # Ergebnis ein. Wer will, darf im Vorlauf billig antworten.
+    #
+    # Default False, damit jede bestehende Konstruktion unveraendert bleibt
+    # und ein Allokator, der das Feld ignoriert, sich wie bisher verhaelt.
+    is_warmup: bool = False
 
     def history_length(self) -> int:
         """Kuerzeste verfuegbare Historie ueber **alle** Strategien.

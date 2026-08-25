@@ -692,6 +692,13 @@ def _run_entry(
                 cfg=cfg,
                 allocate_every=allocate_every,
                 fill_model=fill_model,
+                # Der Vorlauf ist so lang, wie die **langsamste** Komponente
+                # im Feld ihn braucht -- und `_score_window` wirft ihn danach
+                # weg. Ohne diesen Hinweis wird ein teurer Allokator im
+                # gesamten Vorlauf befragt, damit eine Baseline warmlaeuft.
+                # Was er daraus macht, ist seine Sache; die Fenstergeometrie
+                # aendert sich dadurch nicht.
+                evaluate_from=cut.test_start,
             )
         except Exception as exc:  # noqa: BLE001 -- siehe Docstring
             return GateEntry(

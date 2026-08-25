@@ -112,6 +112,7 @@ def run_portfolio_backtest(
     cfg: BacktestConfig | None = None,
     allocate_every: int = 1,
     fill_model: FillModel | None = None,
+    evaluate_from: datetime | None = None,
 ) -> PortfolioResult:
     """Mehrere Strategien unter einem Allokator laufen lassen.
 
@@ -124,6 +125,14 @@ def run_portfolio_backtest(
     Der Allokator laeuft also auf einem langsameren Takt als die Strategien --
     das ist ab Phase 3 zwingend, weil dort ein LLM an dieser Stelle steht und
     ein Aufruf pro Minutenbar weder bezahlbar noch sinnvoll waere.
+
+    `evaluate_from` sagt dem Allokator, ab wann seine Entscheidungen
+    ueberhaupt bewertet werden (im Gate: der Testbeginn des Fensters). Alles
+    davor bekommt `AllocationContext.is_warmup=True`. Der Lauf selbst
+    aendert sich dadurch **nicht** -- weder Bars noch Reihenfolge noch
+    Buchhaltung; es ist reine Information fuer den Allokator, den sie nichts
+    kostet zu ignorieren. Ohne den Parameter bleibt das Flag durchgehend
+    False und der Lauf ist bitgenau der bisherige.
     """
     cfg = cfg or BacktestConfig()
     if not strategies:
@@ -212,6 +221,7 @@ def run_portfolio_backtest(
                 allocation = _allocate(
                     allocator, strategy_ids, returns, broker, last_price,
                     allocation, event.ts, alloc_tf,
+                    is_warmup=evaluate_from is not None and event.ts < evaluate_from,
                 )
                 alloc_rows.append({"ts": event.ts, **allocation})
 
@@ -370,6 +380,7 @@ def _allocate(
     current: dict[str, float],
     ts: datetime,
     timeframe: str,
+    is_warmup: bool = False,
 ) -> dict[str, float]:
     """Allokator aufrufen und seine Ausgabe auf Brauchbarkeit pruefen.
 
@@ -386,6 +397,7 @@ def _allocate(
         equity=broker.equity(last_price),
         current=dict(current),
         timeframe=timeframe,
+        is_warmup=is_warmup,
     )
     proposal = allocator.allocate(ctx)
 

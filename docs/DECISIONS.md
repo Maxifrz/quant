@@ -5,6 +5,104 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-027 — Der Vorlauf wird nicht bezahlt
+**Datum:** 2026-08-25
+
+**Der Befund:** Ein Gate-Lauf mit den Defaults macht 1450 LLM-Aufrufe. Ordnet
+man sie je Fenster-Instanz zu, ergibt sich:
+
+```
+Warmup-Slots 914, Testfenster 500
+Aufrufe gesamt 1450
+  im Vorlauf (wird nicht bewertet):  870  (60%)
+  im Testfenster (bewertet):         580  (40%)
+```
+
+**60% der Aufrufe wurden bezahlt und nie ausgewertet.** `_score_window`
+bewertet ausschließlich ab `test_start`; alles davor formt nur den
+Portfoliozustand, mit dem das Testfenster beginnt.
+
+**Warum der Vorlauf überhaupt so lang ist:** Er richtet sich nach der
+langsamsten Komponente im Feld — dasselbe Prinzip wie ADR-012, nur eine Ebene
+höher. `best_single(lookback=720)` braucht 720 Bars, bis es eine Meinung hat.
+Der LLM-Allokator braucht 96. Es wurde also ein Sprachmodell dafür bezahlt,
+dass eine *Baseline* warmläuft.
+
+**Die Mechanik:** `AllocationContext.is_warmup` sagt dem Allokator, ob seine
+Entscheidung bewertet wird. Gesetzt wird es von
+`run_portfolio_backtest(evaluate_from=...)`, das Gate reicht `cut.test_start`
+durch. Der `LLMAllocator` gleichgewichtet dann, ohne den Client zu fragen.
+
+Das ist **kein Lookahead**. Der Allokator erfährt nichts über Daten nach `ts`,
+sondern nur, an welcher Stelle des Laufs er steht — eine Information, die vor
+dem ersten Bar feststeht und die ein live laufendes System genauso hat.
+
+**Der Preis, offen benannt:** Der Kandidat startet jedes Testfenster
+gleichgewichtet statt LLM-geformt und zahlt beim ersten bewerteten Aufruf eine
+Umschichtung, die die Baselines nicht zahlen. Das verzerrt **gegen** den
+Kandidaten. Für ein Gate ist das die richtige Richtung — aber wer die Tabelle
+liest, muss es wissen: *ein knapp gescheiterter Kandidat ist knapper
+gescheitert, als die Zahlen zeigen.*
+
+**`telemetry.calls` zählt die übersprungenen Aufrufe bewusst nicht mit.** Sonst
+verwässerten sie die `fallback_rate` — und genau an der erkennt man, ob der
+Allokator heimlich eine Baseline ist (ADR-018). Stattdessen zählt
+`warmup_skips` sie separat und `summary()` nennt sie. Eine Einsparung, die
+niemand sieht, wird beim nächsten Refactor versehentlich rückgängig gemacht
+und fällt dann nur auf der Rechnung auf, nicht im Ergebnis.
+
+**Der Test, auf den es ankommt:** Die Baselines ignorieren `is_warmup`, ihre
+Gate-Ergebnisse müssen also vorher und nachher **bitidentisch** sein. Bewegt
+sich dort etwas, ist versehentlich die Zeitachse verschoben worden. Geprüft
+auf zwei Ebenen — Engine (`assert_frame_equal(check_exact=True)` auf Equity,
+Allokationen, Fills) und Gate (verkettete Kurve, Metriken, Fenstergrenzen,
+jede einzelne `oos_equity`). Beide halten.
+
+**Konsequenz:** 1450 → 580 Aufrufe, `warmup_skips` summiert sich auf exakt 870.
+Kandidaten-Kurven aus Läufen *vor* dieser Änderung sind nicht mehr direkt
+vergleichbar; Baseline-Kurven schon.
+
+---
+
+## ADR-028 — Effort gehört an die Kommandozeile, und der Cache-Key hing an einem Zufall
+**Datum:** 2026-08-25
+
+**Warum:** Der Denk-Aufwand stand fest auf `medium` im Client. Er ist der
+größte einzelne Hebel auf Laufzeit und Ausgabe-Token — und die Ausgabeseite
+dominiert die Rechnung, weil Ausgabe-Token ein Vielfaches der Eingabe kosten.
+Ein Parameter, der die Kosten eines Laufs um ein Vielfaches ändert, gehört
+nicht in eine Konstante.
+
+**Die Stufen sind gelesen, nicht erinnert:** `low, medium, high, xhigh, max`
+stammen aus der installierten Bibliothek (`anthropic.types.output_config_param`
+deklariert das Feld als Literal). Ein Test hält die Liste per `get_type_hints`
+dagegen, damit ein SDK-Update nicht stillschweigend vorbeigeht. Geprüft wird
+im Typer-Callback, also **bevor** der Lauf Daten lädt: ein Wert, den erst die
+Gegenseite ablehnt, ist an der Kommandozeile kein Wert.
+
+**Der Nebenbefund — latent, nicht live.** `qt sim` konstruierte
+`ScenarioClient(cache=LLMCache())`, den Cache also ohne Modell, während der
+`alloc`-Pfad `LLMCache(model=model)` übergab. Das ging aus zwei Gründen gut,
+von denen an der Aufrufstelle keiner sichtbar war:
+
+1. Beide Defaults stammen aus derselben Konstante `qt.core.config.DEFAULT_LLM_MODEL`.
+2. Selbst bei Divergenz schreibt der Client sein Modell *zusätzlich* ins
+   `extra` des Keys. Die Folge wäre ein Cache-Miss gewesen — doppelte Kosten
+   und eine Trefferquote nahe null, aber nie die Antwort eines fremden Modells.
+
+Das ist der harmlose Zwilling des Fehlers, der schon einmal echt war: ein
+Cache-Key, der das Modell des *Caches* trug statt das des *Clients*. Repariert,
+indem Modell und Effort explizit an beide Enden gehen. Ein Aufruf, dessen
+Korrektheit von zwei zufällig gleichen Defaults abhängt, ist auch dann
+reparaturbedürftig, wenn er heute richtig rechnet.
+
+**Offen geblieben:** `LLMAllocator.__init__` trägt ein viertes hartes
+Modell-Literal und kennt kein `effort`. Aktuell folgenlos, weil die CLI immer
+einen fertigen Client injiziert — aber es ist dieselbe Driftklasse. Notiert,
+nicht behoben.
+
+---
+
 ## ADR-024 — Szenario-Priors gewichten Möglichkeiten, sie prognostizieren nichts
 **Datum:** 2026-08-24
 

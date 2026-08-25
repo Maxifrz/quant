@@ -20,9 +20,44 @@ app.add_typer(data_app, name="data")
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
 
+# Default-LLM-Modell fuer die Kommandozeile. Bewusst ein Literal und kein
+# Import von `qt.core.config.DEFAULT_LLM_MODEL`: der Import zieht pydantic
+# nach und kostet jeden `qt`-Aufruf rund 100 ms, auch die, die nie ein Modell
+# anfassen. Dass das Literal nicht davonlaeuft, sichert ein Test ab
+# (tests/test_cli_effort.py) -- die Warnung in `qt.core.config` gilt.
+DEFAULT_MODEL = "claude-opus-5"
+
+# Effort-Stufen, die `output_config={"effort": ...}` annimmt. Quelle ist die
+# installierte Bibliothek, nicht das Gedaechtnis: `anthropic.types.
+# output_config_param.OutputConfigParam` deklariert das Feld als
+# Literal["low", "medium", "high", "xhigh", "max"]. Der Test haelt die Liste
+# gegen die Bibliothek, damit ein SDK-Update hier nicht stillschweigend
+# vorbeigeht.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+# `medium` als Default, nicht `high`: der Effort ist der groesste einzelne
+# Hebel auf Laufzeit und Ausgabe-Token, und ein Backtest ruft das Modell
+# hundertfach. Wer eine schwere Frage stellt, hebt ihn fuer diesen Lauf.
+DEFAULT_EFFORT = "medium"
+
 
 def _split(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def _effort(value: str) -> str:
+    """Effort-Stufe pruefen, solange der Lauf noch nichts gekostet hat.
+
+    Ungeprueft faellt ein Tippfehler erst beim ersten echten API-Aufruf auf --
+    im `alloc`-Pfad also nach Minuten Datenaufbereitung, im `--stub`-Pfad
+    ueberhaupt nicht. Ein Wert, den erst die Gegenseite ablehnt, ist an der
+    Kommandozeile kein Wert.
+    """
+    if value not in EFFORT_LEVELS:
+        raise typer.BadParameter(
+            f"Unbekannte Effort-Stufe {value!r}. Verfuegbar: {list(EFFORT_LEVELS)}"
+        )
+    return value
 
 
 def _fill_model(name: str):
@@ -283,7 +318,15 @@ def alloc(
     test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 500,
     embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 24,
     allocate_every: Annotated[int, typer.Option(help="Allokations-Takt in Bars")] = 24,
-    model: Annotated[str, typer.Option(help="LLM-Modell")] = "claude-opus-5",
+    model: Annotated[str, typer.Option(help="LLM-Modell")] = DEFAULT_MODEL,
+    effort: Annotated[
+        str,
+        typer.Option(
+            help="Denk-Aufwand des Modells: low, medium, high, xhigh oder max. "
+            "Groesster Hebel auf Laufzeit und Ausgabe-Token.",
+            callback=_effort,
+        ),
+    ] = DEFAULT_EFFORT,
     stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen den Stub laufen")] = False,
     since: Annotated[str | None, typer.Option()] = None,
     until: Annotated[str | None, typer.Option()] = None,
@@ -327,7 +370,11 @@ def alloc(
     def make_candidate():
         if candidate != "llm":
             return baselines.get(candidate)()
-        client = StubClient() if stub else AllocatorClient(model=model, cache=LLMCache(model=model))
+        client = (
+            StubClient()
+            if stub
+            else AllocatorClient(model=model, cache=LLMCache(model=model), effort=effort)
+        )
         instance = LLMAllocator(client=client)
         allocator_telemetry["last"] = instance.telemetry
         return instance
@@ -385,6 +432,15 @@ def sim(
         bool, typer.Option("--scenarios", help="LLM Szenario-Priors setzen lassen")
     ] = False,
     stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen den Stub")] = False,
+    model: Annotated[str, typer.Option(help="LLM-Modell fuer die Szenario-Priors")] = DEFAULT_MODEL,
+    effort: Annotated[
+        str,
+        typer.Option(
+            help="Denk-Aufwand des Modells: low, medium, high, xhigh oder max. "
+            "Groesster Hebel auf Laufzeit und Ausgabe-Token.",
+            callback=_effort,
+        ),
+    ] = DEFAULT_EFFORT,
     lookback: Annotated[int, typer.Option(help="Bars Historie fuer den Fit")] = 2000,
     since: Annotated[str | None, typer.Option()] = None,
     until: Annotated[str | None, typer.Option()] = None,
@@ -421,7 +477,7 @@ def sim(
     typer.echo(f"  {ensemble.describe()}")
 
     if scenarios:
-        ensemble = _apply_scenarios(ensemble, returns, tf, stub)
+        ensemble = _apply_scenarios(ensemble, returns, tf, stub, model=model, effort=effort)
 
     result = optimise_allocation(ensemble, cvar_limit=cvar_limit)
 
@@ -468,7 +524,14 @@ def _path_generator(name: str):
         ) from None
 
 
-def _apply_scenarios(ensemble, returns, tf: str, stub: bool):
+def _apply_scenarios(
+    ensemble,
+    returns,
+    tf: str,
+    stub: bool,
+    model: str = DEFAULT_MODEL,
+    effort: str = DEFAULT_EFFORT,
+):
     """LLM Szenario-Priors setzen lassen und das Ensemble umgewichten.
 
     Faellt bei jedem Problem auf das unveraenderte Ensemble zurueck -- ein
@@ -480,7 +543,17 @@ def _apply_scenarios(ensemble, returns, tf: str, stub: bool):
     from qt.llm.client import LLMUnavailable, ScenarioClient, StubScenarioClient
     from qt.sim.scenarios import apply_priors, from_proposal
 
-    client = StubScenarioClient() if stub else ScenarioClient(cache=LLMCache())
+    # Modell an Client **und** Cache, obwohl der Cache einen eigenen Default
+    # kennt: beide Defaults stammen heute aus `qt.core.config`, aber das ist
+    # eine Eigenschaft, die niemand erzwingt. Hier stand vorher `LLMCache()`
+    # ohne Modell -- gutgegangen ist das nur, weil der Client sein Modell
+    # zusaetzlich in den Key schreibt. Explizit gesetzt haengt der Key nicht
+    # mehr davon ab, dass zwei Defaults zufaellig gleich bleiben.
+    client = (
+        StubScenarioClient()
+        if stub
+        else ScenarioClient(model=model, cache=LLMCache(model=model), effort=effort)
+    )
     briefing = build_scenario_briefing(returns, ensemble, tf)
 
     try:

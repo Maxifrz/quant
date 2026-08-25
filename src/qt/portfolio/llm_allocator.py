@@ -43,6 +43,13 @@ class AllocatorTelemetry:
     fallbacks: int = 0
     deliberate_flats: int = 0
     hallucinated_labels: int = 0
+    # Aufrufe im Vorlauf, die gar nicht erst ans Modell gingen.
+    #
+    # Steht in `summary()`, obwohl es keine Fehlfunktion beschreibt: eine
+    # Einsparung, die niemand sieht, wird beim naechsten Refactor
+    # versehentlich rueckgaengig gemacht -- und faellt dann nur auf der
+    # Rechnung auf, nicht im Ergebnis.
+    warmup_skips: int = 0
     reasons: list[str] = field(default_factory=list)
 
     @property
@@ -55,7 +62,8 @@ class AllocatorTelemetry:
             f"Rueckfaelle auf Gleichgewichtung {self.fallbacks} "
             f"({self.fallback_rate:.1%}), bewusste Ausstiege "
             f"{self.deliberate_flats}, halluzinierte Labels "
-            f"{self.hallucinated_labels}"
+            f"{self.hallucinated_labels}, uebersprungen im Vorlauf "
+            f"{self.warmup_skips}"
         )
 
 
@@ -101,6 +109,24 @@ class LLMAllocator(Allocator):
 
         equal = {sid: 1.0 / len(ids) for sid in ids}
         if ctx.history_length() < self._min_history:
+            return equal
+
+        if ctx.is_warmup:
+            # Der Vorlauf wird nicht bewertet -- ihn zu bezahlen heisst, ein
+            # Sprachmodell dafuer zu bezahlen, dass eine Baseline warmlaeuft.
+            #
+            # Der Preis dafuer, offen: der Kandidat startet jedes Testfenster
+            # gleichgewichtet statt LLM-geformt und zahlt beim ersten
+            # bewerteten Aufruf eine Umschichtung, die die Baselines nicht
+            # zahlen. Das verzerrt **gegen** den Kandidaten -- fuer ein Gate
+            # die richtige Richtung, aber wer die Zahlen liest, muss es
+            # wissen: ein knapp gescheiterter Kandidat ist knapper
+            # gescheitert, als die Tabelle zeigt.
+            #
+            # `telemetry.calls` bleibt bewusst unberuehrt. Sonst verwaessern
+            # die uebersprungenen Aufrufe die `fallback_rate`, und genau an
+            # der erkennt man, ob der Allokator heimlich eine Baseline ist.
+            self.telemetry.warmup_skips += 1
             return equal
 
         self.telemetry.calls += 1
