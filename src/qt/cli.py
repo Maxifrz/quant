@@ -830,3 +830,76 @@ def _promotable_module(row: dict) -> str:
         f"@register\n"
     )
     return kopf + row["code"]
+
+
+@data_app.command("trades")
+def data_trades(
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    days: Annotated[int, typer.Option(help="Wie viele Tage Historie")] = 30,
+    tf: Annotated[str, typer.Option(help="Timeframe fuer den Bericht")] = "4h",
+) -> None:
+    """Einzeltrades mit Aggressor-Seite ziehen -- die Rohdaten fuer Order Flow.
+
+    Quelle ist Kraken und nicht Coinbase: Coinbase ignoriert `since` und
+    liefert immer die juengsten Trades, dort ist keine Historie beschaffbar
+    (ADR-034). Der Fluss stammt damit von einer anderen Boerse als die
+    Kursreihe -- eine Annahme, die man kennen muss.
+
+    Rechnen mit rund 19 Anfragen je Tag Historie: 30 Tage sind etwa 580
+    Anfragen und gut zehn Minuten.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from qt.data.trades import (
+        TRADES_EXCHANGE,
+        coverage,
+        fetch_trades,
+        make_trades_exchange,
+        read_trades,
+        write_trades,
+    )
+    from qt.features import orderflow as of
+
+    exchange = make_trades_exchange()
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    typer.echo(f"Quelle {TRADES_EXCHANGE}, ab {since:%Y-%m-%d %H:%M} UTC\n")
+
+    for symbol in _split(symbols):
+
+        def fortschritt(pages: int, n: int, message: str) -> None:
+            if message:
+                typer.echo(f"  {message}")
+            elif pages % 25 == 0:
+                typer.echo(f"  {pages} Seiten, {n:,} Trades")
+
+        typer.echo(f"{symbol}:")
+        # `sink` schreibt unterwegs: ein Abzug ueber vierzig Minuten, den ein
+        # Abbruch auf der vorletzten Seite erwischt, haette sonst nichts
+        # geliefert. Der zurueckgegebene Rest ist nur der letzte Block.
+        def ablegen(chunk):
+            write_trades(symbol, chunk)
+
+        fetch_trades(exchange, symbol, since=since, on_page=fortschritt, sink=ablegen)
+        df = read_trades(symbol)
+        if df.empty:
+            typer.echo("  keine Trades erhalten")
+            continue
+
+        path = write_trades(symbol, df)
+        info = coverage(df)
+        typer.echo(f"  {info['n']:,} Trades -> {path}")
+        typer.echo(f"  {info['start']:%Y-%m-%d %H:%M} bis {info['end']:%Y-%m-%d %H:%M}")
+        typer.echo(f"  Kaufanteil {info['buy_share']:.1%}")
+
+        # Die groesste Luecke ist die wichtigste Zahl: Order-Flow-Kennzahlen
+        # ueber einer Luecke sind nicht ungenau, sie sind erfunden.
+        luecke = info["max_gap_s"]
+        typer.echo(f"  groesste Luecke {luecke:,.0f}s")
+        if luecke > 3600:
+            typer.echo(
+                "  Achtung: eine Luecke ueber einer Stunde heisst, dass der\n"
+                "  Abzug abgebrochen ist. Befehl erneut laufen lassen."
+            )
+
+        flow = of.aggregate(df, tf)
+        typer.echo(f"  ergibt {len(flow)} {tf}-Bars mit Flussdaten\n")

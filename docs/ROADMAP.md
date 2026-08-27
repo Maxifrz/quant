@@ -60,6 +60,30 @@ Zwei Dinge, die keine reinen Sparmaßnahmen sind:
 
 ---
 
+## Order Flow (ADR-034)
+
+Die erste **neue Informationsachse** des Projekts: Volumen mit Richtung. Alle
+bisherigen Strategien kauen auf denselben OHLCV-Daten, und alle sind
+gescheitert.
+
+```bash
+uv run qt data trades --symbols BTC/USD --days 30
+uv run qt backtest --strategy orderflow --symbol BTC/USD --tf 4h
+```
+
+Quelle ist **Kraken**, nicht Coinbase: Coinbase ignoriert `since` und liefert
+immer die jüngsten Trades. Der Fluss stammt damit von einer anderen Börse als
+Kursreihe und Fills — eine Annahme, die noch niemand gemessen hat.
+
+Stand: 1.376.988 Trades vom 28.07. bis 24.08.2026 abgezogen, Pipeline läuft
+end-to-end. **Die Zahlen belegen die Verdrahtung, nicht die Idee** — 27 Tage
+sind zehn Trades auf 4h, und ein Walk-Forward ist darauf nicht möglich.
+
+Nächster Schritt, falls weiterverfolgt: ein Jahr Historie, rund 7.100
+Anfragen und zwei Stunden. Erst damit wird die Frage beantwortbar.
+
+---
+
 ## Prinzip der Phaseneinteilung
 
 Jede Phase endet mit **etwas Sichtbarem** — einem Chart, einer Zahl, einem Report —

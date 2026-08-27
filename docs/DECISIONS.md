@@ -5,6 +5,88 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-034 — Order Flow als neue Informationsachse, mit fremder Quelle
+**Datum:** 2026-08-27
+
+**Warum überhaupt.** `trend`, `meanrev` und `elliott` kauen alle auf denselben
+OHLCV-Daten und sind alle gescheitert (ADR-009, ADR-033). Eine vierte Strategie
+auf derselben Datenbasis hätte schlechte Aussichten. Aggressor-getriebener
+Fluss steht in OHLCV **nicht drin**: ein Bar mit hohem Volumen und
+unverändertem Schluss kann von einem Kaufüberhang stammen, der auf Widerstand
+lief, oder von ausgeglichenem Umsatz — für die Kursreihe sieht beides identisch
+aus.
+
+**Die Quelle ist eine andere Börse, und das ist eine Annahme.** Gemessen, nicht
+geraten:
+
+| Börse | Historische Trades mit Seite | Befund |
+|---|---|---|
+| Coinbase (Bar-Quelle) | ❌ | ignoriert `since` — bei −30 Tagen kommen Trades von *heute* |
+| Binance | ❌ | weiterhin 451-gesperrt (ADR-006) |
+| **Kraken** | ✅ | `since` wird respektiert, Aggressor-Seite dabei |
+
+Der Fluss stammt damit von Kraken, die Kursreihe von Coinbase, die späteren
+Fills von Coinbase. Die stille Annahme dahinter — der Fluss der einen Börse
+erklärt den Preis der anderen — ist plausibel und **unbewiesen**. Sie gehört
+gemessen, bevor auf dieser Strategie etwas aufgebaut wird.
+
+**Verdichtet statt erweitert.** Trades sind sub-bar, der `FeatureStore` ist
+bar-basiert, und die ganze PIT-Garantie hängt daran (ADR-001). Rohe Ticks in
+die Engine zu geben hieße, genau diese Zusage aufzugeben. Stattdessen werden
+vier Zahlen je Bar gebildet — `delta`, `buy_share`, `n_trades`, `avg_size` —
+mit demselben `close_ts` wie der Bar. Engine, Kostenmodell und Handelsfrequenz
+bleiben unverändert.
+
+**Fehlende Bars werden `nan`, nicht 0.** 0 hieße „ausgeglichener Fluss", `nan`
+heißt „keine Information". Eine Strategie, die beides verwechselt, handelt
+Datenlücken als Signal.
+
+**Die PIT-Regel ruht hier auf einer Regel, nicht auf dem Typsystem.** Die
+Flow-Tabelle ist ein Beiwagen neben dem Store; nachgeschlagen wird
+ausschließlich über `window.timestamps`, also über Bars, die der Store bereits
+herausgegeben hat. Die Alternative — `Bar` um Flow-Felder erweitern — wäre im
+Typ sauberer, würde aber jeden Bar im System um Felder erweitern, die fast
+nirgends existieren. Der Preis der gewählten Lösung ist, dass ein Test die
+Zusage tragen muss: `test_die_strategie_sieht_nur_was_der_store_zeigt` hängt
+Flussdaten für die **Zukunft** in die Tabelle und prüft, dass sich das Ergebnis
+nicht ändert.
+
+**Ein Abzug muss unterwegs schreiben.** Der erste 30-Tage-Lauf sammelte 1,14
+Mio. Trades im Speicher und schrieb erst am Ende — ein Zeitlimit auf der
+vorletzten Seite hätte alles verloren. `fetch_trades` hat jetzt einen `sink`,
+der alle `flush_every` Seiten ablegt. Der Lauf endete tatsächlich an einem
+`NetworkError` und lieferte trotzdem 1.376.988 Trades.
+
+### Das Ergebnis — und warum es noch keins ist
+
+BTC/USD, 28.07. bis 24.08.2026 (27 Tage, 640 Bars zu 1h / 160 zu 4h):
+
+| TF | Kosten | Faktor | Sharpe | Trades |
+|---|---|---|---|---|
+| 1h | ohne | 0,981 | −2,99 | 34 |
+| 1h | Coinbase | 0,841 | −18,52 | 34 |
+| 4h | ohne | 1,007 | 2,29 | 10 |
+| 4h | Coinbase | 0,963 | −8,16 | 10 |
+
+Buy & Hold im selben Fenster: 1,015.
+
+**Diese Zahlen belegen die Verdrahtung, nicht die Idee.** 27 Tage sind 160
+Bars zu 4h und zehn Trades. Ein Sharpe von 2,29 auf zehn Trades ist eine
+Stichprobe, keine Kante — und ein Walk-Forward ist auf dieser Datenmenge gar
+nicht möglich. Wer aus dieser Tabelle eine Aussage über die Strategie ableitet,
+liest Rauschen.
+
+**Was sie trotzdem zeigt:** die Kosten schlagen auch hier durch. Bei 4h kostet
+der Weg von 1,007 auf 0,963 zehn Trades — rund 4,4 Prozentpunkte auf ein
+Signal, das brutto 0,7% verdient hat. Das ist dieselbe Diagnose wie überall
+sonst in diesem Projekt und war die Hauptsorge schon vor dem Bauen.
+
+**Nächster Schritt, wenn weitergemacht wird:** ein Jahr Historie (rund 7.100
+Anfragen, etwa zwei Stunden) — erst damit ist ein Walk-Forward möglich und die
+Frage überhaupt beantwortbar.
+
+---
+
 ## ADR-033 — Elliott-Wellen: mechanisierbar gemacht, und dann widerlegt
 **Datum:** 2026-08-27
 

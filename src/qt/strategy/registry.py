@@ -35,6 +35,7 @@ def load_library() -> None:
     from qt.strategy.library import (  # noqa: F401
         elliott,
         meanrev,
+        orderflow,
         timesfm_strategy,
         trend,
     )
