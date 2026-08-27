@@ -5,6 +5,158 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-029 — Die Sandbox ist eine Whitelist, und sie hat zwei Schlösser
+**Datum:** 2026-08-27
+
+**Die Entscheidung:** `qt.research.sandbox` erlaubt eine feste Menge von
+AST-Knotentypen und lehnt alles andere ab — mit Zeilennummer.
+
+**Warum keine Blockliste:** Eine Liste verbotener Namen (`eval`, `exec`,
+`open`, …) ist ein Spiel, das man verliert, weil man etwas vergisst. Eine
+Whitelist ist geschlossen: was nicht ausdrücklich erlaubt ist, kommt nicht
+durch — auch das, woran beim Schreiben niemand gedacht hat.
+
+**Warum die Whitelist allein trotzdem nicht reicht:** Sie sieht nur Syntax,
+nicht, *welche* Methode auf einem erlaubten Namen aufgerufen wird.
+`np.save(...)` ist syntaktisch ein völlig normales `Attribute` + `Call`.
+Deshalb ist `np` nicht das echte numpy-Modul, sondern eine Fassade mit 23
+reinen Rechenfunktionen; `ta` ebenso mit 7. Die gefährliche Methode existiert
+auf dem Objekt schlicht nicht — egal, unter welchem lokalen Namen der
+generierte Code es weiterreicht. Dazu ein kleines, explizites `SAFE_BUILTINS`
+und ein hartes Verbot jedes Attributs mit führendem Doppel-Unterstrich, was
+die Restricted-Exec-Familie an der Wurzel blockiert.
+
+`getattr` und `setattr` sind mitgesperrt. Ohne sie ließe sich die
+dunder-Sperre per String-Konkatenation umgehen:
+`getattr(np, '__' + 'class__')`. Nachgemessen: wird abgelehnt.
+
+**Strukturell wichtiger als jede einzelne Regel:** `load_strategy_class` ruft
+intern `check()` und wirft, **bevor** irgendein `exec` passiert. Es gibt in
+der öffentlichen API keinen Pfad, der die Prüfung umgehen kann — "vergessen zu
+prüfen" ist damit unmöglich statt nur unwahrscheinlich. Belegt mit einem
+Payload, der bei Ausführung eine Datei anlegen würde; geprüft wird danach,
+dass sie *nicht existiert*. Ein Test, der nur die Exception prüft, belegt das
+nicht.
+
+**Der Preis, den das hat, und er ist hoch:** Kandidaten können **keinen
+Konstruktor** haben. `__init__` ist ein dunder, `super()` ist gesperrt,
+Dekoratoren sind verboten. Parameter sind deshalb Klassenkonstanten,
+`warmup_bars` ist ein schlichtes Klassenattribut statt `@property`. Das ist
+eine ungewohnte Form — aber sie hat einen Nebennutzen: weniger Freiheitsgrade,
+kein Konstruktor-Beiwerk, und die Parameter stehen sichtbar oben in der Klasse.
+
+---
+
+## ADR-030 — Der Generator-Prompt wird gegen die Sandbox getestet, nicht gegen die Absicht
+**Datum:** 2026-08-27
+
+**Der Fehler, in meinem eigenen ersten Entwurf:** Der Systemprompt für den
+Generator zeigte ein Beispiel mit `__init__`, `super().__init__(...)` und
+`@property warmup_bars`. Alle drei sind von der Sandbox verboten (ADR-029).
+Der Prompt hätte damit **hundert Prozent abgelehnte Kandidaten** erzeugt — und
+zwar bezahlte: jeder Generator-Aufruf kostet, jede Ablehnung kommt danach.
+
+Aufgefallen ist das nicht beim Lesen, sondern beim Durchschicken des Beispiels
+durch die echte `check()`.
+
+**Die Konsequenz als Test, nicht als Vorsatz:**
+`test_das_beispiel_im_generator_prompt_besteht_die_sandbox` schneidet den
+Beispielblock aus dem Systemprompt heraus und schickt ihn durch die echte
+Prüfung. Läuft die Sandbox dem Prompt künftig davon, fällt es dort auf — und
+nicht an einer Ablehnungsquote von hundert Prozent im ersten bezahlten Lauf.
+
+Dasselbe gilt für den Stub: `test_stub_generator_erzeugt_code_der_die_echte_sandbox_besteht`.
+Ein Stub, der die eigene Sandbox nicht besteht, blockiert jeden Offline-Lauf —
+und der Fehler sähe im Trichter wie ein Befund über den Generator aus statt
+wie ein kaputter Stub.
+
+**Verallgemeinert:** Jede Beschreibung einer Schnittstelle, die an einer
+anderen Stelle erzwungen wird, gehört gegen diese Stelle getestet. Ein Prompt
+ist Code, nur in einer Sprache ohne Compiler.
+
+---
+
+## ADR-031 — Die Kritik-Stufe ist ein protokollierter Übersprung, kein Veto
+**Datum:** 2026-08-27
+
+**Woher der Gedanke stammt:** Multi-Agenten-Handelsframeworks wie
+TradingAgents lassen Bull- und Bear-Rollen debattieren, bevor entschieden
+wird. Übernommen ist die Idee, **nicht ihr Sitz in der Kette**.
+
+Dort urteilt das Debattenteam über eine *live auszuführende* Entscheidung; ein
+Fehlurteil kostet echtes Geld. Hier sitzt die Kritik **im Forschungslauf, vor
+dem teuren Backtest** — und selbst ein voll akzeptierter, DSR-bestandener
+Kandidat erreicht die Bibliothek nur über manuelle Freigabe. Der Schaden eines
+Fehlurteils ist damit im schlimmsten Fall verschwendete oder gesparte
+Rechenzeit, nie eine falsche Order.
+
+**Zwei Eigenschaften, die die Stufe von einem Veto unterscheiden:**
+
+1. **Eine Ablehnung verwirft nichts.** Sie überspringt den Walk-Forward-Lauf;
+   der Kandidat liegt samt Code und Begründung in der Registry. Wer die
+   Begründung für falsch hält, lässt den Lauf mit `--no-critic` erneut laufen.
+   Dieselbe Haltung wie ADR-018/ADR-021: eine LLM-Entscheidung fällt auf einen
+   sichtbaren, überprüfbaren Zustand zurück, nie auf ein stilles Verschwinden.
+2. **Ein Ausfall des Kritikers lässt durch, er blockiert nicht.** Ein
+   Vorfilter, der bei einem Netzwerkfehler die ganze Charge anhält, hat aus
+   einer Sparmaßnahme einen Single Point of Failure gemacht. `critic.critique`
+   gibt bei jedem Fehler ein "proceed" zurück **plus** die Fehlermeldung, damit
+   der Ausfall in der Telemetrie steht statt unsichtbar zu bleiben.
+
+**Befunde und Entscheidung sind getrennte Felder.** Ein Modell, das vier Mängel
+auflistet und trotzdem durchwinkt, hat sich widersprochen. Das Schema
+definiert diesen Widerspruch **nicht** weg — `CandidateCritique.contradictory`
+meldet ihn in die Telemetrie. Wer sich auf die Empfehlung verlässt, soll die
+Befunde daneben sehen können.
+
+**Der Kritik-Prompt hält ausdrücklich vom Dauerablehnen ab:** "proceed ist die
+richtige Antwort, wenn nichts Konkretes dagegen spricht." Ein Kritiker, der
+jeden Kandidaten ablehnt, filtert nichts — er blockiert nur, und dann wird er
+abgeschaltet. `--critic-effort` steht per Default auf `low`, der Generator auf
+`medium`: der Unterschied gehört in den Code, nicht nur in die Doku, sonst
+wird aus dem billigen Vorfilter beim nächsten Lauf unbemerkt ein teurer.
+
+---
+
+## ADR-032 — Nur abgeschlossenes Screening zählt als Versuch
+**Datum:** 2026-08-27
+
+**Die Frage:** Zählt ein Kandidat, den die Sandbox oder die Kritik verworfen
+hat, in den Versuchszähler der Deflated Sharpe Ratio?
+
+**Antwort: nein.** ADR-005 spricht von *"allen je getesteten"* Kandidaten, und
+"getestet" heißt hier: durch Walk-Forward-OOS gelaufen, ein Sharpe wurde auf
+echten Out-of-Sample-Daten berechnet. Wer nie gegen echte Daten lief, hat
+keinen zusätzlichen Blick auf die Daten gekauft und darf die Korrektur nicht
+mit einem Versuch belasten.
+
+**Die angenehme Folge:** Die Kritik-Stufe senkt damit nicht nur die Kosten,
+sondern die *tatsächliche Zahl der Datenblicke* — und wird dafür statistisch
+nicht bestraft. Ein Vorfilter, der jeden abgelehnten Kandidaten trotzdem als
+Versuch zählte, hätte die DSR-Schwelle für alle folgenden angehoben, ohne dass
+je jemand hingeschaut hätte.
+
+**Die Umsetzung ist eine abgeleitete Abfrage, kein gepflegtes Feld:**
+
+```sql
+SELECT count(*) FROM candidates WHERE screening_status IS NOT NULL
+```
+
+Zwei Zahlen, die zueinander passen müssen und an verschiedenen Orten stehen,
+passen irgendwann nicht mehr zueinander — genau der Fehler aus ADR-020. Ein
+abgeleiteter Zähler kann nicht driften.
+
+**Der Zähler schließt den laufenden Kandidaten ein.** Er ist einer der Blicke
+auf die Daten. `trial_count_at_screening` wird mitgeschrieben, weil eine DSR
+nur zusammen mit der Versuchszahl interpretierbar ist, gegen die sie gerechnet
+wurde.
+
+**Gemessen, nicht behauptet:** Zwei getrennte `qt research`-Läufe hintereinander
+zeigen 0 → 3 → 5, und die DSR des vierten Kandidaten rechnet gegen 4 Versuche,
+nicht wieder gegen 1.
+
+---
+
 ## ADR-027 — Der Vorlauf wird nicht bezahlt
 **Datum:** 2026-08-25
 

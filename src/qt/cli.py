@@ -600,3 +600,175 @@ def list_strategies() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("research")
+def research(
+    generate: Annotated[int, typer.Option(help="Wie viele Kandidaten erzeugen")] = 5,
+    screen: Annotated[
+        bool, typer.Option("--screen", help="Ueberlebende durch Walk-Forward und DSR schicken")
+    ] = False,
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "4h",
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 3000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 800,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 50,
+    dsr_threshold: Annotated[
+        float, typer.Option(help="Ab welcher DSR ein Kandidat besteht")
+    ] = 0.95,
+    model: Annotated[str, typer.Option(help="LLM-Modell")] = DEFAULT_MODEL,
+    generator_effort: Annotated[
+        str, typer.Option(help="Denk-Aufwand des Generators", callback=_effort)
+    ] = DEFAULT_EFFORT,
+    critic_effort: Annotated[
+        str,
+        typer.Option(
+            help="Denk-Aufwand der Kritik. Default niedriger: sie ist der "
+            "billige Vorfilter, nicht die Hauptarbeit.",
+            callback=_effort,
+        ),
+    ] = "low",
+    no_critic: Annotated[
+        bool, typer.Option("--no-critic", help="Kritik-Stufe ueberspringen")
+    ] = False,
+    stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen die Stubs")] = False,
+    show: Annotated[str | None, typer.Option(help="Kandidaten-ID anzeigen (nur lesen)")] = None,
+    mark_promoted: Annotated[
+        str | None, typer.Option(help="Kandidaten-ID als uebernommen vermerken")
+    ] = None,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Der Research-Loop: LLM schreibt Kandidaten, harte Gates entscheiden.
+
+    Die Reihenfolge ist nach Kosten sortiert: Sandbox (gratis), Kritik
+    (billig), Walk-Forward samt DSR (teuer). Wer frueher ablehnt, spart alles
+    Folgende.
+
+    **Promotion bleibt Handarbeit.** Es gibt bewusst keinen Befehl, der einen
+    bestandenen Kandidaten nach `strategy/library/` schreibt -- `--show`
+    druckt ihn, kopieren muss ein Mensch. Eine automatische Uebernahme waere
+    der schleichende Weg, die Freigabe abzuschaffen.
+    """
+    from qt.data.store import read_bars, to_bars
+    from qt.llm.cache import LLMCache
+    from qt.llm.client import (
+        CriticClient,
+        GeneratorClient,
+        StubCriticClient,
+        StubGeneratorClient,
+    )
+    from qt.research.loop import run_research_loop
+    from qt.research.registry import ResearchRegistry
+
+    registry = ResearchRegistry.open()
+
+    if show is not None:
+        _show_candidate(registry, show)
+        registry.close()
+        raise typer.Exit(code=0)
+
+    if mark_promoted is not None:
+        registry.mark_promoted(mark_promoted, note="manuell freigegeben")
+        typer.echo(f"Kandidat {mark_promoted} als uebernommen vermerkt.")
+        registry.close()
+        raise typer.Exit(code=0)
+
+    symbol_list = _split(symbols)
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbol_list
+    }
+
+    if stub:
+        gen_client = StubGeneratorClient()
+        crit_client = StubCriticClient()
+        typer.echo(
+            "Hinweis: der Stub-Generator liefert bewusst schwache Kandidaten und\n"
+            "der Stub-Kritiker laesst alles durch. Der Lauf prueft die\n"
+            "Verdrahtung, nicht die Idee (ADR-019).\n"
+        )
+    else:
+        gen_client = GeneratorClient(
+            model=model, cache=LLMCache(model=model), effort=generator_effort
+        )
+        crit_client = CriticClient(
+            model=model, cache=LLMCache(model=model), effort=critic_effort
+        )
+
+    typer.echo(f"Versuchszaehler vor diesem Lauf: {registry.trial_count()}")
+    typer.echo()
+
+    telemetry = run_research_loop(
+        generate,
+        bars,
+        symbol_list,
+        tf,
+        gen_client,
+        crit_client,
+        registry=registry,
+        train_bars=train,
+        test_bars=test,
+        embargo_bars=embargo,
+        dsr_threshold=dsr_threshold,
+        use_critic=not no_critic,
+        echo=typer.echo,
+    )
+
+    typer.echo()
+    typer.echo(telemetry.table())
+    typer.echo()
+    typer.echo(f"Versuchszaehler nach diesem Lauf: {registry.trial_count()}")
+
+    for note in telemetry.notes:
+        typer.echo(f"  Hinweis: {note}")
+
+    if telemetry.passed:
+        typer.echo(
+            f"\n{telemetry.passed} Kandidat(en) haben die DSR-Schwelle bestanden.\n"
+            "Ansehen mit `qt research --show <id>`, uebernehmen von Hand."
+        )
+        winners = registry.history(status="passed")
+        for row in winners.tail(telemetry.passed).itertuples():
+            typer.echo(f"  {row.id}  DSR {row.dsr:.3f}  Sharpe {row.sharpe:+.2f}")
+    else:
+        typer.echo(
+            "\nKein Kandidat hat bestanden. Das ist der Normalfall und kein "
+            "Fehler (ADR-005)."
+        )
+
+    registry.close()
+    raise typer.Exit(code=0)
+
+
+def _show_candidate(registry, candidate_id: str) -> None:
+    """Vollen Audit-Pfad eines Kandidaten drucken. Nur lesen, nie schreiben."""
+    row = registry.get(candidate_id)
+    if row is None:
+        typer.echo(f"Kein Kandidat mit der ID {candidate_id}.")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Kandidat {row['id']}")
+    typer.echo(f"  erzeugt      {row['created_at']}")
+    typer.echo(f"  Modell       {row['generator_model']} (Effort {row['generator_effort']})")
+    typer.echo(f"  Klasse       {row['class_name']}")
+    typer.echo(f"  Sandbox      {row['sandbox_status']}")
+    if row.get("sandbox_reasons"):
+        for reason in row["sandbox_reasons"]:
+            typer.echo(f"               {reason}")
+    typer.echo(f"  Kritik       {row['critic_recommendation']}")
+    if row.get("critic_reasoning"):
+        typer.echo(f"               {row['critic_reasoning']}")
+    typer.echo(f"  Screening    {row['screening_status']}")
+    if row.get("dsr") is not None:
+        typer.echo(
+            f"               DSR {row['dsr']:.3f} gegen "
+            f"{row['trial_count_at_screening']} Versuche, Sharpe {row['sharpe']:+.2f}"
+        )
+    typer.echo(f"  uebernommen  {row['promoted']}")
+    typer.echo()
+    typer.echo("Begruendung:")
+    typer.echo(f"  {row['rationale']}")
+    typer.echo()
+    typer.echo("Code:")
+    typer.echo(row["code"])

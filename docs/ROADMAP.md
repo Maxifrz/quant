@@ -2,16 +2,24 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0–4 sind gebaut.** Nächster Schritt: **Phase 5 — Research-Loop.**
+> **Phase 0–5 sind gebaut.** Nächster Schritt: **Phase 6 — Paper-Trading.**
 >
-> Erster Handgriff: `src/qt/research/sandbox.py` — die AST-Whitelist, die
-> LLM-generierte Strategie-Kandidaten prüft, bevor irgendetwas davon läuft.
-> Vor dem Generator, nicht danach: eine Sandbox, die erst nachgerüstet wird,
-> ist keine.
+> Erster Handgriff: `src/qt/live/runner.py` mit `PaperClock` + `SimBroker` —
+> echte Live-Daten, simulierte Fills, derselbe Codepfad wie der Backtest
+> (ADR-001). Vorher lohnt der Blick in `docs/ARCHITECTURE.md`: für Phase 6/7
+> steht die Empfehlung, die Ausführung auf Nautilus aufzusetzen statt den
+> `SimBroker` zur Live-Infrastruktur auszubauen.
 >
-> Danach `qt.research.screening` mit der **Deflated Sharpe Ratio** gegen die
-> Anzahl *aller je getesteten* Kandidaten (ADR-005) — ohne die ist der
-> Research-Loop eine Overfitting-Maschine.
+> **Vorher aber der billigere Schritt:** Phase 5 läuft, ist aber nur gegen
+> Stubs geprüft. Ein echter Lauf kostet wenige Dollar und sagt mehr als
+> weiterer Code:
+> ```bash
+> ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen \
+>     --generator-effort medium --critic-effort low
+> ```
+> Auf den Trichter schauen: eine hohe **Sandbox-Ablehnungsquote** heißt, der
+> Generator-Prompt und die Whitelist sind auseinandergelaufen (ADR-030) —
+> das ist ein Prompt-Fehler, kein Modellbefund.
 >
 > **Weiterhin offen aus Phase 3:** Der LLM-Allokator ist gebaut, aber seine
 > Wirksamkeit ungeprüft (ADR-019, kein API-Schlüssel in der Bauumgebung).
@@ -222,16 +230,63 @@ wenigsten Exposure zu. Welches Modell recht hat, entscheidet diese Tabelle
 nicht — sie zeigt nur, dass die Wahl folgenreich ist und deshalb begründet
 werden muss.
 
-## ⬜ Phase 5 — Research-Loop
+## ✅ Phase 5 — Research-Loop
 
-- `qt.research.generator` — LLM schreibt Kandidaten gegen eine eng definierte API
-- `qt.research.sandbox` — AST-Whitelist: keine Imports, keine I/O, kein Netzwerk
-- `qt.research.screening` — In-Sample → Walk-Forward-OOS → **Deflated Sharpe Ratio**
-  gegen die Anzahl *aller je getesteten* Kandidaten (ADR-005)
-- `qt.research.registry` — Herkunft, Zeitpunkt, OOS-Fenster, Statistik
-- Promotion nach `strategy/library/` nur mit manueller Freigabe
+- `qt.research.sandbox` — AST-Whitelist statt Blockliste, plus Fassaden für
+  `np` und `ta`, damit eine erlaubte *Syntax* nicht doch eine verbotene
+  *Methode* erreicht (ADR-029)
+- `qt.research.dsr` — Deflated Sharpe Ratio gegen alle je getesteten
+  Kandidaten (ADR-005)
+- `qt.research.registry` — DuckDB; der Versuchszähler ist eine abgeleitete
+  Abfrage, kein gepflegtes Feld (ADR-032)
+- `qt.research.generator` — Briefing **ohne jede** datenabgeleitete Zahl
+- `qt.research.critic` — adversariale Kritik als billiger Vorfilter vor dem
+  teuren Backtest (ADR-031)
+- `qt.research.screening` — Sanity-Check, Walk-Forward, DSR
+- `qt.research.loop` — die Orchestrierung samt Trichter-Telemetrie
 
-**Vorführen:** `uv run qt research --generate 20 --screen`
+**Vorführen:**
+```bash
+uv run qt research --generate 3 --screen --stub
+uv run qt research --show <id>          # voller Audit-Pfad, nur lesen
+```
+
+### Die Reihenfolge ist nach Kosten sortiert
+
+```
+Generator (LLM)  ->  Sandbox (gratis)  ->  Kritik (billig)  ->  Walk-Forward + DSR (teuer)
+```
+
+Jede Stufe, die früher ablehnt, spart alle folgenden. Der Sanity-Check
+zwischen Kritik und Walk-Forward verwirft nur, was technisch nichts liefert —
+eine In-Sample-Schwelle auf die Rendite wäre eine Vorauswahl auf denselben
+Daten, gegen die anschließend out-of-sample geprüft wird.
+
+### Was der erste Stub-Lauf zeigt
+
+Zwei Läufe hintereinander, je über BTC/USD 4h ab 2021:
+
+| | Lauf 1 | Lauf 2 |
+|---|---|---|
+| Versuchszähler vorher | 0 | 3 |
+| erzeugt / gescreent | 3 / 3 | 2 / 2 |
+| DSR bestanden | 0 | 0 |
+| Versuchszähler nachher | 3 | **5** |
+
+Der Zähler überlebt den Prozesswechsel — die DSR des vierten Kandidaten
+rechnet gegen 4 Versuche, nicht wieder gegen 1. Genau das ist der Unterschied
+zwischen einem Overfitting-Schutz und einem, der bei jedem Neustart vergisst.
+
+Dass alle durchfallen, ist der Normalfall: der Stub-Generator liefert
+absichtlich schwache z-Score-Reversionen mit Sharpe zwischen −4 und −6.
+
+### Promotion bleibt Handarbeit
+
+Es gibt bewusst **keinen** Befehl, der einen bestandenen Kandidaten nach
+`strategy/library/` schreibt. `--show <id>` druckt ihn, kopieren muss ein
+Mensch, `--mark-promoted <id>` hält es nur fest. Eine automatische Übernahme —
+auch hinter einer Bestätigung — wäre der schleichende Weg, die Freigabe
+abzuschaffen.
 
 ## ⬜ Phase 6 — Paper-Trading
 

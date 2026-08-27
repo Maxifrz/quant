@@ -30,7 +30,20 @@ from qt.llm.briefing import Briefing
 from qt.llm.schemas import AllocationProposal
 
 if TYPE_CHECKING:
+    # Nur fuer die Typpruefung: die Methoden importieren diese Namen zur
+    # Laufzeit selbst, direkt vor Gebrauch. Ohne diesen Block waeren die
+    # Annotationen in Anfuehrungszeichen fuer jeden Pruefer unaufloesbare
+    # Namen -- und ein `# noqa` daneben wuerde die Meldung verstecken statt
+    # den Namen bekannt zu machen.
+    #
+    # Kein Ladezeit-Argument: `qt.llm.schemas` steht ohnehin oben im
+    # Modulkopf, pydantic ist beim Import dieser Datei also bereits da.
     from qt.llm.cache import LLMCache
+    from qt.llm.schemas import (
+        CandidateCritique,
+        ScenarioProposal,
+        StrategyCandidateProposal,
+    )
 
 DEFAULT_MODEL = DEFAULT_LLM_MODEL
 
@@ -414,4 +427,442 @@ class StubScenarioClient:
             regime="stub",
             confidence=0.0,
             reasoning="Deterministischer Ersatz, kein Modellaufruf.",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Research-Loop (Phase 5): Generator und Kritiker
+# ---------------------------------------------------------------------------
+
+# Eingefroren wie die Prompts oben, und aus demselben Grund: er geht in den
+# Cache-Key ein. Wer ihn aendert, entwertet damit jede zuvor gecachte Antwort
+# -- das ist richtig so, soll aber eine bewusste Handlung sein.
+#
+# Der Prompt zaehlt die Sandbox-Grenzen ausdruecklich auf. Das ist keine
+# Hoeflichkeit gegenueber dem Modell, sondern Kostenrechnung: jeder Kandidat,
+# den die Whitelist danach verwirft, war ein bezahlter Aufruf ohne Ergebnis.
+# Die Liste stammt aus `qt.research.sandbox` -- laeuft sie auseinander, faellt
+# das als Ablehnungsquote auf, nicht als Fehler.
+GENERATOR_SYSTEM_PROMPT = """Du entwirfst Handelsstrategien fuer Krypto-Spot-Maerkte.
+
+Schreibe genau eine Python-Klasse, die von `Strategy` erbt. Genau diese Form,
+sie ist nicht verhandelbar:
+
+    class ZReversion(Strategy):
+        name = "z_reversion"
+        LOOKBACK = 48
+        THRESHOLD = 2.0
+        warmup_bars = 50
+
+        def on_bar(self, symbol, store):
+            window = store.window(symbol, self.timeframe)
+            if len(window) < self.warmup_bars:
+                return math.nan
+            closes = window.closes()
+            z = ta.zscore(closes, self.LOOKBACK)
+            if not math.isfinite(z):
+                return math.nan
+            if z > self.THRESHOLD:
+                return -1.0
+            if z < -self.THRESHOLD:
+                return 1.0
+            return 0.0
+
+Drei Dinge daran sind ungewohnt und trotzdem zwingend:
+
+- **Kein `__init__`, kein `super()`.** Die Sandbox verbietet beides. Parameter
+  sind Klassenkonstanten in GROSSBUCHSTABEN, angesprochen ueber `self.NAME`.
+  `self.params` gibt es hier nicht.
+- **`warmup_bars` ist ein schlichtes Klassenattribut**, kein `@property`.
+  Dekoratoren sind verboten. Setze eine Zahl, die zu deinen Konstanten passt.
+- **`name` ist ein Klassenattribut** in Kleinbuchstaben mit Unterstrichen.
+
+`on_bar` gibt ein Zielgewicht in [-1, +1] zurueck. `math.nan` heisst "keine
+Meinung" -- die Engine behaelt dann das bestehende Gewicht bei. Das ist etwas
+anderes als 0.0, was "geh flat" bedeutet.
+
+DER CODE LAEUFT IN EINER SANDBOX. Diese Grenzen sind hart, ein Verstoss
+verwirft den Kandidaten ungetestet:
+
+- Keine Imports, ausnahmslos. Verfuegbar sind `np`, `math`, `ta`, `Strategy`
+  und `clip_weight` -- sie sind bereits gebunden.
+- Keine Schleifen: kein `for`, kein `while`, keine Comprehensions. Alles
+  Fensterartige laeuft ueber `ta.*` und `np.*`.
+- Keine Dekoratoren, kein `try`/`except`, kein `with`, kein `lambda`, kein
+  `assert`, kein `global`.
+- Nichts mit fuehrendem Doppel-Unterstrich -- weder definieren noch zugreifen.
+- Kein `eval`, `exec`, `open`, `getattr`, `setattr`, `globals`, `type`,
+  `super`, `object`, `dir`, `vars`.
+- An eingebauten Funktionen gibt es nur: `len`, `abs`, `min`, `max`, `sum`,
+  `round`, `float`, `int`, `bool`, `sorted`, `enumerate`, `range`.
+  Insbesondere gibt es **kein** `all` und **kein** `any` -- pruefe mehrere
+  Werte mit `and` statt mit `all(...)`.
+
+Verfuegbare Indikatoren, alle aus `ta`:
+- `ta.sma(values, n)` -> float
+- `ta.stdev(values, n)` -> float
+- `ta.zscore(values, n)` -> float
+- `ta.donchian(highs, lows, n)` -> (hoch, tief)
+- `ta.true_range(highs, lows, closes)` -> Array
+- `ta.atr(highs, lows, closes, n)` -> float
+- `ta.realised_vol(closes, n, bars_per_year)` -> float
+
+Aus `window` kommen `window.closes()`, `.highs()`, `.lows()`, `.opens()`,
+`.volumes()` als numpy-Arrays, aeltester Wert zuerst. `len(window)` ist die
+Zahl der bisher gesehenen Bars.
+
+Zustand ueber Bars hinweg haeltst du in `self._state` (ein dict, bereits da),
+zum Beispiel `self._state.setdefault(symbol, {"weight": 0.0})`.
+
+ZWEI REGELN, DIE UEBER DIE SANDBOX HINAUSGEHEN:
+
+1. Keine absoluten Preiskonstanten. `close > 42000` ist an einen Kurs
+   gebunden, den es nur in einem bestimmten Zeitraum gab -- das ist
+   Ueberanpassung in Reinform und wird als solche erkannt. Erlaubt sind
+   Bar-Zahlen, z-Scores, ATR-Vielfache, Prozent- und Verhaeltniswerte.
+2. Wenige Parameter. Jeder Freiheitsgrad ist ein weiterer Blick auf dieselben
+   Daten; drei Konstanten sind viel, fuenf sind zu viele.
+
+Die Strategie wird mit 90 Basispunkten Round-Trip-Kosten getestet. Eine Idee,
+die bei jedem Bar umschichtet, ist vor Kosten tot -- rechne damit, bevor du
+sie einreichst.
+
+`rationale` ist ein kurzer Absatz: welche Marktbeobachtung soll die Kante
+tragen, und warum sollte sie fortbestehen. Keine Behauptung ueber Rendite."""
+
+
+# Bewusst eine andere Rolle, nicht derselbe Prompt in Grau. Der Kritiker soll
+# Gruende finden, den Kandidaten NICHT zu testen -- das ist die einzige
+# Haltung, in der ein Vorfilter etwas leistet.
+CRITIC_SYSTEM_PROMPT = """Du pruefst Strategie-Kandidaten, bevor sie einen teuren
+Walk-Forward-Backtest bekommen. Deine Aufgabe ist, Gruende zu finden, ihn
+nicht zu testen.
+
+Suche nach:
+
+- **Ueberanpassung.** Parameter, die nach Feinjustierung an einem bestimmten
+  Verlauf aussehen. Schwellen mit drei Nachkommastellen. Sonderfaelle, die nur
+  eine Marktphase beschreiben.
+- **Magischen Preiskonstanten.** Zahlen, die an ein Kursniveau gebunden sind
+  statt an eine Bar-Zahl, einen z-Score oder ein ATR-Vielfaches. Das ist der
+  haerteste Befund: er macht die Strategie ausserhalb eines Zeitraums sinnlos.
+- **Unrealistischem Umsatz.** Getestet wird mit 90 Basispunkten Round-Trip.
+  Eine Strategie, die haeufig zwischen Gewichten springt, ist vor Kosten tot,
+  egal wie gut das Signal ist.
+- **Zu vielen Freiheitsgraden** fuer die genannte Zahl an Out-of-Sample-Bars.
+- **Widerspruch zwischen Begruendung und Code.** Behauptet die Begruendung
+  etwas, das der Code nicht tut?
+
+ZWEI REGELN, OHNE DIE DU NUTZLOS BIST:
+
+1. "proceed" ist die richtige Antwort, wenn nichts Konkretes dagegen spricht.
+   Ein Kritiker, der jeden Kandidaten ablehnt, filtert nichts, er blockiert
+   nur -- und dann wird er abgeschaltet.
+2. Begruende mit der Stelle im Code, nicht mit einem allgemeinen Verdacht.
+   "Zeile mit dem Vergleich gegen 42000" ist eine Begruendung. "wirkt
+   ueberangepasst" ist keine.
+
+Ein schwacher, aber ehrlicher Kandidat soll durchkommen. Der Backtest darf
+ihn ablehnen -- dafuer ist er da. Du haeltst nur zurueck, was nachweislich
+nicht testwuerdig ist."""
+
+
+class GeneratorClient:
+    """Laesst das Modell einen Strategie-Kandidaten schreiben.
+
+    Aufbau wie `AllocatorClient` und `ScenarioClient`: Cache vor Aufruf,
+    strukturierte Ausgabe, sprechender Fehler statt Absturz ohne API-Zugang.
+    """
+
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        cache: "LLMCache | None" = None,
+        max_tokens: int = 8192,
+        effort: str = "medium",
+    ) -> None:
+        self.model = model
+        self.cache = cache
+        # Groesser als bei den anderen Clients: hier entsteht Quelltext, keine
+        # Handvoll Zahlen. Ein abgeschnittener Kandidat ist kein Kandidat.
+        self.max_tokens = max_tokens
+        self.effort = effort
+        self._client = None
+
+    def propose(self, briefing: str) -> "StrategyCandidateProposal":
+        from qt.llm.schemas import StrategyCandidateProposal
+
+        key = self._cache_key(briefing)
+        if key is not None:
+            hit = self.cache.get(key, model=StrategyCandidateProposal)
+            if hit is not None:
+                return hit
+
+        proposal = self._call(briefing)
+
+        if key is not None:
+            self.cache.put(key, proposal)
+        return proposal
+
+    def _cache_key(self, briefing: str) -> str | None:
+        if self.cache is None:
+            return None
+        return self.cache.key(
+            briefing,
+            system=GENERATOR_SYSTEM_PROMPT,
+            model=self.model,
+            effort=self.effort,
+            kind="candidate",
+        )
+
+    def _call(self, briefing: str) -> "StrategyCandidateProposal":
+        from qt.llm.schemas import StrategyCandidateProposal
+
+        client = self._ensure_client()
+        try:
+            response = client.messages.parse(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=[
+                    {
+                        "type": "text",
+                        "text": GENERATOR_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                thinking={"type": "adaptive"},
+                output_config={"effort": self.effort},
+                messages=[{"role": "user", "content": briefing}],
+                output_format=StrategyCandidateProposal,
+            )
+        except Exception as exc:
+            raise LLMUnavailable(
+                f"Generator-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
+            ) from exc
+
+        if response.stop_reason == "refusal":
+            raise LLMUnavailable("Das Modell hat die Generator-Anfrage abgelehnt.")
+        parsed = response.parsed_output
+        if parsed is None:
+            raise LLMUnavailable("Generator-Antwort enthielt kein auswertbares Schema.")
+        return parsed
+
+    def _ensure_client(self):
+        if self._client is not None:
+            return self._client
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
+        try:
+            self._client = anthropic.Anthropic()
+        except Exception as exc:
+            raise LLMUnavailable("Kein API-Zugang.") from exc
+        return self._client
+
+
+class CriticClient:
+    """Laesst das Modell einen Kandidaten adversarial pruefen.
+
+    Eigener Client statt eines Parameters am Generator, weil beide getrennte
+    Systemprompts, getrennte Cache-Eintraege und typischerweise getrennte
+    Effort-Stufen haben: die Kritik ist als **billiger** Vorfilter gedacht.
+    """
+
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        cache: "LLMCache | None" = None,
+        max_tokens: int = 4096,
+        effort: str = "low",
+    ) -> None:
+        self.model = model
+        self.cache = cache
+        self.max_tokens = max_tokens
+        # Default niedriger als beim Generator. Der Unterschied gehoert in den
+        # Code und nicht nur in die Doku -- sonst wird aus dem billigen
+        # Vorfilter beim naechsten Lauf unbemerkt ein teurer.
+        self.effort = effort
+        self._client = None
+
+    def critique(self, briefing: str) -> "CandidateCritique":
+        from qt.llm.schemas import CandidateCritique
+
+        key = self._cache_key(briefing)
+        if key is not None:
+            hit = self.cache.get(key, model=CandidateCritique)
+            if hit is not None:
+                return hit
+
+        verdict = self._call(briefing)
+
+        if key is not None:
+            self.cache.put(key, verdict)
+        return verdict
+
+    def _cache_key(self, briefing: str) -> str | None:
+        if self.cache is None:
+            return None
+        return self.cache.key(
+            briefing,
+            system=CRITIC_SYSTEM_PROMPT,
+            model=self.model,
+            effort=self.effort,
+            kind="critique",
+        )
+
+    def _call(self, briefing: str) -> "CandidateCritique":
+        from qt.llm.schemas import CandidateCritique
+
+        client = self._ensure_client()
+        try:
+            response = client.messages.parse(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=[
+                    {
+                        "type": "text",
+                        "text": CRITIC_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                thinking={"type": "adaptive"},
+                output_config={"effort": self.effort},
+                messages=[{"role": "user", "content": briefing}],
+                output_format=CandidateCritique,
+            )
+        except Exception as exc:
+            raise LLMUnavailable(
+                f"Kritik-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
+            ) from exc
+
+        if response.stop_reason == "refusal":
+            raise LLMUnavailable("Das Modell hat die Kritik-Anfrage abgelehnt.")
+        parsed = response.parsed_output
+        if parsed is None:
+            raise LLMUnavailable("Kritik-Antwort enthielt kein auswertbares Schema.")
+        return parsed
+
+    def _ensure_client(self):
+        if self._client is not None:
+            return self._client
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
+        try:
+            self._client = anthropic.Anthropic()
+        except Exception as exc:
+            raise LLMUnavailable("Kein API-Zugang.") from exc
+        return self._client
+
+
+# Vorlage fuer den Stub-Kandidaten. Die Form ist gegen die echte Sandbox
+# geprueft: keine Imports, keine Schleifen, kein __init__, kein Dekorator,
+# `warmup_bars` als Klassenattribut. Ein Stub, der die eigene Sandbox nicht
+# besteht, wuerde jeden Lauf ohne API-Zugang schon vor der Kritik abwuergen --
+# und der Fehler saehe wie ein Befund ueber den Generator aus.
+_STUB_CANDIDATE_TEMPLATE = '''class {class_name}(Strategy):
+    name = "{name}"
+    LOOKBACK = {lookback}
+    THRESHOLD = {threshold}
+    warmup_bars = {warmup}
+
+    def on_bar(self, symbol, store):
+        window = store.window(symbol, self.timeframe)
+        if len(window) < self.warmup_bars:
+            return math.nan
+        closes = window.closes()
+        z = ta.zscore(closes, self.LOOKBACK)
+        if not math.isfinite(z):
+            return math.nan
+        if z > self.THRESHOLD:
+            return -1.0
+        if z < -self.THRESHOLD:
+            return 1.0
+        return 0.0
+'''
+
+
+class StubGeneratorClient:
+    """Deterministischer Ersatz fuer den Generator.
+
+    Liefert eine z-Score-Reversion mit variierendem Lookback. Bewusst eine
+    langweilige, offensichtlich schwache Idee: der Stub soll die Verdrahtung
+    beweisen, nicht so tun, als haette er etwas gefunden. Wer im Stub-Lauf
+    einen Kandidaten die DSR-Schwelle reissen sieht, soll das der Schwelle
+    zuschreiben und nicht dem Modell.
+
+    Der Lookback variiert mit dem Aufrufzaehler, damit `--generate 20` nicht
+    zwanzigmal denselben Kandidaten erzeugt -- die Pipeline soll auch offline
+    mit verschiedenen Eingaben laufen. Deterministisch bleibt es trotzdem:
+    derselbe Zaehlerstand ergibt bitgleich dieselbe Antwort.
+    """
+
+    LOOKBACKS = (24, 36, 48, 72, 96, 120, 168, 240)
+
+    def __init__(self, proposal: "StrategyCandidateProposal | None" = None) -> None:
+        # `proposal` setzt die Antwort fest -- so kann ein Test einen gezielt
+        # gefaehrlichen Kandidaten durch die Pipeline schicken und pruefen,
+        # dass die Sandbox ihn faengt.
+        self.proposal = proposal
+        self.model = "stub"
+        self.effort = "stub"
+        self.calls = 0
+
+    def propose(self, briefing: str) -> "StrategyCandidateProposal":
+        from qt.llm.schemas import StrategyCandidateProposal
+
+        index = self.calls
+        self.calls += 1
+        if self.proposal is not None:
+            return self.proposal
+
+        lookback = self.LOOKBACKS[index % len(self.LOOKBACKS)]
+        suffix = index + 1
+        class_name = f"StubReversion{suffix}"
+        code = _STUB_CANDIDATE_TEMPLATE.format(
+            class_name=class_name,
+            name=f"stub_reversion_{suffix}",
+            lookback=lookback,
+            threshold=2.0,
+            warmup=lookback + 2,
+        )
+        return StrategyCandidateProposal(
+            name=f"stub_reversion_{suffix}",
+            class_name=class_name,
+            code=code,
+            rationale=(
+                "Stub-Kandidat: z-Score-Reversion ueber "
+                f"{lookback} Bars. Beweist die Verdrahtung, keine Kante."
+            ),
+        )
+
+
+class StubCriticClient:
+    """Deterministischer Ersatz fuer den Kritiker: laesst alles durch.
+
+    Aus demselben Grund neutral wie `StubScenarioClient` keine Priors erfindet:
+    der Vorfilter soll ohne API-Zugang **nicht** greifen. Ein Stub, der
+    ablehnte, wuerde die Pipeline vor dem Screening abschneiden, und im
+    Trichter saehe das aus wie eine Modellentscheidung statt wie ein fehlender
+    Schluessel.
+    """
+
+    def __init__(self, verdict: "CandidateCritique | None" = None) -> None:
+        self.verdict = verdict
+        self.model = "stub"
+        self.effort = "stub"
+        self.calls = 0
+
+    def critique(self, briefing: str) -> "CandidateCritique":
+        from qt.llm.schemas import CandidateCritique
+
+        self.calls += 1
+        if self.verdict is not None:
+            return self.verdict
+        return CandidateCritique(
+            recommendation="proceed",
+            overfitting_risk=0.0,
+            reasoning="Stub: keine Pruefung, nur Durchreichen.",
         )
