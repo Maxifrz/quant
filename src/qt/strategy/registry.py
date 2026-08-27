@@ -32,4 +32,9 @@ def names() -> list[str]:
 
 def load_library() -> None:
     """Mitgelieferte Strategien importieren, damit sie sich registrieren."""
-    from qt.strategy.library import meanrev, timesfm_strategy, trend  # noqa: F401
+    from qt.strategy.library import (  # noqa: F401
+        elliott,
+        meanrev,
+        timesfm_strategy,
+        trend,
+    )

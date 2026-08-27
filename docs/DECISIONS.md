@@ -5,6 +5,65 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-033 — Elliott-Wellen: mechanisierbar gemacht, und dann widerlegt
+**Datum:** 2026-08-27
+
+**Das Problem mit der Theorie:** Elliott-Wellen sind in üblicher Form nicht
+mechanisch. Ein Zähler vergibt Nummern, und wenn der Markt die Zählung
+widerlegt, wird umnummeriert. Genau das macht sie im Rückblick überzeugend und
+im Voraus wertlos: eine Zählung, die nach jedem neuen Hoch neu vergeben werden
+darf, kann nicht falsch sein.
+
+**Drei Einschränkungen machen sie prüfbar**, alle drei enger als das, was ein
+menschlicher Zähler täte:
+
+1. **Pivots werden bestätigt, nicht erkannt.** Ein Swing-Hoch bei Bar `i` steht
+   erst fest, wenn `confirm_bars` weitere Bars vergangen sind. Die Schleife
+   läuft bis `len - confirm_bars`, nicht bis `len - 1`. **Das ist die Stelle,
+   an der jede ZigZag-Implementierung schummelt** — wer bis zum letzten Bar
+   zählt, benutzt für den jüngsten Pivot Bars, die es zum
+   Entscheidungszeitpunkt noch nicht gab.
+2. **Es wird nie umnummeriert.** Bricht Regel 1, wird die Position geschlossen
+   — nicht zu einer anderen Zählung umgedeutet, die den Verlust wegerklärt.
+   Ein Test verankert das: kein direkter Sprung von +1 auf −1.
+3. **Nur die drei harten Regeln zählen**, nicht die Leitlinien. Sie sind die
+   einzigen Aussagen der Theorie, die eine Zählung eindeutig ausschließen.
+
+**Warum die dritte Welle und nicht die fünfte:** Die dritte ist die einzige,
+über die die Theorie eine nachprüfbare Aussage macht (sie ist nie die
+kürzeste). Ein Einstieg in der fünften wäre eine reine Vorhersage. Und Regel 1
+liefert die Ausstiegsmarke als **Preis, nicht als Meinung** — das ist der
+eigentliche Grund, warum diese Strategie überhaupt handelbar ist.
+
+**Das Ergebnis, BTC/USD 4h über 16.712 Bars:**
+
+| Variante | Faktor | Sharpe | Trades | Gebühren |
+|---|---|---|---|---|
+| ohne Kosten | **0,140** | −0,25 | 893 | 0 |
+| Maker 10bps | 0,090 | −0,37 | 894 | 24.491 |
+| Coinbase Taker (Default) | 0,027 | −0,68 | 889 | 69.241 |
+
+Walk-Forward (Train 3000 / Test 800 / Embargo 50): **7 von 17 Fenstern mit
+positivem Sharpe**, Gesamtergebnis negativ.
+
+**Die Diagnose ist eindeutig und sie ist die interessante Zahl:** Auch **ohne
+jede Gebühr** bleibt Faktor 0,14. Das ist kein Kostenproblem wie bei `trend`
+(ADR-009: 6,44 ohne Kosten, 0,46 mit), sondern ein Signalproblem wie bei
+`meanrev`. Die Wellenzählung findet Muster, aber die Muster sagen nichts über
+den nächsten Bar.
+
+**Was das über die Theorie sagt — und was nicht:** Widerlegt ist *diese*
+Mechanisierung auf *diesem* Markt in *diesem* Timeframe. Ein Verfechter würde
+einwenden, echte Wellenzählung brauche Urteilsvermögen. Das mag sein — aber
+dann ist sie keine Strategie, sondern eine Fähigkeit, und eine Fähigkeit lässt
+sich nicht backtesten. Der Wert dieses Moduls liegt darin, dass die Frage
+überhaupt beantwortbar wurde.
+
+Die Strategie bleibt in der Bibliothek, wie `timesfm` (ADR-022): offen als
+unrentabel markiert, prüfbar, und ein Testinstrument für die Engine.
+
+---
+
 ## ADR-029 — Die Sandbox ist eine Whitelist, und sie hat zwei Schlösser
 **Datum:** 2026-08-27
 

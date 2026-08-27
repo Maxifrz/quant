@@ -101,6 +101,7 @@ Datenlage: 7,6 Jahre, 99,97% Abdeckung, keine kaputten Bars.
 |---|---|---|
 | `trend` BTC/USD 4h | Faktor 0,46 · Sharpe −0,06 | Faktor 17,4 · Sharpe 0,92 |
 | `meanrev` ETH/USD 1h | Faktor 0,00 · Sharpe −2,08 | Faktor 14,6 · Sharpe 0,84 |
+| `elliott` BTC/USD 4h | Faktor 0,03 · Sharpe −0,68 | Faktor 17,4 · Sharpe 0,92 |
 
 Beide verlieren deutlich — wie erwartet. Die Diagnose ist aber unterschiedlich, und
 genau das ist der Wert dieser Phase:
@@ -108,6 +109,10 @@ genau das ist der Wert dieser Phase:
 - **`trend` scheitert an den Kosten, nicht am Signal.** Ohne Gebühren macht dieselbe
   Strategie Faktor 6,44, bei Maker-Gebühren 4,04, bei Coinbase-Taker-Gebühren 0,46.
   Details in ADR-009.
+- **`elliott` scheitert ebenfalls am Signal** (ADR-033). Ohne jede Gebühr bleibt
+  Faktor 0,14 bei Sharpe −0,25; mit Kosten 0,03. Die Wellenzählung findet Muster,
+  aber die Muster sagen nichts über den nächsten Bar. Walk-Forward: 7 von 17
+  Fenstern positiv.
 - **`meanrev` scheitert am Signal.** Auch ohne jede Gebühr bleibt Faktor 0,23
   (long-only) bzw. 0,01 (mit Short). Naive Mean-Reversion, die in einem Bullenmarkt
   Rallyes shortet, ruiniert das Konto — das ist kein Kostenproblem.
