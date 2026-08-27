@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from qt.backtest import costs
 from qt.backtest.costs import FillContext, FillModel, FlatFillModel
 from qt.core.config import BacktestConfig
 from qt.core.types import Fill, Order, Position

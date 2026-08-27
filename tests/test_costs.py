@@ -210,7 +210,6 @@ def test_size_aware_makes_capacity_visible_in_a_backtest():
     from qt.backtest.costs import FlatFillModel, SizeAwareFillModel
     from qt.backtest.engine import run_backtest
     from qt.core.config import BacktestConfig
-    from qt.features.registry import FeatureStore
     from qt.strategy.base import Strategy
 
     class Flipper(Strategy):

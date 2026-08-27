@@ -33,8 +33,7 @@ from qt.backtest.costs import FillModel
 from qt.core.clock import BacktestClock
 from qt.core.config import BacktestConfig
 from qt.core.events import merge_bar_streams
-from qt.core.types import Bar, Fill, Order, bars_per_year, timeframe_seconds
-from qt.features import ta
+from qt.core.types import Bar, Fill, Order, timeframe_seconds
 from qt.features.registry import FeatureStore
 from qt.portfolio.base import (
     AllocationContext,

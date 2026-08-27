@@ -770,5 +770,63 @@ def _show_candidate(registry, candidate_id: str) -> None:
     typer.echo("Begruendung:")
     typer.echo(f"  {row['rationale']}")
     typer.echo()
-    typer.echo("Code:")
-    typer.echo(row["code"])
+    typer.echo("Uebernehmen: den folgenden Block nach")
+    typer.echo(f"src/qt/strategy/library/{_module_name(row)}.py kopieren.")
+    typer.echo("Der Kandidat laeuft danach im Sandbox-Dialekt weiter -- Konstanten")
+    typer.echo("statt Konstruktor. Wer ihn umschreibt, testet einen anderen Kandidaten")
+    typer.echo("als den, der die DSR bestanden hat.")
+    typer.echo()
+    typer.echo(_promotable_module(row))
+
+
+def _module_name(row: dict) -> str:
+    """Dateiname aus dem Klassennamen: DonchianTrend -> donchian_trend."""
+    name = row.get("class_name") or "kandidat"
+    out = [name[0].lower()]
+    for char in name[1:]:
+        out.append(f"_{char.lower()}" if char.isupper() else char)
+    return "".join(out)
+
+
+def _promotable_module(row: dict) -> str:
+    """Den Kandidaten als fertiges Bibliotheksmodul ausgeben.
+
+    Bewusst nur **gedruckt**, nicht geschrieben: die Freigabe ist der einzige
+    Punkt, an dem ein Mensch zwischen einem generierten Kandidaten und dem
+    Handelssystem steht. Ein Befehl, der die Datei selbst anlegt -- auch
+    hinter einer Bestaetigung -- waere der schleichende Weg, diesen Punkt
+    abzuschaffen.
+
+    Was hier trotzdem passiert: der Kopf mit Herkunft, Kennzahlen und
+    Kandidaten-ID wird mitgeliefert. Eine Strategie in der Bibliothek, der man
+    nicht mehr ansieht, aus welchem Lauf und gegen wie viele Versuche sie
+    gemessen wurde, ist in einem halben Jahr nicht mehr einzuordnen -- und
+    genau diese Zahl entscheidet, wie ernst ihr Sharpe zu nehmen ist.
+    """
+    dsr = row.get("dsr")
+    trials = row.get("trial_count_at_screening")
+    kennzahl = (
+        f"DSR {dsr:.3f} gegen {trials} Versuche, Sharpe {row['sharpe']:+.2f} "
+        f"ueber {row['n_windows']} Walk-Forward-Fenster ({row['oos_bars']} OOS-Bars)."
+        if dsr is not None
+        else "Nicht gescreent -- Kennzahlen fehlen."
+    )
+    kopf = (
+        f'"""{row.get("rationale") or "LLM-generierter Kandidat."}\n'
+        f"\n"
+        f"Erzeugt vom Research-Loop, Kandidat {row['id']}.\n"
+        f"{kennzahl}\n"
+        f'"""\n'
+        f"\n"
+        f"from __future__ import annotations\n"
+        f"\n"
+        f"import math\n"
+        f"\n"
+        f"from qt.features import ta\n"
+        f"from qt.strategy.base import Strategy\n"
+        f"from qt.strategy.registry import register\n"
+        f"\n"
+        f"\n"
+        f"@register\n"
+    )
+    return kopf + row["code"]

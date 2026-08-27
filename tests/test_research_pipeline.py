@@ -489,3 +489,52 @@ def test_kritik_prompt_haelt_den_kritiker_vom_dauerablehnen_ab():
     """Ein Kritiker, der jeden Kandidaten ablehnt, filtert nichts."""
     assert "proceed" in CRITIC_SYSTEM_PROMPT
     assert "blockiert" in CRITIC_SYSTEM_PROMPT
+
+
+# --------------------------------------------------------------------------
+# Uebernahme-Ausgabe
+# --------------------------------------------------------------------------
+
+
+def test_show_gibt_ein_modul_aus_das_wirklich_laeuft():
+    """`--show` druckt einen Block zum Einfuegen -- er muss auch importierbar sein.
+
+    Ohne diesen Test druckt der Befehl etwas, das beim Einfuegen bricht, und
+    das faellt erst dem Menschen auf, der gerade eine Freigabe erteilen wollte.
+    """
+    import textwrap
+
+    from qt.cli import _promotable_module
+    from qt.strategy.base import Strategy
+
+    row = {
+        "id": "abc-123",
+        "class_name": "StubReversion1",
+        "rationale": "Testkandidat",
+        "dsr": 0.42,
+        "trial_count_at_screening": 7,
+        "sharpe": -1.5,
+        "n_windows": 8,
+        "oos_bars": 6400,
+        "code": StubGeneratorClient().propose("x").code,
+    }
+    modul = _promotable_module(row)
+
+    namespace: dict = {}
+    exec(compile(modul, "<uebernahme>", "exec"), namespace)  # noqa: S102
+    cls = namespace["StubReversion1"]
+    assert issubclass(cls, Strategy)
+
+    # Der Kopf muss die Herkunft tragen: ohne Kandidaten-ID und Versuchszahl
+    # ist ein halbes Jahr spaeter nicht mehr einzuordnen, wie ernst der Sharpe
+    # zu nehmen ist.
+    assert "abc-123" in modul
+    assert "gegen 7 Versuche" in modul
+    assert textwrap.dedent(modul).startswith('"""')
+
+
+def test_modulname_folgt_dem_klassennamen():
+    from qt.cli import _module_name
+
+    assert _module_name({"class_name": "DonchianTrend"}) == "donchian_trend"
+    assert _module_name({"class_name": "StubReversion1"}) == "stub_reversion1"

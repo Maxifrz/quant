@@ -21,7 +21,6 @@ from qt.strategy.library.timesfm_strategy import (
     ForecasterUnavailable,
     Forecaster,
     NaiveForecaster,
-    TimesFMForecaster,
     TimesFMStrategy,
 )
 from tests.conftest import make_bars
