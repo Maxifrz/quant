@@ -84,6 +84,38 @@ Anfragen und zwei Stunden. Erst damit wird die Frage beantwortbar.
 
 ---
 
+## Die erste Strategie, die Geld verdient (ADR-035)
+
+```bash
+uv run qt backtest --strategy macross --symbol BTC/USD --tf 1d
+uv run qt wf --strategy macross --symbol BTC/USD --tf 1d --train 1000 --test 250 --embargo 20
+```
+
+Zwei Hebel, die das Projekt nie gezogen hatte: **Tagesbasis statt 4h** (66 statt
+889 Trades — Frequenz ist Kosten) und **long/flach statt long/short** (die
+Gegenrichtung kämpft gegen die stärkste Drift im Datensatz).
+
+**Out-of-Sample, Fenster 2021-10 bis 2026-08:**
+
+| | macross | Buy & Hold |
+|---|---|---|
+| Faktor | **1,25** | 1,03 |
+| Sharpe | **0,31** | 0,27 |
+| Max Drawdown | **−51,0%** | −76,7% |
+
+20 von 25 Gitterpunkten verdienen Geld, und das Muster **repliziert auf ETH
+ohne Neuanpassung** (dort Faktor 1,00 gegen 0,49 bei Buy & Hold).
+
+**Trotzdem: DSR über 0,95 bei null von 25 Punkten.** Bei Sharpe 0,64 über 1.751
+Tagesbars liegt der t-Wert bei 1,4 — man kann einen Sharpe von 0,6 mit 4,8
+Jahren Tagesdaten nicht beweisen. Das ist die Datenmenge, nicht die Strategie.
+
+Damit ist `macross` der erste Kandidat für **Phase 6 (Paper-Trading)** — nicht
+weil sie bewiesen wäre, sondern weil Paper-Trading genau die fehlenden
+Beobachtungen sammelt und ihr Risikoprofil den Irrtum billig macht.
+
+---
+
 ## Prinzip der Phaseneinteilung
 
 Jede Phase endet mit **etwas Sichtbarem** — einem Chart, einer Zahl, einem Report —
@@ -126,6 +158,7 @@ Datenlage: 7,6 Jahre, 99,97% Abdeckung, keine kaputten Bars.
 | `trend` BTC/USD 4h | Faktor 0,46 · Sharpe −0,06 | Faktor 17,4 · Sharpe 0,92 |
 | `meanrev` ETH/USD 1h | Faktor 0,00 · Sharpe −2,08 | Faktor 14,6 · Sharpe 0,84 |
 | `elliott` BTC/USD 4h | Faktor 0,03 · Sharpe −0,68 | Faktor 17,4 · Sharpe 0,92 |
+| **`macross` BTC/USD 1d** | **Faktor 15,2 · Sharpe 1,03 · MaxDD −57%** | Faktor 16,8 · Sharpe 0,91 · MaxDD −77% |
 
 Beide verlieren deutlich — wie erwartet. Die Diagnose ist aber unterschiedlich, und
 genau das ist der Wert dieser Phase:

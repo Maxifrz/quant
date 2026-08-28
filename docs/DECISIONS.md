@@ -5,6 +5,116 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-035 — Die erste Strategie, die Geld verdient — und warum sie trotzdem nicht bewiesen ist
+**Datum:** 2026-08-27
+
+**Ausgangslage:** Vier Strategien gebaut, vier verloren. Alle vier liefen auf
+1h- oder 4h-Bars, alle vier durften short gehen. Beide Entscheidungen waren
+teuer, und keine von beiden war je hinterfragt worden.
+
+**Was die Recherche sagt.** Han/Kang/Ryu (2023) finden über den Kryptomarkt
+hinweg **starke** Belege für Zeitreihen-Momentum und schwache für
+Querschnitts-Momentum — aber: viele Momentum-Portfolios verlieren ihre
+Signifikanz, sobald Transaktionskosten realistisch angesetzt werden. Grayscale
+berichtet für einen 20/100-Tage-Crossover auf BTC einen Sharpe von 1,7 gegen
+1,3 bei Buy-and-Hold (2012–2023). Beide Quellen zeigen in dieselbe Richtung:
+**Tagesbasis, wenige Trades, long/flach**.
+
+**Zwei Hebel, die dieses Projekt nie gezogen hatte:**
+
+1. **Frequenz ist Kosten.** Bei 90bps Round-Trip muss ein Signal über 0,9%
+   vorhersagen, nur um bei null zu landen. `elliott` zahlte das 889-mal,
+   `macross` zahlt es 66-mal in siebeneinhalb Jahren.
+2. **Short kämpft gegen die Drift.** BTC machte im Datenfenster Faktor 16,8.
+   Die Gegenrichtung zu handeln heißt, gegen den stärksten Effekt im Datensatz
+   zu stehen.
+
+### In-Sample, BTC/USD 1d, mit vollen Kosten
+
+| | macross 10/50 | Buy & Hold |
+|---|---|---|
+| Gesamtrendite | 1424% | **1583%** |
+| Sharpe | **1,03** | 0,91 |
+| Max Drawdown | **−56,97%** | −76,67% |
+| Calmar | **0,75** | 0,58 |
+| Zeit im Markt | 54% | 100% |
+
+Sie schlägt Buy-and-Hold **nicht** in der Rendite, aber in jeder Risikokennzahl.
+Genau das beschreibt die Literatur: Trendfolge liefert nicht mehr Ertrag,
+sondern denselben Ertrag mit weniger Absturz.
+
+### Out-of-Sample (Walk-Forward, Train 1000 / Test 250 / Embargo 20)
+
+Fenster 2021-10 bis 2026-08 — ein Zeitraum, in dem Buy-and-Hold über 4,8 Jahre
+auf Faktor 1,03 kam:
+
+| | macross OOS | Buy & Hold |
+|---|---|---|
+| Faktor | **1,25** | 1,03 |
+| CAGR | **4,8%** | 0,7% |
+| Sharpe | **0,31** | 0,27 |
+| Max Drawdown | **−51,0%** | −76,7% |
+
+**Die erste positive Out-of-Sample-Zahl des Projekts.**
+
+### Das Parameterfeld — der eigentliche Test
+
+25 Gitterpunkte, jeder als eigener Walk-Forward:
+
+- **20 von 25 verdienen Geld**, 17 schlagen den Sharpe von Buy-and-Hold
+- Median-Faktor 1,36, Median-Sharpe 0,36
+- Klare Struktur: **je länger die langsame Linie, desto besser**
+  (5/150: Faktor 2,14, Sharpe 0,64, MaxDD −29,1%)
+
+Ein einzelner guter Punkt wäre Rauschen. Ein *Gefälle* über das Feld ist ein
+Hinweis auf einen Effekt.
+
+### Replikation auf ETH, ohne jede Neuanpassung
+
+Buy-and-Hold ETH im selben Fenster: Faktor **0,49**, Sharpe 0,13.
+
+| | macross (Median über 25 Punkte) | Buy & Hold |
+|---|---|---|
+| Faktor | 1,00 | 0,49 |
+| Sharpe | 0,23 | 0,13 |
+
+Und dieselbe Struktur: Median-Sharpe bei `slow ≥ 150` ist **0,31** gegen
+**0,20** bei `slow ≤ 80`. Das Muster hält auf einem Asset, auf das es nie
+angepasst wurde — die stärkste Einzelbeobachtung dieses ADRs.
+
+### Und trotzdem: **DSR über 0,95 — null von 25**
+
+Die Deflated Sharpe Ratio lehnt jeden Gitterpunkt ab. Bester Wert: 0,276 für
+5/150. Das ist kein Pech, sondern Arithmetik: bei einem annualisierten Sharpe
+von 0,64 über 1.751 Tagesbars liegt der t-Wert bei rund **1,4** — schon vor
+jeder Mehrfachtest-Korrektur nicht signifikant. **Man kann einen Sharpe von 0,6
+mit 4,8 Jahren Tagesdaten nicht beweisen.** Das ist eine Eigenschaft der
+Datenmenge, nicht der Strategie.
+
+Zwei Dinge relativieren die Strenge, und beide gehören genannt statt
+weggelassen:
+
+- Die 25 Gitterpunkte sind **stark korreliert** (überlappende Fenster auf
+  denselben Daten). Die DSR behandelt sie als unabhängig und bestraft deshalb
+  zu hart.
+- Die ETH-Replikation geht in die DSR gar nicht ein, ist aber das
+  aussagekräftigste Einzelergebnis.
+
+Beides ändert nichts am t-Wert von 1,4. Es bleibt: **bester Kandidat des
+Projekts, nicht bewiesen.**
+
+**Konsequenz:** `macross` ist die erste Strategie, die für Phase 6
+(Paper-Trading) in Frage kommt. Nicht weil sie bewiesen wäre, sondern weil
+Paper-Trading genau das Instrument ist, das fehlende Beobachtungen sammelt —
+und weil ihr Risikoprofil (halbe Zeit flach, Drawdown 25 Punkte unter
+Buy-and-Hold) den Fehler billig macht, falls sie doch keine Kante hat.
+
+**Was ausdrücklich nicht behauptet wird:** dass 10/50 oder 5/150 die "richtigen"
+Parameter sind. Sie stammen aus einem Vergleich auf denselben Daten. Für den
+Live-Betrieb ist die robuste Region (`slow` groß) wichtiger als der Bestwert.
+
+---
+
 ## ADR-034 — Order Flow als neue Informationsachse, mit fremder Quelle
 **Datum:** 2026-08-27
 

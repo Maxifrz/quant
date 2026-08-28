@@ -34,6 +34,7 @@ def load_library() -> None:
     """Mitgelieferte Strategien importieren, damit sie sich registrieren."""
     from qt.strategy.library import (  # noqa: F401
         elliott,
+        macross,
         meanrev,
         orderflow,
         timesfm_strategy,
