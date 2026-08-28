@@ -145,7 +145,7 @@ class RiskEngine(RiskLimits):
         return self._halted
 
     def reset(self) -> None:
-        """Kill-Switch loesen. Der einzige Weg zurueck.
+        """Kill-Switch loesen. Der einzige Weg zurueck fuer einen Menschen.
 
         Es gibt bewusst keine automatische Entsperrung bei erholter Equity:
         ein Kill-Switch, der sich selbst zurueckstellt, ist keiner. Nach
@@ -153,6 +153,18 @@ class RiskEngine(RiskLimits):
         der zuerst klaert, warum das Konto ueberhaupt so weit gefallen ist.
         """
         self._halted = False
+
+    def restore_halted(self, halted: bool) -> None:
+        """Zustand aus einem persistierten Konto uebernehmen.
+
+        Anders als `reset()` ist das kein Entscheidungsakt, sondern reines
+        Wiederherstellen: ein Paper-Tick baut die Engine bei jedem Aufruf neu
+        auf (siehe `qt.live.runner`), und ein `RiskEngine`, der dabei jedes
+        Mal unbehaltet startet, wuerde einen ausgeloesten Kill-Switch beim
+        naechsten Tick stillschweigend vergessen -- genau die Sorte Fehler,
+        die den Sinn eines Kill-Switches aufhebt.
+        """
+        self._halted = bool(halted)
 
     def apply(
         self, weights: PortfolioWeights, state: RiskState

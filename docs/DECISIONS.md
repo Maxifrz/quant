@@ -5,6 +5,108 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-037 — Paper-Trading als wiederholbarer Tick, nicht als Daemon
+**Datum:** 2026-08-28
+
+**Der Anlass ist eine gemessene Eigenschaft dieser Umgebung, nicht eine
+Vorsichtsmaßnahme auf Vorrat.** In derselben Sitzung sind Hintergrundprozesse
+mehrfach an Container-Neustarts gestorben — einmal mitten in einem
+mehrstündigen Trade-Abzug (ADR-034), zweimal beim Fortsetzen desselben
+Abzugs. Ein Paper-Konto soll Wochen laufen. Ein Daemon mit demselben
+Sterberisiko, nur mit höherem Einsatz: ein gestorbener Daemon fällt erst auf,
+wenn tagelang keine neuen Fills mehr erscheinen.
+
+**Die Entscheidung:** `qt.live.runner.run_paper_tick` ist eine reine
+Funktion. Sie wird einmal aufgerufen, verarbeitet alle seit dem letzten Tick
+geschlossenen Bars, speichert und kehrt zurück. Extern taktbar — von Hand,
+per Cron, über eine Routine dieser Plattform.
+
+**Was zwischen zwei Ticks überleben muss, ist absichtlich klein.** Nicht der
+`FeatureStore`, nicht die Uhr — beide werden aus den durabel gespeicherten
+Bars in `qt.data.store` bei jedem Tick neu aufgebaut, günstig genug, um keine
+eigene Zwischenspeicherung zu rechtfertigen. Persistiert wird ausschließlich
+der Broker-Zustand (Cash, Positionen, vorgemerkte Orders) plus ein
+Zeitstempel-Cursor (`last_processed_ts`), der trennt: "bereits entschieden"
+von "nur Kontext für den Feature-Store". Dieselbe Idee wie
+`qt.data.trades.resume_point`, nur für Konten statt für Trade-Abzüge.
+
+**Ein frisches Konto startet flach, nicht rückwirkend.** `last_processed_ts`
+wird beim ersten Tick auf den jüngsten zu diesem Zeitpunkt bekannten Bar
+gesetzt. Ohne das würde ein neues Paper-Konto beim ersten Aufruf die gesamte
+verfügbare Historie rückwirkend handeln und Hunderte Fills auf einmal
+auslösen — das genaue Gegenteil von "beobachten, was ab jetzt passiert".
+
+**Persistiert wird nach jedem einzelnen neuen Bar**, nicht erst am Ende eines
+Ticks — ein Tick kann mehrere neue Bars auf einmal verarbeiten, wenn zwischen
+zwei Aufrufen mehr Zeit verging als ein Bar dauert. Ein Absturz nach dem
+dritten von fünf Bars darf die ersten drei nicht verlieren. Geschrieben wird
+zusätzlich atomar (temporäre Datei, dann `replace`) — ein Absturz mitten im
+Schreiben darf keine halbe, kaputte JSON-Datei hinterlassen, gerade in dem
+Moment, in dem der Kontostand am dringendsten gebraucht wird.
+
+**Der Beweis, nicht nur die Behauptung:** Derselbe Datensatz wurde einmal in
+einem einzigen Tick verarbeitet und einmal mit einem erzwungenen Neustart
+nach *jedem einzelnen* Bar (`test_ueberlebt_neustart_zwischen_jedem_bar`).
+Cash, Positionen, Fill-Zahl und Gebühren stimmen exakt überein.
+
+**Wiederverwendet, nicht neu erfunden:** Der Kill-Switch ist
+`qt.portfolio.risk.RiskEngine`, dieselbe Komponente wie im Portfolio-Pfad seit
+Phase 2 — keine zweite Risikologik. Der einzige neue Baustein ist
+`RiskEngine.restore_halted()`: weil jeder Tick die Engine neu aufbaut, muss
+der Halt-Zustand explizit aus dem persistierten Konto übernommen werden,
+sonst vergäße ein frisch aufgebauter `RiskEngine` bei jedem Tick, dass er
+schon einmal ausgelöst hat.
+
+**Korrektur einer Doku-Lücke:** Die ROADMAP verwies auf eine
+Nautilus-Empfehlung in `docs/ARCHITECTURE.md`, die dort nie existierte.
+Nachgetragen: Paper-Trading bleibt in diesem Repo, weil `LiveClock` und das
+Docstring-Versprechen von `SimBroker` ("Live wird er durch
+`qt.live.broker_ccxt` ersetzt") seit Phase 0 genau darauf angelegt waren.
+
+---
+
+## ADR-038 — Eine Exchange kann eine noch offene Kerze als geschlossen ausgeben
+**Datum:** 2026-08-28
+
+**Der Fehler, gefunden im ersten echten Lauf gegen Coinbase:** Der erste
+Paper-Tick gegen reale Daten zeigte `Letzter verarbeiteter Bar:
+2026-08-29T00:00:00+00:00` — einen Tag **in der Zukunft** gegenüber der
+tatsächlichen Uhrzeit (2026-08-28, 11:39 UTC). `fetch_ohlcv` hatte die gerade
+erst begonnene, sich noch ändernde Tageskerze als letzte Zeile zurückgegeben,
+mit vollständig aussehenden OHLCV-Werten.
+
+**Warum das durchrutschte:** `BacktestClock.advance()` prüft ausschließlich,
+dass Bars in aufsteigender Reihenfolge ankommen — nicht, ob ihre Close-Zeit
+tatsächlich schon vergangen ist. Für den Replay historischer Daten ist das
+richtig: dort ist per Konstruktion jeder Bar längst geschlossen. Der
+Paper-Tick nutzte exakt denselben Mechanismus (bewusst, siehe ADR-001) und
+erbte damit eine Prüfung, die für Live-Daten nicht ausreicht. Die Uhr wird
+vor jedem `store.on_bar()` auf genau `event.ts` gestellt — der interne
+Lookahead-Test in `FeatureStore` (`bar.close_ts > clock.now`) kann also gar
+nicht auslösen, weil Uhr und Bar-Zeit per Konstruktion synchron sind.
+
+**Die Konsequenz, wäre es unentdeckt geblieben:** Der Kill-Switch, die
+Positionsgröße, jede Entscheidung hätte auf einem Wert gestanden, der sich
+noch ändern kann. Der Store selbst heilt sich (`write_bars` dedupliziert mit
+`keep="last"`, ein späterer Pull überschreibt den vorläufigen Wert) — aber in
+der Lücke davor hätte eine Strategie auf Basis von Daten gehandelt, die es in
+dieser Form nie gab.
+
+**Die Behebung:** `run_paper_tick` bekommt einen `now`-Parameter (Default:
+die reale Systemzeit) und verwirft jeden Bar mit `close_ts > now`
+**vollständig** — nicht nur für die Entscheidung, auch als Kontext für den
+Feature-Store. Injizierbar statt an `datetime.now()` fest verdrahtet, damit
+die Grenze selbst testbar ist: ein Test verschiebt einen unfertigen Bar in
+die Zukunft und prüft, dass er ignoriert wird, und ein zweiter, dass er
+verarbeitet wird, sobald `now` ihn einholt.
+
+**Was das nicht betrifft:** `qt data pull` und jeder Backtest sind unberührt.
+Wer historische Daten liest, liest immer längst geschlossene Bars — das
+Problem existiert ausschließlich an der Spitze eines live gezogenen Streams,
+also ausschließlich im neuen `qt.live`-Pfad.
+
+---
+
 ## ADR-036 — Buy-&-Hold zahlt den Einstieg, und der erste Punkt bleibt das Startkapital
 **Datum:** 2026-08-28
 

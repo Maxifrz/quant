@@ -118,7 +118,7 @@ def run_backtest(
 
         # 5. Differenz zwischen Ziel- und Ist-Position vormerken.
         if warm:
-            order = _rebalance_order(
+            order = rebalance_order(
                 broker, bar.symbol, target[bar.symbol], bar.close, last_price, cfg
             )
             if order is not None:
@@ -151,7 +151,7 @@ def run_backtest(
     )
 
 
-def _rebalance_order(
+def rebalance_order(
     broker: SimBroker,
     symbol: str,
     target_weight: float,

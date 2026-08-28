@@ -2,86 +2,34 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0–5 sind gebaut.** Nächster Schritt: **Phase 6 — Paper-Trading.**
+> **Phase 0–6 sind gebaut.** `macross` läuft als Paper-Konto gegen echte
+> Coinbase-Daten.
 >
-> Erster Handgriff: `src/qt/live/runner.py` mit `PaperClock` + `SimBroker` —
-> echte Live-Daten, simulierte Fills, derselbe Codepfad wie der Backtest
-> (ADR-001). Vorher lohnt der Blick in `docs/ARCHITECTURE.md`: für Phase 6/7
-> steht die Empfehlung, die Ausführung auf Nautilus aufzusetzen statt den
-> `SimBroker` zur Live-Infrastruktur auszubauen.
->
-> **Vorher aber der billigere Schritt:** Phase 5 läuft, ist aber nur gegen
-> Stubs geprüft. Ein echter Lauf kostet wenige Dollar und sagt mehr als
-> weiterer Code:
+> Erster Handgriff, alle paar Stunden von Hand oder per Routine:
 > ```bash
-> ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen \
->     --generator-effort medium --critic-effort low
+> uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
+> uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
 > ```
-> Auf den Trichter schauen: eine hohe **Sandbox-Ablehnungsquote** heißt, der
-> Generator-Prompt und die Whitelist sind auseinandergelaufen (ADR-030) —
-> das ist ein Prompt-Fehler, kein Modellbefund.
+> Ziel: mehrere Wochen laufen lassen und Live-vs-Backtest-Divergenz messen.
+> Weicht die Paper-Kurve systematisch vom Walk-Forward-Ergebnis (ADR-035) ab,
+> ist das ein Befund über die Backtest-Annahmen, kein Grund, die Zahlen zu
+> ignorieren.
 >
-> **Weiterhin offen aus Phase 3:** Der LLM-Allokator ist gebaut, aber seine
-> Wirksamkeit ungeprüft (ADR-019, kein API-Schlüssel in der Bauumgebung).
-> Erkundungslauf zuerst, er kostet wenige Dollar und beantwortet die Frage
-> vielleicht schon:
-> ```bash
-> ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines \
->     --allocate-every 96 --effort low --model claude-sonnet-5
-> ```
-> Auf die letzte Zeile schauen: eine **Rückfallquote über 0%** heißt, der
-> Allokator war insoweit heimlich die Equal-Weight-Baseline (ADR-018) — dann
-> misst das Gate den Fallback und nicht das Modell.
-
----
-
-## Was ein Gate-Lauf kostet
-
-Gemessen am Stub-Lauf über BTC/ETH 4h (16.712 Bars, 29 Fenster), Aufrufe je
-Fenster-Instanz zugeordnet:
-
-| Einstellung | LLM-Aufrufe | vs. Default |
-|---|---|---|
-| Default vor ADR-027 | 1450 | — |
-| Vorlauf-Verzicht (ADR-027, jetzt Standard) | **580** | −60% |
-| + `--allocate-every 96` | **145** | −90% |
-
-Das Briefing ist mit ~1200 Zeichen (≈340 Token) der billigste Teil und der
-falsche Ort zum Sparen — die Rechnung hängt an der **Zahl der Aufrufe** und am
-**Denk-Aufwand** (`--effort`, ADR-028).
-
-Zwei Dinge, die keine reinen Sparmaßnahmen sind:
-- `--allocate-every 96` testet einen *anderen* Allokator (wöchentlich statt
-  täglich). Beim Stub-Lauf stand ein Umsatz von 20,6 Mio. auf 100k
-  Startkapital — bei 90bps Round-Trip dreht die tägliche Taktung das Buch zu
-  Tode. Gut möglich, dass wöchentlich nicht nur billiger, sondern besser ist.
-- `--since` zu kürzen spart Fenster und damit statistische Evidenz. Falscher
-  Tausch.
-
----
-
-## Order Flow (ADR-034)
-
-Die erste **neue Informationsachse** des Projekts: Volumen mit Richtung. Alle
-bisherigen Strategien kauen auf denselben OHLCV-Daten, und alle sind
-gescheitert.
-
-```bash
-uv run qt data trades --symbols BTC/USD --days 30
-uv run qt backtest --strategy orderflow --symbol BTC/USD --tf 4h
-```
-
-Quelle ist **Kraken**, nicht Coinbase: Coinbase ignoriert `since` und liefert
-immer die jüngsten Trades. Der Fluss stammt damit von einer anderen Börse als
-Kursreihe und Fills — eine Annahme, die noch niemand gemessen hat.
-
-Stand: 1.376.988 Trades vom 28.07. bis 24.08.2026 abgezogen, Pipeline läuft
-end-to-end. **Die Zahlen belegen die Verdrahtung, nicht die Idee** — 27 Tage
-sind zehn Trades auf 4h, und ein Walk-Forward ist darauf nicht möglich.
-
-Nächster Schritt, falls weiterverfolgt: ein Jahr Historie, rund 7.100
-Anfragen und zwei Stunden. Erst damit wird die Frage beantwortbar.
-
+> **Zwei weitere Schritte offen, unabhängig von Phase 6:**
+>
+> 1. Ein echter LLM-Lauf für Phase 3 (Allokator) und Phase 5 (Research-Loop) —
+>    beide nur gegen Stubs geprüft, kostet zusammen unter 20 Dollar:
+>    ```bash
+>    ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines \
+>        --allocate-every 96 --effort low --model claude-sonnet-5
+>    ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen
+>    ```
+> 2. Ein Jahr Order-Flow-Historie für einen echten Walk-Forward auf
+>    `orderflow` — dreimal an Container-Neustarts gestorben (ADR-034), zuletzt
+>    bei 2,4 Mio. Trades. Fortsetzbar über `qt data trades --days 365`
+>    (`resume_point` setzt am zusammenhängenden Block fort, nicht am jüngsten
+>    Trade).
+>
 ---
 
 ## Die erste Strategie, die Geld verdient (ADR-035)
@@ -113,6 +61,40 @@ Jahren Tagesdaten nicht beweisen. Das ist die Datenmenge, nicht die Strategie.
 Damit ist `macross` der erste Kandidat für **Phase 6 (Paper-Trading)** — nicht
 weil sie bewiesen wäre, sondern weil Paper-Trading genau die fehlenden
 Beobachtungen sammelt und ihr Risikoprofil den Irrtum billig macht.
+
+---
+
+## Phase 6 — Paper-Trading (ADR-037, ADR-038)
+
+```bash
+uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
+uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
+uv run qt paper reset-killswitch --strategy macross --symbols BTC/USD --tf 1d --note "..."
+```
+
+**Kein Daemon.** `run_paper_tick` ist ein einzelner, sicher wiederholbarer
+Aufruf — diese Sitzung hat mehrfach gezeigt, dass Hintergrundprozesse in
+dieser Umgebung Container-Neustarts nicht überstehen. Bewiesen, nicht nur
+behauptet: derselbe Datensatz, einmal in einem Tick und einmal mit einem
+erzwungenen Neustart nach *jedem einzelnen* Bar, ergibt bitgleiche Konten.
+
+**Wiederverwendet statt neu gebaut:** `SimBroker` (Docstring versprach das
+seit Phase 1), `qt.portfolio.risk.RiskEngine` als Kill-Switch (seit Phase 2),
+`LiveClock` (seit Phase 0). Neu ist nur der Zustands-Cursor
+(`PaperState.last_processed_ts`) und die Erkenntnis, die ihn nötig machte.
+
+**Gefunden im ersten echten Lauf gegen Coinbase:** `fetch_ohlcv` gab einen
+Bar zurück, dessen Close-Zeit einen Tag in der Zukunft lag — die gerade erst
+offene Tageskerze. `run_paper_tick` verwirft jeden Bar mit `close_ts > now`
+jetzt vollständig, bevor er den Feature-Store erreicht (ADR-038). Der
+Backtest-Pfad war davon nie betroffen — dort sind Bars immer längst
+geschlossen.
+
+**Warum `macross` und nicht `orderflow` oder `elliott`:** `macross` ist der
+einzige Kandidat mit echter Evidenz (ADR-035) — Out-of-Sample positiv,
+repliziert auf ETH ohne Neuanpassung. Paper-Trading ist der teuerste Weg,
+eine ungeprüfte Strategie zu testen; hier ist wenigstens die Vorprüfung
+gemacht.
 
 ---
 
@@ -350,16 +332,33 @@ Mensch, `--mark-promoted <id>` hält es nur fest. Eine automatische Übernahme �
 auch hinter einer Bestätigung — wäre der schleichende Weg, die Freigabe
 abzuschaffen.
 
-## ⬜ Phase 6 — Paper-Trading
+## ✅ Phase 6 — Paper-Trading
 
-- `qt.live.runner` mit `PaperClock` + `SimBroker`: echte Live-Daten, simulierte Fills
-- `qt.live.reconcile` — Soll- vs. Ist-Positionen
-- `qt.live.killswitch` — Drawdown-Stopp, manuelles Zurücksetzen
-- `qt.report.daily` — Tagesreport
-- Über Wochen laufen lassen, Live-vs-Backtest-Divergenz je Strategie messen.
-  Wer divergiert, kommt in Quarantäne.
+- `qt.live.runner` — `run_paper_tick`, ein sicher wiederholbarer Aufruf statt
+  eines Daemons (ADR-037). `SimBroker` und `qt.portfolio.risk.RiskEngine`
+  wiederverwendet, nicht neu gebaut.
+- `qt.live.state` — der einzige persistierte Zustand: Broker-Konto plus ein
+  Zeitstempel-Cursor. Feature-Store und Uhr werden bei jedem Tick aus der
+  durablen Bar-Historie neu aufgebaut.
+- `qt.live.killswitch` — manuelles Zurücksetzen des Kill-Switches, mit
+  Begründung in der Historie.
+- `qt.report.daily` — Tagesreport als Text, Kill-Switch-Status zuerst.
+- **`qt.live.reconcile` bewusst nicht gebaut:** Soll- vs. Ist-Vergleich setzt
+  zwei unabhängige Quellen voraus. Mit nur einem `SimBroker` gibt es noch
+  nichts, wogegen abgeglichen werden könnte — das wird erst mit einem
+  zweiten, echten Broker in Phase 7 zu einer sinnvollen Prüfung.
+- Gefunden im ersten echten Lauf: eine noch offene Tageskerze wurde von der
+  Exchange als geschlossen ausgegeben (ADR-038). Behoben, bevor produktiv
+  gelaufen wurde.
 
-**Vorführen:** `uv run qt paper --daemon`
+**Noch zu tun, keine Code-Aufgabe mehr:** über Wochen laufen lassen und
+Live-vs-Backtest-Divergenz messen (siehe ROADMAP-Marker oben).
+
+**Vorführen:**
+```bash
+uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
+uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
+```
 
 ## ⬜ Phase 7 — Live (separate Entscheidung)
 

@@ -319,3 +319,66 @@ Fenstergrenzen). Beides ist getestet, nicht nur beabsichtigt.
 Aussagekräftiger als der Gesamtsharpe ist die Streuung über die Fenster: eine
 Strategie, die in einem von siebzehn Fenstern alles verdient, ist eine
 Zufallsstichprobe und keine Kante.
+
+## Paper-Trading (Phase 6, gebaut)
+
+**Korrektur einer Doku-Luecke:** Die ROADMAP verwies hier lange auf eine
+Empfehlung, die Ausfuehrung fuer Phase 6/7 auf Nautilus aufzusetzen statt den
+`SimBroker` auszubauen -- dieser Abschnitt existierte nie. Die tatsaechliche
+Entscheidung: **Paper-Trading bleibt in diesem Repo**, weil das Fundament
+dafuer seit Phase 0 gelegt ist. `qt.core.clock.LiveClock` stand von Anfang an
+neben `BacktestClock`, und `SimBroker`s eigener Docstring versprach schon
+laenger: "Live wird er durch `qt.live.broker_ccxt` ersetzt, das dieselbe
+Schnittstelle erfuellt." Nautilus fuer die Ausfuehrung zu verwenden waere eine
+neue Systemgrenze mit eigenem Datenmodell -- gerechtfertigt, falls die
+Anforderungen an Order-Typen oder Boersenanbindung ueber das hier gebaute
+Mass hinauswachsen, aber keine Voraussetzung, um ehrlich zu beobachten, ob
+eine Strategie ausserhalb des Backtests haelt.
+
+### Der Tick statt des Daemons
+
+`qt.live.runner.run_paper_tick` ist bewusst kein Prozess, der Wochen
+durchlaeuft, sondern eine reine Funktion, die einmal aufgerufen wird und
+zurueckkehrt. Der Grund ist keine Vorsicht auf Vorrat: in der Sitzung, in der
+dieser Code entstand, sind Hintergrundprozesse mehrfach mit einem
+Container-Neustart gestorben, einmal mitten in einem mehrstuendigen
+Trade-Abzug. Ein Paper-Konto, das Wochen laufen soll, hat genau dasselbe
+Risiko, nur hoeher: ein gestorbener Daemon faellt erst auf, wenn niemand mehr
+neue Fills sieht.
+
+**Was deshalb zwischen zwei Ticks ueberleben muss, ist absichtlich klein.**
+Nicht der `FeatureStore`, nicht die Uhr -- beide werden bei jedem Tick aus den
+durabel gespeicherten Bars in `qt.data.store` neu aufgebaut, ein Nachbau, der
+so guenstig ist, dass er keine eigene Zwischenspeicherung rechtfertigt. Was
+ueberleben muss, ist ausschliesslich der Broker-Zustand (Cash, Positionen,
+vorgemerkte Orders) plus ein Zeitstempel-Cursor, der trennt "bereits
+entschieden" von "nur Kontext fuer den Feature-Store". Gespeichert wird nach
+jedem einzelnen neu verarbeiteten Bar, nicht erst am Ende eines Ticks, und
+atomar (Schreiben in eine temporaere Datei, dann `replace`) -- ein Absturz
+darf hoechstens die Zeit bis zum naechsten Aufruf kosten, nie einen bereits
+gebuchten Fill.
+
+### Dieselbe Risk-Engine, keine zweite
+
+Der Kill-Switch ist keine neue Komponente. `qt.portfolio.risk.RiskEngine`
+existiert seit Phase 2 fuer den Portfolio-Pfad; der Paper-Tick ruft
+`risk.apply()` mit genau demselben `RiskState`-Aufbau wie
+`qt.backtest.portfolio_engine` auf. Der einzige neue Baustein ist
+`RiskEngine.restore_halted()`: da jeder Tick die Engine neu aufbaut, muss der
+Kill-Switch-Zustand explizit aus dem persistierten Konto uebernommen werden --
+sonst vergaesse ein frisch aufgebauter `RiskEngine` bei jedem Tick, dass er
+schon einmal angehalten hat, und der Kill-Switch waere keiner.
+
+### Die reale Uhr ist eine zusaetzliche Grenze, keine automatische
+
+`BacktestClock`, wie im Backtest, prueft nur, dass Bars in aufsteigender
+Reihenfolge ankommen -- nicht, ob ihre Close-Zeit tatsaechlich schon vergangen
+ist. Das reicht fuer Replay historischer Daten, aber nicht fuer live gezogene:
+gemessen an echten Coinbase-Daten gab `fetch_ohlcv` einen Bar zurueck, dessen
+`close_ts` einen Tag in der Zukunft lag -- die gerade erst offene, sich noch
+aendernde Kerze des laufenden Tages. `run_paper_tick` verwirft deshalb jeden
+Bar mit `close_ts > now` vollstaendig, bevor er ueberhaupt den Feature-Store
+erreicht. Der Store heilt sich von selbst (`write_bars` dedupliziert mit
+`keep="last"`, ein spaeterer Pull ueberschreibt den vorlaeufigen Wert), aber
+bis dahin darf keine Entscheidung auf einem Wert stehen, der sich noch aendern
+kann.

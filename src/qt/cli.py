@@ -16,6 +16,8 @@ app = typer.Typer(
 )
 data_app = typer.Typer(help="Marktdaten ziehen und pruefen", no_args_is_help=True)
 app.add_typer(data_app, name="data")
+paper_app = typer.Typer(help="Paper-Konto: sicher wiederholbare Ticks", no_args_is_help=True)
+app.add_typer(paper_app, name="paper")
 
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
@@ -918,3 +920,108 @@ def data_trades(
 
         flow = of.aggregate(df, tf)
         typer.echo(f"  ergibt {len(flow)} {tf}-Bars mit Flussdaten\n")
+
+
+@paper_app.command("run")
+def paper_run(
+    strategy: Annotated[str, typer.Option(help="Strategiename, siehe qt strategies")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    cash: Annotated[float, typer.Option(help="Startkapital eines frischen Kontos")] = 100_000.0,
+    max_drawdown: Annotated[
+        float, typer.Option(help="Kill-Switch-Schwelle, Bruchteil des Hoechststands")
+    ] = 0.20,
+    no_refresh: Annotated[
+        bool, typer.Option("--no-refresh", help="Keine frischen Bars von der Exchange holen")
+    ] = False,
+) -> None:
+    """Einen Tick: Konto um alle seit dem letzten Aufruf geschlossenen Bars fortschreiben.
+
+    Sicher wiederholbar -- ein zweiter Aufruf ohne neue Bars aendert nichts.
+    Ein frisches Konto startet **flach**, nicht rueckwirkend: die erste
+    Ausfuehrung legt nur den Startpunkt fest, gehandelt wird erst ab dem
+    naechsten Bar, der danach schliesst.
+    """
+    from qt.backtest.costs import round_trip_bps
+    from qt.core.config import BacktestConfig
+    from qt.live.runner import run_paper_tick
+    from qt.portfolio.risk import RiskConfig
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    symbol_list = _split(symbols)
+    cfg = BacktestConfig(initial_cash=cash)
+    risk_cfg = RiskConfig(max_drawdown=max_drawdown)
+
+    typer.echo(
+        f"Kosten je Round-Trip: {round_trip_bps(cfg.costs):.0f}bps  |  "
+        f"Kill-Switch bei {max_drawdown:.0%} Drawdown vom Hoechststand\n"
+    )
+
+    try:
+        report = run_paper_tick(
+            lambda: get(strategy)(symbol_list, tf),
+            symbol_list,
+            tf,
+            cfg=cfg,
+            risk_cfg=risk_cfg,
+            refresh=not no_refresh,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from None
+
+    typer.echo(report.summary())
+    for fill in report.new_fills:
+        typer.echo(
+            f"  Fill {fill.symbol} qty={fill.qty:+.6f} price={fill.price:.2f} "
+            f"fee={fill.fee:.2f}"
+        )
+    if report.halted:
+        typer.echo(
+            "\n!! Kill-Switch ausgeloest. Erst nachsehen, dann von Hand:\n"
+            f"   qt paper reset-killswitch --strategy {strategy} --symbols {symbols} --tf {tf}"
+        )
+        raise typer.Exit(code=2)
+
+
+@paper_app.command("status")
+def paper_status(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+) -> None:
+    """Kontostand anzeigen, ohne etwas zu veraendern."""
+    from qt.live.state import PaperState, state_path
+    from qt.report.daily import render
+
+    symbol_list = _split(symbols)
+    path = state_path(strategy, symbol_list, tf)
+    state = PaperState.load(path)
+    if state is None:
+        typer.echo(f"Kein Paper-Konto unter {path}. Erst `qt paper run` laufen lassen.")
+        raise typer.Exit(code=1)
+    typer.echo(render(state, strategy, symbol_list))
+
+
+@paper_app.command("reset-killswitch")
+def paper_reset(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    note: Annotated[str, typer.Option(help="Warum wird zurueckgesetzt")] = "",
+) -> None:
+    """Kill-Switch manuell loesen -- der einzige Weg zurueck.
+
+    Es gibt bewusst keinen automatischen Reset bei erholter Equity: zwischen
+    Ausloesung und Wiederanlauf gehoert ein Mensch, der klaert, warum das
+    Konto ueberhaupt so weit gefallen ist.
+    """
+    from qt.live.killswitch import NoPaperAccount, reset
+
+    try:
+        state = reset(strategy, _split(symbols), tf, note=note)
+    except NoPaperAccount as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from None
+    typer.echo(f"Kill-Switch zurueckgesetzt. halted={state.halted}")
