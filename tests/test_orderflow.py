@@ -201,6 +201,7 @@ def _tabelle(bars, deltas, n_trades=100):
             "buy_share": 0.5,
             "n_trades": n_trades,
             "avg_size": 1.0,
+            "max_gap_s": 0.0,
         }
         for bar, d in zip(bars, deltas)
     }
@@ -485,3 +486,73 @@ def test_read_trades_sagt_was_zu_tun_ist_wenn_nichts_da_ist(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="qt data trades"):
         read_trades("ETH/USD", data_dir=tmp_path)
+
+
+# --------------------------------------------------------------------------
+# Luecken innerhalb eines Bars
+# --------------------------------------------------------------------------
+
+
+def test_max_gap_s_meldet_die_stille_innerhalb_des_bars():
+    """Die Trade-Anzahl allein sagt nichts ueber die Abdeckung.
+
+    Ein Bar mit einem Loch in der Mitte kann trotzdem viele Trades tragen.
+    """
+    df = of.aggregate(
+        _trades(
+            [(0, 100, 1.0, "buy"), (60, 100, 1.0, "buy"), (3000, 100, 1.0, "sell")]
+        ),
+        "1h",
+    )
+    assert df["max_gap_s"].iloc[0] == pytest.approx(2940.0)
+
+
+def test_ein_lueckenloser_bar_meldet_eine_kleine_luecke():
+    df = of.aggregate(
+        _trades([(i * 10, 100, 1.0, "buy") for i in range(20)]), "1h"
+    )
+    assert df["max_gap_s"].iloc[0] == pytest.approx(10.0)
+
+
+def test_ein_einzelner_trade_hat_keine_luecke_innerhalb():
+    """Er faellt ueber `n_trades` heraus, nicht ueber die Luecke."""
+    df = of.aggregate(_trades([(0, 100, 1.0, "buy")]), "1h")
+    assert df["max_gap_s"].iloc[0] == 0.0
+    assert df["n_trades"].iloc[0] == 1
+
+
+def test_die_strategie_verweigert_bars_mit_grossem_loch():
+    """Genau der Fall, der beim Jahresabzug an den ersten Seitengrenzen stand.
+
+    `min_trades` faengt ihn nicht ab: die Trades sind da, nur nicht ueber die
+    ganze Bar-Dauer verteilt.
+    """
+    closes = list(100 + np.arange(120, dtype=float) * 0.1)
+    prices = np.asarray(closes)
+    bars = make_bars(len(prices), "BTC/USD", "4h", prices=prices)
+
+    rng = np.random.default_rng(3)
+    deltas = rng.normal(0, 1.0, len(bars))
+    deltas[-6:] = 8.0
+    tabelle = _tabelle(bars, deltas)
+    # Der letzte Bar hat reichlich Trades, aber die halbe Bar-Dauer fehlt.
+    tabelle[bars[-1].ts]["max_gap_s"] = 2 * 3600.0
+
+    gewichte, _ = _lauf(closes, tabelle, lookback=30, entry_z=1.0, persistence=2)
+    assert math.isnan(gewichte[-1]), "ein halb beobachteter Bar ist kein Signal"
+
+
+def test_eine_kleine_luecke_stoert_die_strategie_nicht():
+    closes = list(100 + np.arange(120, dtype=float) * 0.1)
+    prices = np.asarray(closes)
+    bars = make_bars(len(prices), "BTC/USD", "4h", prices=prices)
+
+    rng = np.random.default_rng(3)
+    deltas = rng.normal(0, 1.0, len(bars))
+    deltas[-6:] = 8.0
+    tabelle = _tabelle(bars, deltas)
+    for bar in bars:
+        tabelle[bar.ts]["max_gap_s"] = 120.0
+
+    gewichte, _ = _lauf(closes, tabelle, lookback=30, entry_z=1.0, persistence=2)
+    assert gewichte[-1] == 1.0

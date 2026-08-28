@@ -41,6 +41,7 @@ from datetime import datetime
 
 import numpy as np
 
+from qt.core.types import timeframe_seconds
 from qt.features import orderflow as of
 from qt.features.registry import FeatureStore
 from qt.strategy.base import Strategy
@@ -66,6 +67,7 @@ def load_flow_table(
             "buy_share": float(row.buy_share),
             "n_trades": int(row.n_trades),
             "avg_size": float(row.avg_size),
+            "max_gap_s": float(row.max_gap_s),
         }
         for row in flow.itertuples()
     }
@@ -87,6 +89,7 @@ class OrderFlowTrend(Strategy):
         exit_z: float = 0.25,
         persistence: int = 2,
         min_trades: int = 20,
+        max_gap_frac: float = 0.25,
         allow_short: bool = True,
         data_dir=None,
     ) -> None:
@@ -98,6 +101,7 @@ class OrderFlowTrend(Strategy):
             exit_z=exit_z,
             persistence=persistence,
             min_trades=min_trades,
+            max_gap_frac=max_gap_frac,
             allow_short=allow_short,
         )
         # Beim Bau geladen, nicht bei jedem Bar: ein Dateizugriff im Bar-Loop
@@ -140,6 +144,14 @@ class OrderFlowTrend(Strategy):
         if trades[-1] < self.params["min_trades"]:
             # Zu duenn, um von Fluss zu sprechen. Keine Meinung ist etwas
             # anderes als "geh flat" -- eine Datenluecke ist kein Signal.
+            return math.nan
+
+        # Eine Luecke *innerhalb* des Bars faengt `min_trades` nicht ab: ein
+        # 4h-Bar mit einem zweistuendigen Loch kann trotzdem tausende Trades
+        # tragen. Sein `delta` hat dann die halbe Bar-Dauer nie gesehen und
+        # ist keine ungenaue Messung, sondern eine erfundene.
+        luecke = table.get(stamps[-1], {}).get("max_gap_s", 0.0)
+        if luecke > self.params["max_gap_frac"] * timeframe_seconds(self.timeframe):
             return math.nan
 
         z = of.flow_zscore(deltas, self.params["lookback"])

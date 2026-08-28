@@ -11,12 +11,21 @@ damit derselben Sichtbarkeitsregel folgen wie jede andere Kennzahl. Die Engine
 bleibt unveraendert, das Kostenmodell bleibt gueltig, die Handelsfrequenz
 bleibt bei 4h.
 
-Die vier Kennzahlen je Bar:
+Die Kennzahlen je Bar:
 
     delta        gekaufte minus verkaufte Menge (Aggressor-Seite)
     buy_share    Anteil der Kaufmenge am Gesamtvolumen, in [0, 1]
     n_trades     Anzahl der Trades
     avg_size     durchschnittliche Trade-Groesse
+    max_gap_s    groesste Stille **innerhalb** des Bars
+
+`max_gap_s` ist die Ehrlichkeitsspalte. Eine Trade-Anzahl allein sagt nichts
+darueber, ob der Bar durchgehend beobachtet wurde: ein 4h-Bar mit einem
+zweistuendigen Loch kann trotzdem tausende Trades tragen. Sein `delta` hat
+dann die halbe Bar-Dauer nie gesehen -- das ist keine ungenaue Messung,
+sondern eine erfundene. Beim ersten Jahresabzug lagen genau solche Luecken an
+den ersten beiden Seitengrenzen, und ohne diese Spalte waeren sie unbemerkt
+in die Kennzahlen gelaufen.
 
 `delta` ist die eigentliche neue Information: Volumen **mit Richtung**. Das
 steht in OHLCV schlicht nicht drin -- ein Bar mit hohem Volumen und
@@ -42,7 +51,15 @@ import pandas as pd
 
 from qt.core.types import timeframe_seconds
 
-COLUMNS = ["ts", "delta", "buy_share", "n_trades", "avg_size", "volume"]
+COLUMNS = [
+    "ts",
+    "delta",
+    "buy_share",
+    "n_trades",
+    "avg_size",
+    "volume",
+    "max_gap_s",
+]
 
 
 def aggregate(trades: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -69,6 +86,13 @@ def aggregate(trades: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     df["signed_amount"] = df["amount"].to_numpy() * signed
     df["buy_amount"] = np.where(signed > 0, df["amount"].to_numpy(), 0.0)
 
+    # Groesste Stille innerhalb eines Bars. Ohne diese Spalte ist eine
+    # Datenluecke von einer ruhigen Stunde nicht zu unterscheiden -- und ein
+    # `delta`, das nur die halbe Bar-Dauer gesehen hat, ist keine ungenaue
+    # Messung, sondern eine erfundene. Beim ersten Jahresabzug lagen genau
+    # solche Luecken an den ersten beiden Seitengrenzen (siehe ADR-034).
+    df["gap_s"] = df.groupby("bucket")["ts"].diff().dt.total_seconds()
+
     grouped = df.groupby("bucket", sort=True)
     out = pd.DataFrame(
         {
@@ -76,8 +100,12 @@ def aggregate(trades: pd.DataFrame, timeframe: str) -> pd.DataFrame:
             "volume": grouped["amount"].sum(),
             "buy_amount": grouped["buy_amount"].sum(),
             "n_trades": grouped["amount"].size(),
+            "max_gap_s": grouped["gap_s"].max(),
         }
     )
+    # Ein einzelner Trade im Bar hat keine Luecke *innerhalb*, aber auch keine
+    # Abdeckung. Er faellt ueber `n_trades` heraus, nicht hier.
+    out["max_gap_s"] = out["max_gap_s"].fillna(0.0)
     out["buy_share"] = np.where(
         out["volume"].to_numpy() > 0,
         out["buy_amount"].to_numpy() / out["volume"].to_numpy(),
