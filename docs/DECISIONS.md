@@ -81,9 +81,21 @@ der Weg von 1,007 auf 0,963 zehn Trades — rund 4,4 Prozentpunkte auf ein
 Signal, das brutto 0,7% verdient hat. Das ist dieselbe Diagnose wie überall
 sonst in diesem Projekt und war die Hauptsorge schon vor dem Bauen.
 
-**Nächster Schritt, wenn weitergemacht wird:** ein Jahr Historie (rund 7.100
-Anfragen, etwa zwei Stunden) — erst damit ist ein Walk-Forward möglich und die
-Frage überhaupt beantwortbar.
+**Korrektur meiner Aufwandsschätzung.** Die erste Rechnung ("7.100 Anfragen,
+zwei Stunden") stammte aus einer einzelnen Stichprobenseite, die 74 Minuten
+abdeckte. Der echte 30-Tage-Lauf brauchte **52 Seiten je Tag**, nicht 19 — bei
+höherem Handelsaufkommen deckt eine Seite weniger Zeit ab. Ein Jahr sind damit
+rund **19.100 Anfragen und 7,6 Stunden** (ccxt pausiert selbst 1s je Anfrage,
+gemessen 1,43s je Seite). Eine Hochrechnung aus einer Stichprobe ist eine
+Vermutung, auch wenn sie aus einer Messung stammt.
+
+**Bei der Laufzeit ist Fortsetzbarkeit Pflicht.** `resume_point` gibt das Ende
+des *zusammenhängenden* Blocks ab `since` zurück, nicht den jüngsten
+gespeicherten Trade. Der Unterschied ist der ganze Punkt: nach einem
+30-Tage-Abzug liegen die letzten 30 Tage im Store; wer danach ein Jahr holen
+will und beim jüngsten Trade ansetzt, überspringt die elf Monate davor — und
+merkt es nicht, weil nichts fehlschlägt. Die Lücke fällt erst auf, wenn eine
+Strategie über ihr eine Kennzahl bildet.
 
 ---
 

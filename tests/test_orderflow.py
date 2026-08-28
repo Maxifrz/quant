@@ -405,3 +405,83 @@ def test_ein_abbruch_wirft_nicht_sondern_gibt_das_bisherige_zurueck():
         rate_limit_ms=0,
     )
     assert len(df) == 6, "zwei Seiten waren geholt, die muessen erhalten bleiben"
+
+
+# --------------------------------------------------------------------------
+# Fortsetzen eines abgebrochenen Abzugs
+# --------------------------------------------------------------------------
+
+
+def _lege_trades_an(tmp_path, zeiten):
+    """Trades zu den angegebenen Zeitpunkten ablegen."""
+    from qt.data.trades import write_trades
+
+    df = pd.DataFrame(
+        [
+            {"ts": ts, "price": 100.0, "amount": 1.0, "side": "buy"}
+            for ts in zeiten
+        ]
+    )
+    write_trades("BTC/USD", df, data_dir=tmp_path)
+
+
+def test_ohne_gespeicherte_daten_faengt_der_abzug_vorn_an(tmp_path):
+    from qt.data.trades import resume_point
+
+    assert resume_point("BTC/USD", START, data_dir=tmp_path) == START
+
+
+def test_ein_durchgehender_block_wird_am_ende_fortgesetzt(tmp_path):
+    from qt.data.trades import resume_point
+
+    zeiten = [START + timedelta(minutes=10 * i) for i in range(20)]
+    _lege_trades_an(tmp_path, zeiten)
+
+    weiter = resume_point("BTC/USD", START, data_dir=tmp_path)
+    assert weiter == zeiten[-1]
+
+
+def test_bei_einer_luecke_wird_vor_der_luecke_fortgesetzt(tmp_path):
+    """Der juengste Trade waere die falsche Antwort.
+
+    Nach einem 30-Tage-Abzug liegen die letzten 30 Tage im Store. Wer danach
+    ein Jahr holen will und beim juengsten Trade ansetzt, ueberspringt die elf
+    Monate davor -- und merkt es nicht, weil nichts fehlschlaegt.
+    """
+    from qt.data.trades import resume_point
+
+    block1 = [START + timedelta(minutes=10 * i) for i in range(6)]
+    block2 = [START + timedelta(days=30) + timedelta(minutes=10 * i) for i in range(6)]
+    _lege_trades_an(tmp_path, block1 + block2)
+
+    weiter = resume_point("BTC/USD", START, data_dir=tmp_path)
+    assert weiter == block1[-1], "es muss vor der Luecke weitergehen"
+    assert weiter != block2[-1], "der juengste Trade ist die falsche Antwort"
+
+
+def test_liegt_der_bestand_ganz_woanders_wird_von_vorn_begonnen(tmp_path):
+    """Angefragt wird ein Jahr, gespeichert ist nur der letzte Monat."""
+    from qt.data.trades import resume_point
+
+    spaet = [START + timedelta(days=300) + timedelta(minutes=i) for i in range(5)]
+    _lege_trades_an(tmp_path, spaet)
+
+    assert resume_point("BTC/USD", START, data_dir=tmp_path) == START
+
+
+def test_write_trades_entdoppelt_beim_zusammenfuehren(tmp_path):
+    """Der sink schreibt haeufig und Seiten koennen sich ueberlappen."""
+    from qt.data.trades import read_trades
+
+    zeiten = [START + timedelta(minutes=i) for i in range(5)]
+    for _ in range(3):
+        _lege_trades_an(tmp_path, zeiten)
+
+    assert len(read_trades("BTC/USD", data_dir=tmp_path)) == 5
+
+
+def test_read_trades_sagt_was_zu_tun_ist_wenn_nichts_da_ist(tmp_path):
+    from qt.data.trades import read_trades
+
+    with pytest.raises(FileNotFoundError, match="qt data trades"):
+        read_trades("ETH/USD", data_dir=tmp_path)

@@ -837,6 +837,13 @@ def data_trades(
     symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
     days: Annotated[int, typer.Option(help="Wie viele Tage Historie")] = 30,
     tf: Annotated[str, typer.Option(help="Timeframe fuer den Bericht")] = "4h",
+    resume: Annotated[
+        bool,
+        typer.Option(
+            help="Bei bereits gespeicherten Daten am Ende des zusammen"
+            "haengenden Blocks weitermachen statt von vorn."
+        ),
+    ] = True,
 ) -> None:
     """Einzeltrades mit Aggressor-Seite ziehen -- die Rohdaten fuer Order Flow.
 
@@ -856,6 +863,7 @@ def data_trades(
         fetch_trades,
         make_trades_exchange,
         read_trades,
+        resume_point,
         write_trades,
     )
     from qt.features import orderflow as of
@@ -872,14 +880,21 @@ def data_trades(
             elif pages % 25 == 0:
                 typer.echo(f"  {pages} Seiten, {n:,} Trades")
 
-        typer.echo(f"{symbol}:")
+        start = resume_point(symbol, since) if resume else since
+        if start > since:
+            typer.echo(
+                f"{symbol}: setze fort ab {start:%Y-%m-%d %H:%M} "
+                f"(statt {since:%Y-%m-%d %H:%M})"
+            )
+        else:
+            typer.echo(f"{symbol}:")
         # `sink` schreibt unterwegs: ein Abzug ueber vierzig Minuten, den ein
         # Abbruch auf der vorletzten Seite erwischt, haette sonst nichts
         # geliefert. Der zurueckgegebene Rest ist nur der letzte Block.
         def ablegen(chunk):
             write_trades(symbol, chunk)
 
-        fetch_trades(exchange, symbol, since=since, on_page=fortschritt, sink=ablegen)
+        fetch_trades(exchange, symbol, since=start, on_page=fortschritt, sink=ablegen)
         df = read_trades(symbol)
         if df.empty:
             typer.echo("  keine Trades erhalten")

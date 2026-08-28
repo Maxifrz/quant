@@ -223,3 +223,66 @@ def coverage(df: pd.DataFrame) -> dict:
         "max_gap_s": float(deltas.max()) if len(deltas) else 0.0,
         "buy_share": float((df["side"] == "buy").mean()),
     }
+
+
+# Ab welcher Luecke ein gespeicherter Block als abgerissen gilt.
+#
+# Bei BTC/USD auf Kraken vergehen selbst nachts selten mehr als ein paar
+# Minuten zwischen zwei Trades. Eine Stunde Stille ist deshalb kein ruhiger
+# Markt, sondern ein abgebrochener Abzug.
+RESUME_GAP_S = 3600.0
+
+
+def resume_point(
+    symbol: str,
+    since: datetime,
+    max_gap_s: float = RESUME_GAP_S,
+    data_dir: Path | None = None,
+) -> datetime:
+    """Ab wo ein unterbrochener Abzug weitermachen sollte.
+
+    Gibt das Ende des **zusammenhaengenden** Blocks zurueck, der bei `since`
+    beginnt -- oder `since` selbst, wenn dort noch nichts liegt.
+
+    Warum nicht einfach der juengste gespeicherte Trade: Der Store kann
+    mehrere getrennte Bloecke enthalten. Nach einem 30-Tage-Abzug liegen dort
+    die letzten 30 Tage; wer danach ein Jahr holen will und beim juengsten
+    Trade ansetzt, ueberspringt die elf Monate davor und merkt es nicht. Die
+    Luecke faellt erst auf, wenn eine Strategie ueber ihr eine Kennzahl
+    bildet -- und die ist dann nicht ungenau, sondern erfunden.
+
+    Ein Abzug ueber sieben Stunden **muss** fortsetzbar sein. Ohne das ist
+    seine Laufzeit zugleich sein Risiko: jeder Abbruch fuehrt zurueck auf Null.
+    """
+    path = trades_path(symbol, data_dir)
+    if not path.exists():
+        return since
+
+    df = pd.read_parquet(path)
+    if df.empty:
+        return since
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    df = df.sort_values("ts")
+
+    start = pd.Timestamp(since)
+    if start.tzinfo is None:
+        start = start.tz_localize("UTC")
+
+    ab_start = df[df["ts"] >= start]
+    if ab_start.empty:
+        return since
+
+    # Beginnt der gespeicherte Bestand deutlich spaeter als `since`, liegt die
+    # Luecke ganz am Anfang -- dann von vorn.
+    if (ab_start["ts"].iloc[0] - start).total_seconds() > max_gap_s:
+        return since
+
+    deltas = ab_start["ts"].diff().dt.total_seconds()
+    luecken = deltas[deltas > max_gap_s]
+    if luecken.empty:
+        # Durchgehend bis zum Ende: dort weitermachen.
+        return ab_start["ts"].iloc[-1].to_pydatetime()
+
+    # Bis zur ersten Luecke ist es zusammenhaengend.
+    erste = luecken.index[0]
+    return ab_start.loc[:erste]["ts"].iloc[-2].to_pydatetime()
