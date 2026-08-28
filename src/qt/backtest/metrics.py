@@ -173,14 +173,51 @@ def drawdown(equity: pd.Series) -> pd.Series:
     return equity / equity.cummax() - 1.0
 
 
-def buy_and_hold(prices: pd.Series, initial_cash: float) -> pd.Series:
+def buy_and_hold(
+    prices: pd.Series, initial_cash: float, entry_cost_bps: float = 0.0
+) -> pd.Series:
     """Vergleichskurve: einmal kaufen, liegen lassen.
 
     Der wichtigste Massstab ueberhaupt. Eine Krypto-Strategie, die Buy-&-Hold
     nicht schlaegt, ist die Komplexitaet nicht wert -- und in einem Bullenmarkt
     sieht fast jede Long-Strategie gut aus, bis man sie danebenlegt.
+
+    **Nur der Einstieg wird berechnet, nicht der Ausstieg.** Das ist keine
+    Nachlaessigkeit, sondern die Konvention, mit der die Engine auch die
+    Strategie bewertet: `run_backtest` liquidiert am Ende nicht, die
+    Schlusszahl ist eine Mark-to-Market-Bewertung offener Positionen. Wuerde
+    man Buy-&-Hold einen Ausstieg berechnen und der Strategie nicht, waere der
+    Vergleich zugunsten der Strategie verzerrt -- und zwar unsichtbar.
+
+    Die Kosten kommen **auf** den Gegenwert obendrauf, genau wie im
+    `SimBroker` (`cash -= qty * fill_price + fee`): mit Kapital C und
+    Kostensatz f werden N Einheiten gekauft, fuer die N * p0 * (1 + f) = C
+    gilt. Ein Kostensatz von 0 ergibt exakt die alte Formel zurueck.
+
+    Warum das ueberhaupt zaehlt: ohne Einstiegskosten ist Buy-&-Hold die
+    einzige Zeile in der Tabelle, die gar keine Reibung kennt -- und damit ein
+    Massstab, den in der Wirklichkeit auch Buy-&-Hold nicht erreicht.
     """
     prices = prices.dropna()
     if prices.empty:
         return prices
-    return initial_cash * prices / prices.iloc[0]
+    if entry_cost_bps < 0:
+        raise ValueError(f"entry_cost_bps={entry_cost_bps} ist negativ.")
+
+    units = initial_cash / (prices.iloc[0] * (1.0 + entry_cost_bps / 10_000.0))
+    curve = units * prices
+    if entry_cost_bps == 0 or len(curve) < 2:
+        return curve
+
+    # **Der erste Punkt bleibt das Startkapital.** Ohne das waere die ganze
+    # Korrektur wirkungslos: `compute` misst `total_return` als
+    # equity[-1] / equity[0], und ein konstanter Faktor auf die gesamte Kurve
+    # kuerzt sich darin restlos heraus. Die Gebuehr stuende dann zwar im Code,
+    # aber in keiner einzigen angezeigten Kennzahl.
+    #
+    # Der Sprung vom ersten auf den zweiten Punkt traegt damit die Gebuehr --
+    # genau wie bei der Strategie, deren Kurve ebenfalls beim Startkapital
+    # beginnt und die Gebuehr erst mit dem ersten Fill zeigt.
+    curve = curve.copy()
+    curve.iloc[0] = initial_cash
+    return curve

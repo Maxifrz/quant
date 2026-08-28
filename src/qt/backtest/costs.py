@@ -156,10 +156,21 @@ class SizeAwareFillModel(FillModel):
         return apply(reference_price, qty, cfg)
 
 
+def one_way_bps(cfg: CostConfig) -> float:
+    """Kosten einer einzelnen Ausfuehrung in Basispunkten.
+
+    Gebuehr, halber Spread und Slippage zusammen -- also alles, was ein
+    einzelner Kauf oder Verkauf kostet. Steht als eigene Funktion da, weil es
+    Faelle gibt, in denen nur eine Seite anfaellt: wer kauft und liegen laesst,
+    zahlt den Einstieg und (solange nicht verkauft wird) keinen Ausstieg.
+    """
+    return cfg.taker_fee_bps + cfg.half_spread_bps + cfg.slippage_bps
+
+
 def round_trip_bps(cfg: CostConfig) -> float:
     """Kosten eines vollen Round-Trips in Basispunkten.
 
     Nuetzliche Faustzahl: eine Strategie muss pro Trade mehr als diesen Wert
     verdienen, um ueberhaupt bei null herauszukommen.
     """
-    return 2 * (cfg.taker_fee_bps + cfg.half_spread_bps + cfg.slippage_bps)
+    return 2 * one_way_bps(cfg)

@@ -270,3 +270,85 @@ def test_time_in_market_separates_inactivity_from_throttling():
     )
     assert m_sparse.time_in_market == pytest.approx(0.25, abs=0.02)
     assert m_dense.time_in_market == pytest.approx(1.0, abs=0.02)
+
+
+# --------------------------------------------------------------------------
+# Buy-&-Hold mit Einstiegskosten
+# --------------------------------------------------------------------------
+
+
+def test_one_way_bps_ist_die_haelfte_des_round_trips():
+    """Die Beziehung soll im Code stehen und nicht im Kopf des Lesers."""
+    from qt.backtest.costs import one_way_bps, round_trip_bps
+    from qt.core.config import CostConfig
+
+    cfg = CostConfig()
+    assert round_trip_bps(cfg) == pytest.approx(2 * one_way_bps(cfg))
+    assert one_way_bps(cfg) == pytest.approx(45.0)
+
+
+def test_buy_and_hold_ohne_kosten_bleibt_die_alte_formel():
+    """Der Default darf nichts an bestehenden Vergleichen aendern."""
+    import pandas as pd
+
+    from qt.backtest.metrics import buy_and_hold
+
+    preise = pd.Series([100.0, 110.0, 90.0, 120.0])
+    kurve = buy_and_hold(preise, 100_000.0)
+    assert kurve.iloc[0] == pytest.approx(100_000.0)
+    assert kurve.iloc[-1] == pytest.approx(120_000.0)
+
+
+def test_einstiegskosten_verkleinern_die_gekaufte_menge():
+    """Die Kosten kommen auf den Gegenwert obendrauf, wie im SimBroker.
+
+    Mit Kapital C und Kostensatz f gilt N * p0 * (1 + f) = C -- wer stattdessen
+    die Kurve nachtraeglich skalierte, kaeme auf dieselbe Zahl, aber nicht auf
+    dieselbe Begruendung.
+    """
+    import pandas as pd
+
+    from qt.backtest.metrics import buy_and_hold
+
+    preise = pd.Series([100.0, 200.0])
+    kurve = buy_and_hold(preise, 100_000.0, entry_cost_bps=45.0)
+
+    einheiten = 100_000.0 / (100.0 * 1.0045)
+    assert kurve.iloc[-1] == pytest.approx(einheiten * 200.0)
+    # Der erste Punkt ist das Startkapital -- sonst kuerzt sich die Gebuehr
+    # in `compute` restlos heraus.
+    assert kurve.iloc[0] == pytest.approx(100_000.0)
+
+
+def test_einstiegskosten_schlagen_in_der_gesamtrendite_durch():
+    """Der Test, der die erste Fassung widerlegt hat.
+
+    `compute` misst `total_return` als equity[-1] / equity[0]. Skaliert man die
+    ganze Kurve mit einem konstanten Faktor, kuerzt er sich restlos heraus --
+    die Gebuehr stuende im Code und in keiner Kennzahl.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from qt.backtest.metrics import buy_and_hold, compute
+
+    rng = np.random.default_rng(7)
+    preise = pd.Series(100 * np.cumprod(1 + rng.normal(0.001, 0.02, 400)))
+    preise.index = pd.date_range("2024-01-01", periods=400, freq="1D", tz="UTC")
+
+    ohne = compute(buy_and_hold(preise, 100_000.0), "1d")
+    mit = compute(buy_and_hold(preise, 100_000.0, entry_cost_bps=45.0), "1d")
+
+    assert mit.total_return < ohne.total_return
+    # 45bps auf das Startkapital, in der Gesamtrendite wiederzufinden.
+    verhaeltnis = (1 + mit.total_return) / (1 + ohne.total_return)
+    assert verhaeltnis == pytest.approx(1 / 1.0045, rel=1e-6)
+
+
+def test_negative_einstiegskosten_werden_abgelehnt():
+    import pandas as pd
+
+    from qt.backtest.metrics import buy_and_hold
+
+    with pytest.raises(ValueError, match="negativ"):
+        buy_and_hold(pd.Series([100.0, 110.0]), 100_000.0, entry_cost_bps=-1.0)

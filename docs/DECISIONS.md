@@ -5,6 +5,67 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-036 — Buy-&-Hold zahlt den Einstieg, und der erste Punkt bleibt das Startkapital
+**Datum:** 2026-08-28
+
+**Der Anlass war eine Frage, keine Fehlermeldung:** warum Buy-&-Hold in der
+Tabelle Gewinn macht, obwohl dort „0 Trades" steht. Die Antwort war harmlos —
+`buy_and_hold()` ist eine reine Rechnung (`Kapital × Preis / Startpreis`) und
+läuft nie durch `SimBroker`, taucht also im Trade-Zähler nicht auf. Die
+Nachfrage legte aber eine echte Schieflage frei.
+
+**Die Schieflage:** Die Strategie-Spalte rechnet mit 90bps Round-Trip, die
+Buy-&-Hold-Spalte mit **null Reibung** — nicht einmal für den einen Kauf, den
+Buy-&-Hold zwingend braucht. Der Maßstab, an dem sich jede Strategie beweisen
+muss, war damit einer, den in der Wirklichkeit auch Buy-&-Hold nicht erreicht.
+
+**Nur der Einstieg, kein Ausstieg.** `run_backtest` liquidiert am Ende nicht;
+die Schlusszahl ist eine Mark-to-Market-Bewertung offener Positionen. Würde man
+Buy-&-Hold einen Ausstieg berechnen und der Strategie nicht, wäre der Vergleich
+zugunsten der Strategie verzerrt — und zwar unsichtbar. Deshalb `one_way_bps`
+als eigene Funktion neben `round_trip_bps`: es gibt Fälle, in denen genau eine
+Seite anfällt.
+
+Die Kosten kommen **auf** den Gegenwert obendrauf, wie im Broker
+(`cash -= qty * fill_price + fee`): N · p0 · (1 + f) = C.
+
+### Der Fehler in meiner ersten Fassung — gefunden vom eigenen Test
+
+Die naheliegende Implementierung skaliert die gesamte Kurve mit 1/(1+f). Sie
+ist **wirkungslos**: `compute()` misst `total_return` als
+`equity[-1] / equity[0]`, und ein konstanter Faktor kürzt sich darin restlos
+heraus. Die Gebühr hätte im Code gestanden und in **keiner einzigen
+angezeigten Kennzahl**.
+
+Aufgefallen ist es nur, weil ein Test behauptete „Gesamtrendite sinkt, Sharpe
+bleibt" — und an der ersten Hälfte scheiterte. Das ist dieselbe Klasse wie
+ADR-023 (eine Tilt-Begrenzung, die Erfolg meldete und nichts tat): Code, der
+aussieht, als täte er etwas.
+
+**Die Behebung:** Der erste Punkt der Kurve bleibt das **Startkapital**. Der
+Sprung vom ersten auf den zweiten Punkt trägt damit die Gebühr — genau wie bei
+der Strategie, deren Kurve ebenfalls beim Startkapital beginnt und die Gebühr
+erst mit dem ersten Fill zeigt.
+
+### Wirkung
+
+XAUT/USDT 1d, 351 Bars, Default-Kosten (45bps einfach):
+
+| | vorher | nachher |
+|---|---|---|
+| Gesamtrendite B&H | 26,04% | **25,47%** |
+| Sharpe B&H | 0,97 | **0,95** |
+| CAGR B&H | 27,31% | **26,72%** |
+
+Klein, wie erwartet — ein einmaliger Abzug verliert über lange Zeiträume an
+Gewicht. Bei kurzen Vergleichsfenstern ist er sichtbar, und dort war der
+Maßstab bisher falsch.
+
+`entry_cost_bps` hat den Default 0.0; Aufrufer ohne das Argument bekommen
+exakt die alte Formel. Der Tearsheet reicht `one_way_bps(config.costs)` durch.
+
+---
+
 ## ADR-035 — Die erste Strategie, die Geld verdient — und warum sie trotzdem nicht bewiesen ist
 **Datum:** 2026-08-27
 

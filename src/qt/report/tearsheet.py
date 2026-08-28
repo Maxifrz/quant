@@ -17,6 +17,7 @@ matplotlib.use("Agg")  # kein Display in dieser Umgebung
 import matplotlib.pyplot as plt  # noqa: E402  (muss nach use("Agg") kommen)
 import pandas as pd
 
+from qt.backtest.costs import one_way_bps
 from qt.backtest.metrics import Metrics, buy_and_hold, compute, drawdown
 from qt.core.config import REPORT_DIR
 
@@ -60,7 +61,11 @@ def summarise(result: Reportable) -> tuple[Metrics, Metrics | None]:
     bh_metrics = None
     price = _price_series(result)
     if price is not None:
-        bh = buy_and_hold(price, result.config.initial_cash)
+        bh = buy_and_hold(
+            price,
+            result.config.initial_cash,
+            entry_cost_bps=one_way_bps(result.config.costs),
+        )
         bh_metrics = compute(bh, result.timeframe)
 
     return strat, bh_metrics
@@ -99,7 +104,11 @@ def render(result: Reportable, out_path: Path | None = None) -> Path:
     ax = axes[0]
     ax.plot(equity.index, equity.values, label="Strategie", linewidth=1.4)
     if price is not None:
-        bh = buy_and_hold(price, result.config.initial_cash)
+        bh = buy_and_hold(
+            price,
+            result.config.initial_cash,
+            entry_cost_bps=one_way_bps(result.config.costs),
+        )
         ax.plot(bh.index, bh.values, label="Buy & Hold", linewidth=1.1, alpha=0.65)
     if result.warmup_end is not None:
         ax.axvline(result.warmup_end, linestyle=":", alpha=0.5, label="Warmup-Ende")
