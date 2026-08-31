@@ -20,6 +20,12 @@ REPORT_DIR = PROJECT_ROOT / "reports"
 # eines anderen Modells liefern, ohne dass etwas fehlschlaegt.
 DEFAULT_LLM_MODEL = "claude-opus-5"
 
+# Das Modell des zweiten Anbieters (NVIDIA NIM, siehe `qt.llm.providers`).
+# Anthropic bleibt Default -- jede bislang gemessene Zahl und jeder
+# Cache-Eintrag haengt daran. Dieser Name gilt nur, wenn `--provider nim`
+# ausdruecklich gesetzt ist.
+DEFAULT_NIM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+
 
 class CostConfig(BaseModel):
     """Handelskosten. Defaults bewusst pessimistisch (siehe ARCHITECTURE.md).

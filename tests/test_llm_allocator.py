@@ -272,38 +272,55 @@ def test_telemetry_makes_silent_fallbacks_visible():
 # ---------------------------------------------------------------------------
 
 
+class _Response:
+    stop_reason = "end_turn"
+    stop_details = None
+    parsed_output = AllocationProposal(
+        allocations=[
+            {"strategy_id": "STRAT_A", "weight": 0.3},
+            {"strategy_id": "STRAT_B", "weight": 0.7},
+        ]
+    )
+
+
+class _FakeMessages:
+    def __init__(self, owner: "_CountingClient") -> None:
+        self._owner = owner
+
+    def parse(self, **kwargs):
+        self._owner.requests += 1
+        self._owner.last_kwargs = kwargs
+        return _Response()
+
+
+class _FakeSDK:
+    """Was `anthropic.Anthropic()` an dieser Stelle sein muss: `.messages.parse`."""
+
+    def __init__(self, owner: "_CountingClient") -> None:
+        self.messages = _FakeMessages(owner)
+
+
 class _CountingClient:
     """Client, der das Modell zaehlt statt es zu rufen.
 
-    Ersetzt nur `_request` -- der gesamte Rest des Codepfads (Cache-Key,
-    Validierung, Fehleruebersetzung) laeuft echt. Ein Stub, der den ganzen
-    Client ersetzt, wuerde genau die Verdrahtung ungeprueft lassen.
+    Ersetzt ausschliesslich das SDK-Objekt hinter dem Provider -- der gesamte
+    Rest des Codepfads (Cache-Key, Aufrufaufbau, Auswertung von `stop_reason`
+    und `parsed_output`, Fehleruebersetzung) laeuft echt. Ein Stub, der den
+    ganzen Client ersetzt, wuerde genau die Verdrahtung ungeprueft lassen.
     """
 
     def __init__(self, cache, model: str = "claude-opus-5", effort: str = "medium"):
         from qt.llm.client import AllocatorClient
+        from qt.llm.providers import AnthropicProvider
 
-        self.inner = AllocatorClient(model=model, cache=cache, effort=effort)
         self.requests = 0
-        self.inner._request = self._fake_request  # type: ignore[method-assign]
-
-    def _fake_request(self, client, prompt: str):
-        self.requests += 1
-
-        class _Response:
-            stop_reason = "end_turn"
-            stop_details = None
-            parsed_output = AllocationProposal(
-                allocations=[
-                    {"strategy_id": "STRAT_A", "weight": 0.3},
-                    {"strategy_id": "STRAT_B", "weight": 0.7},
-                ]
-            )
-
-        return _Response()
-
-    def _ensure(self):
-        self.inner._client = object()  # verhindert echten SDK-Aufbau
+        self.last_kwargs: dict = {}
+        self.inner = AllocatorClient(
+            model=model,
+            cache=cache,
+            effort=effort,
+            provider=AnthropicProvider(client=_FakeSDK(self)),
+        )
 
 
 def test_second_call_is_served_from_cache(tmp_path):
@@ -313,7 +330,6 @@ def test_second_call_is_served_from_cache(tmp_path):
 
     cache = LLMCache(tmp_path)
     counting = _CountingClient(cache)
-    counting._ensure()
     brief = build(make_ctx())
 
     first = counting.inner.propose(brief)
@@ -338,8 +354,6 @@ def test_cache_does_not_serve_another_models_answer(tmp_path):
     cache = LLMCache(tmp_path)
     opus = _CountingClient(cache, model="claude-opus-5")
     sonnet = _CountingClient(cache, model="claude-sonnet-5")
-    opus._ensure()
-    sonnet._ensure()
     brief = build(make_ctx())
 
     opus.inner.propose(brief)

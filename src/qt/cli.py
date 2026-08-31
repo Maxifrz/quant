@@ -42,6 +42,16 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # hundertfach. Wer eine schwere Frage stellt, hebt ihn fuer diesen Lauf.
 DEFAULT_EFFORT = "medium"
 
+# Die Anbieter, aus denen `--provider` waehlen darf. Wie `DEFAULT_MODEL` ein
+# Literal und kein Import: `qt.llm.providers` zieht pydantic nach. Dass die
+# Liste nicht davonlaeuft, sichert ein Test ab (tests/test_llm_providers.py).
+PROVIDER_NAMES = ("anthropic", "nim")
+
+# Anthropic bleibt Default. Jede bisher gemessene Zahl, jeder ADR und jeder
+# Cache-Eintrag haengt daran; ein zweiter Anbieter ist eine Option und kein
+# Umzug.
+DEFAULT_PROVIDER = "anthropic"
+
 
 def _split(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
@@ -60,6 +70,40 @@ def _effort(value: str) -> str:
             f"Unbekannte Effort-Stufe {value!r}. Verfuegbar: {list(EFFORT_LEVELS)}"
         )
     return value
+
+
+def _provider(value: str) -> str:
+    """Anbietername pruefen, solange der Lauf noch nichts gekostet hat.
+
+    Gleicher Grund wie bei `_effort`: ein Tippfehler soll beim Aufruf
+    auffallen und nicht nach Minuten Datenaufbereitung am ersten API-Aufruf.
+    """
+    if value not in PROVIDER_NAMES:
+        raise typer.BadParameter(
+            f"Unbekannter Anbieter {value!r}. Verfuegbar: {list(PROVIDER_NAMES)}"
+        )
+    return value
+
+
+def _resolve_model(provider: str, model: str | None) -> str:
+    """Modellnamen aufloesen -- Default des Anbieters, oder Fehlpaarung melden.
+
+    Muss **vor** dem Datenladen laufen. Sonst endet `--provider nim` ohne
+    `--model` beim Anthropic-Default und faellt erst am ersten bezahlten
+    Aufruf auf.
+    """
+    from qt.llm.providers import LLMUnavailable, resolve_model
+
+    try:
+        return resolve_model(provider, model)
+    except LLMUnavailable as exc:
+        raise typer.BadParameter(str(exc)) from None
+
+
+def _build_provider(name: str):
+    from qt.llm.providers import get_provider
+
+    return get_provider(name)
 
 
 def _fill_model(name: str):
@@ -320,12 +364,24 @@ def alloc(
     test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 500,
     embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 24,
     allocate_every: Annotated[int, typer.Option(help="Allokations-Takt in Bars")] = 24,
-    model: Annotated[str, typer.Option(help="LLM-Modell")] = DEFAULT_MODEL,
+    provider: Annotated[
+        str,
+        typer.Option(
+            help="LLM-Anbieter: anthropic oder nim (NVIDIA).",
+            callback=_provider,
+        ),
+    ] = DEFAULT_PROVIDER,
+    model: Annotated[
+        str | None,
+        typer.Option(help=f"LLM-Modell. Ohne Angabe der Default des Anbieters "
+                     f"(anthropic: {DEFAULT_MODEL})."),
+    ] = None,
     effort: Annotated[
         str,
         typer.Option(
             help="Denk-Aufwand des Modells: low, medium, high, xhigh oder max. "
-            "Groesster Hebel auf Laufzeit und Ausgabe-Token.",
+            "Groesster Hebel auf Laufzeit und Ausgabe-Token. Bei `nim` ist die "
+            "Abbildung eine Naeherung -- siehe qt.llm.providers.",
             callback=_effort,
         ),
     ] = DEFAULT_EFFORT,
@@ -355,6 +411,10 @@ def alloc(
         )
         raise typer.Exit(code=1)
 
+    # Vor dem Datenladen: eine Fehlpaarung aus Anbieter und Modell soll den
+    # Lauf hier beenden und nicht nach Minuten am ersten bezahlten Aufruf.
+    model = _resolve_model(provider, model)
+
     load_library()
     symbol_list = _split(symbols)
     strategy_names = _split(strategies)
@@ -375,7 +435,12 @@ def alloc(
         client = (
             StubClient()
             if stub
-            else AllocatorClient(model=model, cache=LLMCache(model=model), effort=effort)
+            else AllocatorClient(
+                model=model,
+                cache=LLMCache(model=model),
+                effort=effort,
+                provider=_build_provider(provider),
+            )
         )
         instance = LLMAllocator(client=client)
         allocator_telemetry["last"] = instance.telemetry
@@ -434,7 +499,18 @@ def sim(
         bool, typer.Option("--scenarios", help="LLM Szenario-Priors setzen lassen")
     ] = False,
     stub: Annotated[bool, typer.Option("--stub", help="Ohne API-Zugang gegen den Stub")] = False,
-    model: Annotated[str, typer.Option(help="LLM-Modell fuer die Szenario-Priors")] = DEFAULT_MODEL,
+    provider: Annotated[
+        str,
+        typer.Option(
+            help="LLM-Anbieter: anthropic oder nim (NVIDIA).",
+            callback=_provider,
+        ),
+    ] = DEFAULT_PROVIDER,
+    model: Annotated[
+        str | None,
+        typer.Option(help="LLM-Modell fuer die Szenario-Priors. Ohne Angabe der "
+                     f"Default des Anbieters (anthropic: {DEFAULT_MODEL})."),
+    ] = None,
     effort: Annotated[
         str,
         typer.Option(
@@ -456,6 +532,8 @@ def sim(
 
     from qt.data.store import read_bars
     from qt.sim.objective import optimise_allocation
+
+    model = _resolve_model(provider, model)
 
     df = read_bars(symbol, tf, start=since, end=until)
     closes = df["close"].to_numpy()
@@ -479,7 +557,9 @@ def sim(
     typer.echo(f"  {ensemble.describe()}")
 
     if scenarios:
-        ensemble = _apply_scenarios(ensemble, returns, tf, stub, model=model, effort=effort)
+        ensemble = _apply_scenarios(
+            ensemble, returns, tf, stub, model=model, effort=effort, provider=provider
+        )
 
     result = optimise_allocation(ensemble, cvar_limit=cvar_limit)
 
@@ -533,6 +613,7 @@ def _apply_scenarios(
     stub: bool,
     model: str = DEFAULT_MODEL,
     effort: str = DEFAULT_EFFORT,
+    provider: str = DEFAULT_PROVIDER,
 ):
     """LLM Szenario-Priors setzen lassen und das Ensemble umgewichten.
 
@@ -554,7 +635,12 @@ def _apply_scenarios(
     client = (
         StubScenarioClient()
         if stub
-        else ScenarioClient(model=model, cache=LLMCache(model=model), effort=effort)
+        else ScenarioClient(
+            model=model,
+            cache=LLMCache(model=model),
+            effort=effort,
+            provider=_build_provider(provider),
+        )
     )
     briefing = build_scenario_briefing(returns, ensemble, tf)
 
@@ -618,7 +704,18 @@ def research(
     dsr_threshold: Annotated[
         float, typer.Option(help="Ab welcher DSR ein Kandidat besteht")
     ] = 0.95,
-    model: Annotated[str, typer.Option(help="LLM-Modell")] = DEFAULT_MODEL,
+    provider: Annotated[
+        str,
+        typer.Option(
+            help="LLM-Anbieter: anthropic oder nim (NVIDIA).",
+            callback=_provider,
+        ),
+    ] = DEFAULT_PROVIDER,
+    model: Annotated[
+        str | None,
+        typer.Option(help="LLM-Modell. Ohne Angabe der Default des Anbieters "
+                     f"(anthropic: {DEFAULT_MODEL})."),
+    ] = None,
     generator_effort: Annotated[
         str, typer.Option(help="Denk-Aufwand des Generators", callback=_effort)
     ] = DEFAULT_EFFORT,
@@ -663,6 +760,7 @@ def research(
     from qt.research.loop import run_research_loop
     from qt.research.registry import ResearchRegistry
 
+    model = _resolve_model(provider, model)
     registry = ResearchRegistry.open()
 
     if show is not None:
@@ -691,11 +789,21 @@ def research(
             "Verdrahtung, nicht die Idee (ADR-019).\n"
         )
     else:
+        # Zwei Provider-Instanzen, nicht eine geteilte: der NIM-Provider merkt
+        # sich, ob der Endpunkt `guided_json` abgelehnt hat, und dieses Wissen
+        # gehoert zu genau einem Aufrufpfad. Geteilt waere es ein stiller
+        # Zustand zwischen Generator und Kritiker.
         gen_client = GeneratorClient(
-            model=model, cache=LLMCache(model=model), effort=generator_effort
+            model=model,
+            cache=LLMCache(model=model),
+            effort=generator_effort,
+            provider=_build_provider(provider),
         )
         crit_client = CriticClient(
-            model=model, cache=LLMCache(model=model), effort=critic_effort
+            model=model,
+            cache=LLMCache(model=model),
+            effort=critic_effort,
+            provider=_build_provider(provider),
         )
 
     typer.echo(f"Versuchszaehler vor diesem Lauf: {registry.trial_count()}")

@@ -24,6 +24,18 @@
 >        --allocate-every 96 --effort low --model claude-sonnet-5
 >    ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen
 >    ```
+>    Alternativ über NVIDIA NIM (ADR-039, `uv sync --extra nim` einmalig):
+>    ```bash
+>    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
+>        --allocate-every 96 --effort low --provider nim
+>    NVIDIA_API_KEY=nvapi-... uv run qt research --generate 10 --screen \
+>        --provider nim
+>    ```
+>    Beim ersten NIM-Lauf sind zwei Zahlen wichtiger als das Ergebnis: die
+>    Quote **„Sandbox verworfen"** im Research-Trichter (ein hoher Wert heißt,
+>    der für Claude geschriebene Generator-Prompt passt nicht zu Nemotron —
+>    ADR-030 gegen ADR-039) und die **Rückfallquote** im Gate (über 0% heißt,
+>    der Allokator war streckenweise heimlich Equal-Weight, ADR-018).
 > 2. Ein Jahr Order-Flow-Historie für einen echten Walk-Forward auf
 >    `orderflow` — dreimal an Container-Neustarts gestorben (ADR-034), zuletzt
 >    bei 2,4 Mio. Trades. Fortsetzbar über `qt data trades --days 365`

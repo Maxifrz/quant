@@ -5,6 +5,95 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-039 — Ein zweiter Anbieter als Naht, nicht als zweite Client-Familie
+**Datum:** 2026-08-31
+
+**Der Anlass:** ein NVIDIA-NIM-Schlüssel und der Wunsch, Nemotron 3 Ultra
+statt Claude zu fahren. Bis dahin war "das Modell" gleichbedeutend mit
+"Anthropic": vier Clients (Allokator, Szenario, Generator, Kritiker) trugen
+jeder eine eigene Kopie von `_ensure_client` und jeder denselben
+`messages.parse`-Aufruf. Ein zweiter Anbieter hätte diese Kopien verdoppelt —
+acht Stellen, an denen dieselbe Entscheidung getroffen wird.
+
+**Die Entscheidung:** `qt/llm/providers.py` ist eine Naht. Ein Provider
+übersetzt (Systemprompt, Prompt, Schema, Modell, Token-Budget, Effort) in
+einen Aufruf und die Antwort zurück in ein validiertes pydantic-Modell. Was
+ein Client fachlich tut — welchen Prompt er stellt, was er cacht, wie er den
+Key bildet — bleibt im Client. Die vier `_call`-Methoden schrumpfen auf je
+einen Aufruf, die vier `_ensure_client`-Kopien entfallen ersatzlos.
+
+**Anthropic bleibt Default.** Jede bisher gemessene Zahl, jeder ADR und jeder
+Cache-Eintrag hängt daran. `--provider nim` ist eine Option, kein Umzug.
+
+**Der Anbieter gehört in den Cache-Key.** Dieselbe Frage an Claude und an
+Nemotron sind zwei Antworten. Stünde der Anbieter nicht im Key, lieferte ein
+NIM-Lauf stillschweigend die gecachte Claude-Antwort — kein Fehlschlag, nur
+ein falsches Ergebnis, und zwar in einem Backtest, wo es niemand mehr findet.
+Dieselbe Überlegung wie bei Modell und Effort (ADR-028). Ein Modellname
+allein reicht als Trennung nicht: nichts hindert zwei Endpunkte daran,
+denselben Namen zu führen. Der Cache war zum Zeitpunkt der Umstellung leer,
+die Entwertung kostete also nichts.
+
+**Die Effort-Stufen sind eine gemeinsame Sprache, aber keine Äquivalenz.** Die
+Kommandozeile kennt weiter `low` bis `max`. NIM hat aber nicht fünf
+Denkstufen, sondern drei Zustände (`enable_thinking` aus, `medium_effort`,
+volles Denken). `xhigh` und `max` denken auf NIM deshalb **nicht** tiefer als
+`high` — sie heben nur die Token-Decke. Das steht als Test fest
+(`test_xhigh_und_max_denken_nicht_tiefer_als_high_sondern_laenger`) und nicht
+nur als Kommentar: wer es nicht weiß, glaubt, er habe etwas eingestellt, das
+es nicht gibt.
+
+**Denk-Token zählen gegen `max_tokens`** — anders als bei Anthropic, wo das
+Denkbudget getrennt geführt wird. Ein Aufruf mit eingeschaltetem Denken kann
+sein gesamtes Budget im Gedankengang verbrauchen und eine abgeschnittene oder
+leere Antwort liefern. Das Budget wird deshalb je nach Stufe angehoben, und
+beide Fehlerbilder bekommen einen eigenen Satz: "abgeschnitten bei N Token"
+und "leerer Inhalt trotz Antwort" haben verschiedene Ursachen und werden sonst
+an der falschen Stelle gesucht.
+
+**Strukturierte Ausgabe über `nvext.guided_json`, mit genau einem Abstieg.**
+NVIDIA empfiehlt `guided_json` ausdrücklich gegenüber
+`response_format={"type": "json_object"}`, weil letzteres jedes gültige JSON
+erlaubt — auch ein leeres Objekt. Nicht jede NIM-Bereitstellung kennt `nvext`;
+wird es abgelehnt, steigt der Provider einmal auf den ungeführten Weg ab und
+**merkt sich das**. Ohne das Merken zahlte jeder der hunderte Aufrufe eines
+Laufs den abgelehnten Versuch erneut. Der Abstieg ist eng gefasst: nur bei
+einer Meldung über ein unbekanntes Feld, nicht bei jedem Fehler — sonst
+verwandelt ein falscher Schlüssel sich in einen zweiten, genauso aussichtslosen
+Aufruf, und die Folgemeldung verdeckt die Ursache.
+
+**Die eingefrorenen Systemprompts bleiben eingefroren.** Ein
+OpenAI-kompatibler Endpunkt muss dem Modell im Text sagen, was es produzieren
+soll — `guided_json` erzwingt nur die Form. Diese Schema-Anweisung hängt der
+*Provider* an, nicht der Client. Der Prompt in `qt/llm/client.py` bleibt
+unverändert und damit vergleichbar mit früheren Läufen; dass die beiden
+Anbieter trotzdem getrennte Cache-Einträge bekommen, leistet der Anbieter im
+Key. Ein Test hält das fest.
+
+**Temperatur 0 wäre hier ein Fehler.** NVIDIA empfiehlt für die
+Reasoning-Modi ausdrücklich `temperature=1.0, top_p=0.95`; ein auf 0 gedrehtes
+Reasoning-Modell wird nicht deterministisch, sondern schlechter.
+Reproduzierbarkeit kommt in diesem Projekt ohnehin nicht vom Sampler, sondern
+vom Antwort-Cache — ein fester `seed` ist nur die zweite Verteidigungslinie.
+
+**Was hier ausdrücklich nicht bewiesen ist.** Getestet ist die Naht gegen
+Attrappen: Effort-Abbildung, Cache-Trennung, Entfernen des Gedankengangs,
+Abstieg, Fehlermeldungen — 33 Tests, keiner davon mit Schlüssel. Nicht geprüft
+sind (a) ob der gehostete Endpunkt sich so verhält, wie seine Dokumentation
+sagt, und (b) ob Nemotron im Research-Loop sandbox-legalen Code schreibt.
+ADR-030 hat den Generator-Prompt gegen die echte `check()`-Funktion geprüft —
+aber für Claude. Ein hoher Anteil verworfener Kandidaten im ersten
+NIM-Research-Lauf wäre deshalb ein Befund über die Prompt-Modell-Passung, kein
+Fehler der Sandbox. Die Trichter-Zahlen von `qt research` zeigen es direkt.
+
+**`openai` ist ein optionales Extra** (`uv sync --extra nim`), aus demselben
+Grund wie `timesfm` in ADR-022: wer beim Default bleibt, soll dafür kein
+zweites SDK installieren müssen. Der Preis ist, dass der NIM-Pfad selbst
+erklären muss, was fehlt — er tut es, mit dem Installationsbefehl in der
+Meldung.
+
+---
+
 ## ADR-037 — Paper-Trading als wiederholbarer Tick, nicht als Daemon
 **Datum:** 2026-08-28
 

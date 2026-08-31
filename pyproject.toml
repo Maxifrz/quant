@@ -28,6 +28,11 @@ dev = ["pytest>=8.0"]
 # Standardabhaengigkeit -- ohne dieses Extra ist die Strategie ueber
 # NaiveForecaster trotzdem voll test- und lauffaehig. Siehe ADR-022.
 timesfm = ["timesfm[torch]>=2.0"]
+# Fuer `--provider nim` (NVIDIA NIM, siehe qt.llm.providers). NIM spricht die
+# OpenAI-kompatible Schnittstelle, deshalb das `openai`-SDK. Optional aus
+# demselben Grund wie oben: wer bei Anthropic bleibt -- dem Default -- soll
+# dafuer kein zweites SDK installieren muessen.
+nim = ["openai>=1.40"]
 
 [build-system]
 requires = ["hatchling"]

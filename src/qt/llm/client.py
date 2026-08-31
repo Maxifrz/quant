@@ -1,7 +1,14 @@
-"""Anthropic-Client fuer den Allokator.
+"""Die Clients: was gefragt wird, und was davon in den Cache geht.
 
 Duenn gehalten: die Datei uebersetzt ein Briefing in einen Aufruf und die
 Antwort in ein validiertes Schema. Alles Fachliche steht anderswo.
+
+**Wie** der Aufruf beim Modell landet, steht seit dem zweiten Anbieter nicht
+mehr hier, sondern in `qt.llm.providers`. Diese Datei kennt nur noch
+`provider.parse(...)`; ob dahinter Anthropic oder NVIDIA NIM steht, aendert
+weder den Prompt noch den Cache-Aufbau. Was sich sehr wohl aendert, ist der
+Cache-*Key*: der Anbieter steht darin, denn dieselbe Frage an zwei Modelle
+sind zwei Antworten.
 
 Drei Eigenschaften, die hier bewusst so gebaut sind:
 
@@ -27,7 +34,29 @@ from typing import TYPE_CHECKING
 
 from qt.core.config import DEFAULT_LLM_MODEL
 from qt.llm.briefing import Briefing
+from qt.llm.providers import (
+    AnthropicProvider,
+    LLMProvider,
+    LLMUnavailable,
+    resolve_model,
+)
 from qt.llm.schemas import AllocationProposal
+
+# Weiterhin von hier importierbar: `LLMUnavailable` war die Ausnahme dieses
+# Moduls, bevor es die Provider-Schicht gab, und wird an einem guten Dutzend
+# Stellen so abgefangen. Der Umzug soll die Aufrufer nichts kosten.
+__all__ = [
+    "AllocatorClient",
+    "CriticClient",
+    "GeneratorClient",
+    "LLMResponse",
+    "LLMUnavailable",
+    "ScenarioClient",
+    "StubClient",
+    "StubCriticClient",
+    "StubGeneratorClient",
+    "StubScenarioClient",
+]
 
 if TYPE_CHECKING:
     # Nur fuer die Typpruefung: die Methoden importieren diese Namen zur
@@ -81,10 +110,6 @@ Begruende knapp und pruefbar: nenne die Kennzahl, die deine Entscheidung
 traegt, nicht eine Erzaehlung darueber."""
 
 
-class LLMUnavailable(RuntimeError):
-    """Kein API-Zugang oder das SDK fehlt."""
-
-
 @dataclass(slots=True)
 class LLMResponse:
     proposal: AllocationProposal
@@ -101,19 +126,23 @@ class AllocatorClient:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         cache: "LLMCache | None" = None,
         max_tokens: int = 4096,
         effort: str = "medium",
+        provider: LLMProvider | None = None,
     ) -> None:
-        self.model = model
+        # Default-Anbieter bleibt Anthropic. `model=None` heisst "nimm das
+        # Standardmodell dieses Anbieters" -- ein fester Default hier wuerde
+        # einem NIM-Lauf stillschweigend einen Claude-Namen unterschieben.
+        self.provider = provider or AnthropicProvider()
+        self.model = resolve_model(self.provider.name, model)
         self.cache = cache
         self.max_tokens = max_tokens
         # `medium` statt `high`: eine Allokation ueber eine Handvoll
         # Strategien ist keine schwere Denkaufgabe, und im Backtest faellt
         # der Aufruf hundertfach an. Bei mehr Strategien lohnt `high`.
         self.effort = effort
-        self._client = None
 
     # ------------------------------------------------------------------
 
@@ -141,7 +170,11 @@ class AllocatorClient:
         verlassen, lieferte ein Client mit abweichendem Modell stillschweigend
         die Antwort eines anderen -- kein Fehlschlag, nur ein falsches
         Ergebnis. Effort gehoert aus demselben Grund in den Key: dieselbe
-        Frage bei `low` und bei `max` sind zwei Antworten.
+        Frage bei `low` und bei `max` sind zwei Antworten. Und der Anbieter
+        aus genau demselben Grund noch einmal: `claude-opus-5` und
+        `nvidia/nemotron-3-ultra-550b-a55b` sind zwar verschiedene Namen, aber
+        ein Modellname allein hindert niemanden daran, denselben Namen auf
+        zwei Endpunkten zu verwenden.
         """
         if self.cache is None:
             return None
@@ -150,89 +183,27 @@ class AllocatorClient:
             system=SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
+            provider=self.provider.name,
         )
 
     # ------------------------------------------------------------------
 
     def _call(self, prompt: str) -> AllocationProposal:
-        """Ein Aufruf gegen die Messages API mit strukturierter Ausgabe.
+        """Ein Aufruf mit strukturierter Ausgabe.
 
-        `output_format` legt das Modell auf das Schema fest, sodass die
-        Antwort nicht aus freiem Text geparst werden muss. Trotzdem wird
-        danach noch einmal validiert (in `AllocationProposal`) -- die zweite
-        Pruefung faengt ab, was ein alter Cache-Eintrag einschleppen koennte.
+        Der Anbieter legt das Modell auf das Schema fest, sodass die Antwort
+        nicht aus freiem Text geraten werden muss. Trotzdem wird danach noch
+        einmal validiert (in `AllocationProposal`) -- die zweite Pruefung
+        faengt ab, was ein alter Cache-Eintrag einschleppen koennte.
         """
-        client = self._ensure_client()
-        try:
-            response = self._request(client, prompt)
-        except LLMUnavailable:
-            raise
-        except Exception as exc:
-            # Das SDK entscheidet erst beim Aufruf ueber die Authentifizierung,
-            # nicht beim Bau des Clients. Ein fehlender Schluessel taucht
-            # deshalb hier auf und nicht in `_ensure_client` -- und zwar als
-            # TypeError, was ohne diese Uebersetzung wie ein Programmierfehler
-            # aussaehe statt wie eine fehlende Konfiguration.
-            raise LLMUnavailable(
-                f"Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}. "
-                "Ohne API-Zugang laeuft nur ein Backtest gegen gefuellten Cache "
-                "oder mit StubClient."
-            ) from exc
-
-        if response.stop_reason == "refusal":
-            raise LLMUnavailable(
-                "Das Modell hat die Anfrage abgelehnt "
-                f"({getattr(response.stop_details, 'category', 'ohne Kategorie')})."
-            )
-
-        parsed = response.parsed_output
-        if parsed is None:
-            raise LLMUnavailable("Antwort enthielt kein auswertbares Schema.")
-        return parsed
-
-    def _request(self, client, prompt: str):
-        return client.messages.parse(
+        return self.provider.parse(
+            system=SYSTEM_PROMPT,
+            prompt=prompt,
+            schema=AllocationProposal,
             model=self.model,
             max_tokens=self.max_tokens,
-            # Der eingefrorene Praefix wird gecacht, das Briefing nicht.
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            thinking={"type": "adaptive"},
-            output_config={"effort": self.effort},
-            messages=[{"role": "user", "content": prompt}],
-            output_format=AllocationProposal,
+            effort=self.effort,
         )
-
-    def _ensure_client(self):
-        """SDK-Client bauen, mit sprechendem Fehler statt Absturz.
-
-        Import und Schluesselpruefung passieren erst hier, nicht beim
-        Modulimport: sonst braeuchte jeder Testlauf und jeder Backtest gegen
-        Cache einen API-Schluessel.
-        """
-        if self._client is not None:
-            return self._client
-        try:
-            import anthropic
-        except ImportError as exc:
-            raise LLMUnavailable(
-                "Das Paket `anthropic` fehlt. Installieren mit: "
-                "uv add anthropic"
-            ) from exc
-        try:
-            self._client = anthropic.Anthropic()
-        except Exception as exc:
-            raise LLMUnavailable(
-                "Kein API-Zugang. Setze ANTHROPIC_API_KEY oder melde dich mit "
-                "`ant auth login` an. Ein Backtest gegen einen gefuellten "
-                "Cache laeuft auch ohne."
-            ) from exc
-        return self._client
 
 
 class StubClient:
@@ -320,16 +291,17 @@ class ScenarioClient:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         cache: "LLMCache | None" = None,
         max_tokens: int = 4096,
         effort: str = "medium",
+        provider: LLMProvider | None = None,
     ) -> None:
-        self.model = model
+        self.provider = provider or AnthropicProvider()
+        self.model = resolve_model(self.provider.name, model)
         self.cache = cache
         self.max_tokens = max_tokens
         self.effort = effort
-        self._client = None
 
     def propose(self, briefing: str) -> "ScenarioProposal":
         from qt.llm.schemas import ScenarioProposal
@@ -354,53 +326,21 @@ class ScenarioClient:
             system=SCENARIO_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
+            provider=self.provider.name,
             kind="scenario",
         )
 
     def _call(self, briefing: str) -> "ScenarioProposal":
         from qt.llm.schemas import ScenarioProposal
 
-        client = self._ensure_client()
-        try:
-            response = client.messages.parse(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=[
-                    {
-                        "type": "text",
-                        "text": SCENARIO_SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                thinking={"type": "adaptive"},
-                output_config={"effort": self.effort},
-                messages=[{"role": "user", "content": briefing}],
-                output_format=ScenarioProposal,
-            )
-        except Exception as exc:
-            raise LLMUnavailable(
-                f"Szenario-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
-            ) from exc
-
-        if response.stop_reason == "refusal":
-            raise LLMUnavailable("Das Modell hat die Szenario-Anfrage abgelehnt.")
-        parsed = response.parsed_output
-        if parsed is None:
-            raise LLMUnavailable("Szenario-Antwort enthielt kein auswertbares Schema.")
-        return parsed
-
-    def _ensure_client(self):
-        if self._client is not None:
-            return self._client
-        try:
-            import anthropic
-        except ImportError as exc:
-            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
-        try:
-            self._client = anthropic.Anthropic()
-        except Exception as exc:
-            raise LLMUnavailable("Kein API-Zugang.") from exc
-        return self._client
+        return self.provider.parse(
+            system=SCENARIO_SYSTEM_PROMPT,
+            prompt=briefing,
+            schema=ScenarioProposal,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            effort=self.effort,
+        )
 
 
 class StubScenarioClient:
@@ -576,18 +516,19 @@ class GeneratorClient:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         cache: "LLMCache | None" = None,
         max_tokens: int = 8192,
         effort: str = "medium",
+        provider: LLMProvider | None = None,
     ) -> None:
-        self.model = model
+        self.provider = provider or AnthropicProvider()
+        self.model = resolve_model(self.provider.name, model)
         self.cache = cache
         # Groesser als bei den anderen Clients: hier entsteht Quelltext, keine
         # Handvoll Zahlen. Ein abgeschnittener Kandidat ist kein Kandidat.
         self.max_tokens = max_tokens
         self.effort = effort
-        self._client = None
 
     def propose(self, briefing: str) -> "StrategyCandidateProposal":
         from qt.llm.schemas import StrategyCandidateProposal
@@ -612,53 +553,21 @@ class GeneratorClient:
             system=GENERATOR_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
+            provider=self.provider.name,
             kind="candidate",
         )
 
     def _call(self, briefing: str) -> "StrategyCandidateProposal":
         from qt.llm.schemas import StrategyCandidateProposal
 
-        client = self._ensure_client()
-        try:
-            response = client.messages.parse(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=[
-                    {
-                        "type": "text",
-                        "text": GENERATOR_SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                thinking={"type": "adaptive"},
-                output_config={"effort": self.effort},
-                messages=[{"role": "user", "content": briefing}],
-                output_format=StrategyCandidateProposal,
-            )
-        except Exception as exc:
-            raise LLMUnavailable(
-                f"Generator-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
-            ) from exc
-
-        if response.stop_reason == "refusal":
-            raise LLMUnavailable("Das Modell hat die Generator-Anfrage abgelehnt.")
-        parsed = response.parsed_output
-        if parsed is None:
-            raise LLMUnavailable("Generator-Antwort enthielt kein auswertbares Schema.")
-        return parsed
-
-    def _ensure_client(self):
-        if self._client is not None:
-            return self._client
-        try:
-            import anthropic
-        except ImportError as exc:
-            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
-        try:
-            self._client = anthropic.Anthropic()
-        except Exception as exc:
-            raise LLMUnavailable("Kein API-Zugang.") from exc
-        return self._client
+        return self.provider.parse(
+            system=GENERATOR_SYSTEM_PROMPT,
+            prompt=briefing,
+            schema=StrategyCandidateProposal,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            effort=self.effort,
+        )
 
 
 class CriticClient:
@@ -671,19 +580,20 @@ class CriticClient:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         cache: "LLMCache | None" = None,
         max_tokens: int = 4096,
         effort: str = "low",
+        provider: LLMProvider | None = None,
     ) -> None:
-        self.model = model
+        self.provider = provider or AnthropicProvider()
+        self.model = resolve_model(self.provider.name, model)
         self.cache = cache
         self.max_tokens = max_tokens
         # Default niedriger als beim Generator. Der Unterschied gehoert in den
         # Code und nicht nur in die Doku -- sonst wird aus dem billigen
         # Vorfilter beim naechsten Lauf unbemerkt ein teurer.
         self.effort = effort
-        self._client = None
 
     def critique(self, briefing: str) -> "CandidateCritique":
         from qt.llm.schemas import CandidateCritique
@@ -708,53 +618,21 @@ class CriticClient:
             system=CRITIC_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
+            provider=self.provider.name,
             kind="critique",
         )
 
     def _call(self, briefing: str) -> "CandidateCritique":
         from qt.llm.schemas import CandidateCritique
 
-        client = self._ensure_client()
-        try:
-            response = client.messages.parse(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=[
-                    {
-                        "type": "text",
-                        "text": CRITIC_SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                thinking={"type": "adaptive"},
-                output_config={"effort": self.effort},
-                messages=[{"role": "user", "content": briefing}],
-                output_format=CandidateCritique,
-            )
-        except Exception as exc:
-            raise LLMUnavailable(
-                f"Kritik-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}"
-            ) from exc
-
-        if response.stop_reason == "refusal":
-            raise LLMUnavailable("Das Modell hat die Kritik-Anfrage abgelehnt.")
-        parsed = response.parsed_output
-        if parsed is None:
-            raise LLMUnavailable("Kritik-Antwort enthielt kein auswertbares Schema.")
-        return parsed
-
-    def _ensure_client(self):
-        if self._client is not None:
-            return self._client
-        try:
-            import anthropic
-        except ImportError as exc:
-            raise LLMUnavailable("Das Paket `anthropic` fehlt.") from exc
-        try:
-            self._client = anthropic.Anthropic()
-        except Exception as exc:
-            raise LLMUnavailable("Kein API-Zugang.") from exc
-        return self._client
+        return self.provider.parse(
+            system=CRITIC_SYSTEM_PROMPT,
+            prompt=briefing,
+            schema=CandidateCritique,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            effort=self.effort,
+        )
 
 
 # Vorlage fuer den Stub-Kandidaten. Die Form ist gegen die echte Sandbox

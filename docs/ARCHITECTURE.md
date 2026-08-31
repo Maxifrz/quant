@@ -111,7 +111,8 @@ AllocationContext                      (nur Point-in-Time-Daten)
         ↓  qt.llm.briefing
 Blind Briefing                         anonym, datumsfrei, gerundet
         ↓  qt.llm.cache                Treffer? → kein Modellaufruf
-        ↓  qt.llm.client               output_format legt das Schema fest
+        ↓  qt.llm.client               was gefragt wird, und was in den Cache geht
+        ↓  qt.llm.providers            anthropic | nim — legt das Schema fest
 AllocationProposal                     pydantic validiert ein zweites Mal
         ↓  qt.portfolio.llm_allocator  erfundene Labels → verworfen
         ↓                              jeder Fehler → Gleichgewichtung
@@ -144,14 +145,37 @@ Neun Tests halten das fest, darunter einer, der prüft, dass ein Kontostand von
 
 ### Reproduzierbarkeit
 
-Jeder Aufruf wird gecacht, Key = Hash(Briefing + Systemprompt + Modell-ID +
-Effort + Schema-Version). Ein Backtest über den Allokator ist damit wiederholbar
-und beim zweiten Lauf kostenlos. Ohne Cache ist ein LLM-Backtest weder
-reproduzierbar noch bezahlbar.
+Jeder Aufruf wird gecacht, Key = Hash(Briefing + Systemprompt + Anbieter +
+Modell-ID + Effort + Schema-Version). Ein Backtest über den Allokator ist damit
+wiederholbar und beim zweiten Lauf kostenlos. Ohne Cache ist ein LLM-Backtest
+weder reproduzierbar noch bezahlbar.
 
 Dass das Briefing **bitgleich** sein muss, ist kein Nebenaspekt, sondern die
 Voraussetzung dafür: ein `datetime.now()` darin hätte einen Cache mit 0%
 Trefferquote erzeugt, ohne dass irgendetwas fehlschlägt.
+
+### Zwei Anbieter, eine Naht
+
+`qt.llm.providers` übersetzt (Systemprompt, Prompt, Schema, Modell,
+Token-Budget, Effort) in einen Aufruf und die Antwort zurück in ein
+validiertes Schema. Die vier Clients — Allokator, Szenario, Generator,
+Kritiker — kennen nur `provider.parse(...)`.
+
+| | `anthropic` (Default) | `nim` (NVIDIA) |
+|---|---|---|
+| Schnittstelle | Messages API, `output_format` | OpenAI-kompatibel, `nvext.guided_json` |
+| Denksteuerung | `effort` in fünf Stufen | drei Zustände, siehe unten |
+| Denk-Token | getrenntes Budget | zählen gegen `max_tokens` |
+| SDK | `anthropic` (Grundabhängigkeit) | `openai` (`uv sync --extra nim`) |
+
+Die Effort-Stufen bleiben **eine Sprache, aber keine Äquivalenz**: NIM kennt
+nur "aus", "mittel" und "voll". `xhigh` und `max` denken dort nicht tiefer als
+`high` — sie heben nur die Token-Decke. Das steht als Test fest, nicht nur als
+Kommentar.
+
+Der Anbieter gehört aus demselben Grund in den Cache-Key wie Modell und
+Effort: dieselbe Frage an zwei Modelle sind zwei Antworten. Details und die
+offenen Punkte in ADR-039.
 
 ### Ausfall ist ein langweiliges Ereignis
 
@@ -266,12 +290,13 @@ eines Ensembles aus echten historischen Eigenschaften), er ist beschränkbar
 | `qt.portfolio` | Baselines, LLM-Allokator, Risk-Engine |
 | `qt.sim` | Pfad-Ensembles: Bootstrap, GARCH/HMM, Szenario-Priors, CVaR-Zielfunktion |
 | `qt.research` | Strategie-Generator, Sandbox, Screening, Registry |
-| `qt.llm` | Client, Briefing-Bau, Output-Schemas, Cache |
+| `qt.llm` | Clients, Anbieter-Naht (Anthropic/NIM), Briefing-Bau, Output-Schemas, Cache |
 | `qt.live` | Runner, CCXT-Broker, Reconciliation, Kill-Switch |
 | `qt.report` | Tearsheets, Tagesreport |
 
-Gebaut sind aktuell: `core`, `data`, `features`, `strategy`, `backtest`,
-`portfolio`, `llm`, `sim`, `report`. Offen sind `research` und `live` — siehe
+Gebaut sind aktuell alle: `core`, `data`, `features`, `strategy`, `backtest`,
+`portfolio`, `llm`, `sim`, `research`, `live`, `report`. Von `qt.live` fehlt
+nur der `CcxtBroker` — Phase 7 ist eine eigene Entscheidung, siehe
 `ROADMAP.md`.
 
 ---
