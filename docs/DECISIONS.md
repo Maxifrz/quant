@@ -5,6 +5,58 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-042 — `bars_per_year` gehört in die Sandbox: ein dokumentierter Indikator war nicht aufrufbar
+**Datum:** 2026-08-31
+
+Der erste Research-Lauf mit funktionierendem Generator (ADR-041) lieferte zehn
+Kandidaten. Acht liefen durch das Screening, zwei starben im Probelauf — und beide
+an Stellen, an denen der Prompt die Wahrheit über die eigene API nicht sagte:
+
+* `vol_regime_trend`: `realised_vol() missing 1 required positional argument`.
+  Der Prompt bewarb `ta.realised_vol(closes, n, bars_per_year)`, aber
+  `bars_per_year` war in der Sandbox überhaupt nicht gebunden — verfügbar waren
+  nur `np`, `math`, `ta`, `Strategy`, `clip_weight`. Der Indikator war aus einem
+  Kandidaten heraus **nicht korrekt aufrufbar**. Der einzige verbleibende Weg
+  wäre eine hartkodierte Zahl gewesen, also genau die an einen Timeframe
+  gebundene Magic Constant, die der Kritiker ablehnen soll. Der Aufruf mit zwei
+  Argumenten war die logische Folge, nicht der Fehler des Modells.
+* `rsi_reversion`: `'float' object is not subscriptable`. Das Modell hat RSI
+  korrekt aus zwei Skalaren gerechnet und dann aus Gewohnheit `rsi[-1]`
+  geschrieben. Der Prompt notierte `-> float`, sagte aber nirgends den Satz
+  "da ist nichts zu indizieren". In pandas und TA-Lib sind Indikatoren Reihen;
+  hier sind sie fertige Werte für den aktuellen Bar.
+
+**Warum das keine Modellschwäche ist:** derselbe Kandidat benutzte `np.diff` und
+`np.where` auf Arrays völlig richtig. Das Modell versteht die Unterscheidung — es
+hatte nur keine Ansage, auf welcher Seite `ta.*` steht. Zwei von zehn Kandidaten
+an unklarer Dokumentation zu verlieren, ist eine Prompt-Quote, keine Modellquote.
+
+**Konsequenz:**
+
+1. `bars_per_year` ist der sechste gebundene Name in der Sandbox. Die Funktion ist
+   rein (Timeframe-String rein, Zahl raus) und erweitert die Angriffsfläche nicht.
+2. `INJECTED_NAMES` steht jetzt *vor* `_WHY_FORBIDDEN` und speist die
+   Ablehnungsmeldung. Vorher waren es zwei Listen, die auseinanderlaufen konnten;
+   ein `assert` hält Liste und Bindung deckungsgleich.
+3. Der Prompt sagt den Skalar-Satz ausdrücklich, mit dem falschen und dem
+   richtigen Beispiel nebeneinander, und zeigt `bars_per_year(self.timeframe)`
+   als Argument statt eines nackten Namens.
+
+**Der Wächter, und warum die naheliegende Variante nichts getaugt hätte:**
+`tests/test_generator_prompt.py` vergleicht die Indikatorliste im Prompt mit
+`inspect.signature`. Das allein hätte den Fehler **nicht** gefunden: der Prompt
+nannte drei Argumente, die Funktion hat drei — die Stelligkeit stimmte. Falsch war,
+dass der Kandidat an das dritte nicht herankam. Der Test, der greift, baut deshalb
+zu *jedem* dokumentierten Indikator einen Minimalkandidaten, der ihn genau wie
+dokumentiert aufruft, und schickt ihn durch `check` und `probe`. Gegengeprüft: mit
+zurückgenommener Bindung schlägt er mit derselben Meldung fehl wie der echte Lauf.
+
+Das ist dieselbe Lektion wie in ADR-040, eine Ebene tiefer: **Dokumentation, die
+nicht ausgeführt wird, driftet.** Der Prompt ist ausführbare Schnittstelle, kein
+Fließtext, und gehört wie Code getestet.
+
+---
+
 ## ADR-041 — Erzwungene JSON-Form ist auf NIM aus: sie frisst Zeilenumbrüche
 **Datum:** 2026-08-31
 

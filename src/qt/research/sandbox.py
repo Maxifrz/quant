@@ -44,7 +44,7 @@ import numpy as np
 
 from qt.core.clock import BacktestClock
 from qt.core.events import merge_bar_streams
-from qt.core.types import Bar, timeframe_seconds
+from qt.core.types import Bar, bars_per_year, timeframe_seconds
 from qt.features import ta as _ta_module
 from qt.features.registry import FeatureStore
 from qt.strategy.base import Strategy, clip_weight
@@ -131,16 +131,28 @@ ALLOWED_NODE_TYPES: frozenset[type] = frozenset(
     }
 )
 
+# Die vorgebundenen Namen. Sie stehen hier oben, weil sowohl die
+# Ablehnungsmeldung fuer `import` als auch die Bindung selbst (`_INJECTED`)
+# davon abhaengen -- eine Quelle, nicht zwei, die auseinanderlaufen.
+INJECTED_NAMES: frozenset[str] = frozenset(
+    {"np", "math", "ta", "Strategy", "clip_weight", "bars_per_year"}
+)
+
+_INJECTED_HINT = (
+    "np, math, ta, Strategy, clip_weight und bars_per_year sind bereits gebunden"
+)
+
+
 # Warum ein Knoten fehlt, in einem Satz. Steht in der Ablehnungsmeldung, damit
 # die naechste Runde des Generators weiss, was sie anders machen soll -- eine
 # Ablehnung ohne Begruendung erzeugt nur denselben Kandidaten noch einmal.
 _WHY_FORBIDDEN: dict[str, str] = {
-    # Ausnahmslos kein Import. `np`, `math`, `ta`, `Strategy` und
-    # `clip_weight` sind bereits als Namen gebunden; der Kandidat *benutzt*
-    # sie, er importiert sie nie selbst. Damit gibt es keinen Weg zu einem
-    # Modul, das wir nicht selbst ausgesucht haben.
-    "Import": "np, math, ta, Strategy und clip_weight sind bereits gebunden",
-    "ImportFrom": "np, math, ta, Strategy und clip_weight sind bereits gebunden",
+    # Ausnahmslos kein Import. Die Namen aus `INJECTED_NAMES` sind bereits
+    # gebunden; der Kandidat *benutzt* sie, er importiert sie nie selbst.
+    # Damit gibt es keinen Weg zu einem Modul, das wir nicht selbst
+    # ausgesucht haben.
+    "Import": _INJECTED_HINT,
+    "ImportFrom": _INJECTED_HINT,
     # Keine Schleifen. Weder trend.py noch meanrev.py enthalten eine einzige,
     # weil alles ueber ta.*/numpy vektorisiert laeuft. Das Verbot loescht die
     # Klasse "Endlosschleife/DoS" strukturell, statt sie per Timeout nur zu
@@ -322,16 +334,28 @@ SAFE_BUILTINS: dict[str, Any] = {
     "__build_class__": builtins.__build_class__,
 }
 
-# Vorgebundene Namen. Genau diese fuenf -- deshalb braucht (und darf) der
-# generierte Code keinen Import.
+# Vorgebundene Namen -- deshalb braucht (und darf) der generierte Code keinen
+# Import.
+#
+# `bars_per_year` ist nachtraeglich dazugekommen: `ta.realised_vol` verlangt
+# es als drittes Argument, und ohne die Funktion war der Indikator aus der
+# Sandbox heraus schlicht nicht korrekt aufrufbar. Ein Kandidat haette die
+# Zahl nur als Konstante hinschreiben koennen -- und das waere genau die an
+# einen Timeframe gebundene Magic Number, die der Kritiker ablehnen soll.
+# Die Funktion ist rein: ein Timeframe-String rein, eine Zahl raus.
 _INJECTED: dict[str, Any] = {
     "np": NP_FACADE,
     "math": math,
     "ta": TA_FACADE,
     "Strategy": Strategy,
     "clip_weight": clip_weight,
+    "bars_per_year": bars_per_year,
 }
-INJECTED_NAMES: frozenset[str] = frozenset(_INJECTED)
+
+# Die Liste oben und die Bindung hier muessen deckungsgleich bleiben, sonst
+# nennt die Ablehnungsmeldung einen Namen, den es nicht gibt (oder verschweigt
+# einen, den es gibt).
+assert frozenset(_INJECTED) == INJECTED_NAMES
 
 SANDBOX_FILENAME = "<llm-kandidat>"
 _SANDBOX_MODULE_NAME = "qt_sandbox_candidate"

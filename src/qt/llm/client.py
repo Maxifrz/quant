@@ -424,8 +424,8 @@ anderes als 0.0, was "geh flat" bedeutet.
 DER CODE LAEUFT IN EINER SANDBOX. Diese Grenzen sind hart, ein Verstoss
 verwirft den Kandidaten ungetestet:
 
-- Keine Imports, ausnahmslos. Verfuegbar sind `np`, `math`, `ta`, `Strategy`
-  und `clip_weight` -- sie sind bereits gebunden.
+- Keine Imports, ausnahmslos. Verfuegbar sind `np`, `math`, `ta`, `Strategy`,
+  `clip_weight` und `bars_per_year` -- sie sind bereits gebunden.
 - Keine Schleifen: kein `for`, kein `while`, keine Comprehensions. Alles
   Fensterartige laeuft ueber `ta.*` und `np.*`.
 - Keine Dekoratoren, kein `try`/`except`, kein `with`, kein `lambda`, kein
@@ -445,7 +445,25 @@ Verfuegbare Indikatoren, alle aus `ta`:
 - `ta.donchian(highs, lows, n)` -> (hoch, tief)
 - `ta.true_range(highs, lows, closes)` -> Array
 - `ta.atr(highs, lows, closes, n)` -> float
-- `ta.realised_vol(closes, n, bars_per_year)` -> float
+- `ta.realised_vol(closes, n, bars_per_year(self.timeframe))` -> float
+
+JEDE `ta.*`-FUNKTION AUSSER `true_range` GIBT EINEN SKALAR ZURUECK -- den
+fertigen Wert fuer den aktuellen Bar, keine Reihe. Es gibt nichts zu
+indizieren. Das ist der haeufigste Fehler in eingereichtem Code:
+
+    rsi = 100.0 - 100.0 / (1.0 + rs)
+    rsi_last = rsi[-1]      # FALSCH: TypeError, rsi ist schon ein float
+    if rsi > self.HIGH:     # richtig: direkt vergleichen
+
+Dasselbe gilt fuer eigene Zwischenergebnisse aus `float`-Werten. Nur
+`window.*()` und `np.*` liefern Arrays; ein `[-1]` gehoert ausschliesslich an
+die.
+
+`ta.realised_vol` braucht drei Argumente. Das dritte ist der Aufruf
+`bars_per_year(self.timeframe)` -- schreibe dort **nie** eine Zahl hin, die
+haengt am Timeframe und ist damit eine Magic Constant. Fuer ein *Verhaeltnis*
+zweier Volatilitaeten kuerzt sich der Faktor ohnehin weg; dort tut es auch
+`ta.stdev` auf Log-Renditen.
 
 Aus `window` kommen `window.closes()`, `.highs()`, `.lows()`, `.opens()`,
 `.volumes()` als numpy-Arrays, aeltester Wert zuerst. `len(window)` ist die
