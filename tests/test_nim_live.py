@@ -81,11 +81,6 @@ def test_echter_aufruf_liefert_ein_gueltiges_schema(effort):
         effort=effort,
     )
 
-    assert not provider._schema_refused, (
-        "Der Endpunkt hat `response_format` abgelehnt. Der Provider laeuft "
-        "damit ungefuehrt weiter -- das funktioniert, ist aber schwaecher, "
-        "und die Ursache gehoert untersucht statt uebersehen (ADR-040)."
-    )
     assert antwort.recommendation in {"proceed", "reject"}
     assert antwort.reasoning.strip(), "Begruendung leer"
     assert "42000" in antwort.reasoning or "Preis" in antwort.reasoning, (
@@ -93,3 +88,41 @@ def test_echter_aufruf_liefert_ein_gueltiges_schema(effort):
         "Vorfilter, der den offensichtlichsten Befund uebersieht, filtert "
         "nichts."
     )
+
+
+def test_erzeugter_code_hat_mehr_als_eine_zeile():
+    """Der Regressionsschutz fuer ADR-041 -- und der Grund, warum es ihn gibt.
+
+    Ein ganzer Research-Lauf, zehn von zehn Kandidaten an der Sandbox
+    gescheitert: die erzwungene JSON-Form des Endpunkts kann keinen
+    Zeilenumbruch in einem String erzeugen, jede Klasse kam einzeilig und
+    damit syntaktisch tot zurueck. Kein Test gegen Attrappen konnte das
+    sehen -- eine Attrappe liefert genau den Text, den man ihr vorlegt.
+
+    Diese Zusicherung ist bewusst grob: nicht "der Code ist gut", sondern
+    "der Code ist ueberhaupt Python". Alles Weitere entscheidet die Sandbox.
+    """
+    from qt.llm.client import GENERATOR_SYSTEM_PROMPT
+    from qt.llm.schemas import StrategyCandidateProposal
+
+    provider = NimProvider()
+
+    vorschlag = provider.parse(
+        system=GENERATOR_SYSTEM_PROMPT,
+        prompt=(
+            "Entwirf eine einfache Strategie auf Basis eines gleitenden "
+            "Durchschnitts ueber 50 Bars. Long darueber, sonst flat."
+        ),
+        schema=StrategyCandidateProposal,
+        model=provider.default_model,
+        max_tokens=4000,
+        effort="low",
+    )
+
+    zeilen = vorschlag.code.splitlines()
+    assert len(zeilen) > 3, (
+        f"Code hat {len(zeilen)} Zeile(n) -- die Umbrueche sind unterwegs "
+        f"verloren gegangen (ADR-041). Anfang: {vorschlag.code[:120]!r}"
+    )
+    assert zeilen[0].startswith("class "), f"Zeile 1 ist keine Klasse: {zeilen[0]!r}"
+    assert any(z.startswith("    ") for z in zeilen[1:]), "Keine Einrueckung im Code"

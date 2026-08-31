@@ -63,6 +63,19 @@ class LLMProvider(Protocol):
     name: str
     default_model: str
 
+    @property
+    def cache_tag(self) -> str:
+        """Was diesen Anbieter im Cache-Key von jedem anderen trennt.
+
+        Nicht einfach `name`: zwei Provider desselben Anbieters koennen
+        verschieden antworten, wenn sie verschieden aufrufen. Genau das ist
+        einmal passiert -- nach dem Abschalten der erzwungenen Ausgabeform
+        lieferte der Cache die zehn kaputten Antworten des vorigen Laufs
+        zurueck, und der Lauf sah aus, als haette die Korrektur nichts
+        bewirkt (ADR-041).
+        """
+        ...
+
     def parse(
         self,
         *,
@@ -93,6 +106,11 @@ class AnthropicProvider:
 
     name = "anthropic"
     default_model = DEFAULT_LLM_MODEL
+
+    @property
+    def cache_tag(self) -> str:
+        """Eine Aufrufform, also nichts zu unterscheiden."""
+        return self.name
 
     def __init__(self, client: Any = None) -> None:
         # `client` injizierbar, damit Tests den Aufruf pruefen koennen, ohne
@@ -223,15 +241,21 @@ class NimProvider:
     fuenf sind am gehosteten Endpunkt gemessen, nicht aus der Dokumentation
     abgeschrieben (ADR-040):
 
-    1. **Strukturierte Ausgabe laeuft ueber `response_format`.** Die
-       NIM-Dokumentation empfiehlt `nvext.guided_json` -- der gehostete
-       Endpunkt lehnt das Feld aber mit HTTP 400 ab (`unknown field
-       'guided_json'`). Das OpenAI-Standardfeld funktioniert dort, auch mit
-       verschachtelten Schemata samt `$defs`/`$ref`, wie sie pydantic fuer
-       `AllocationProposal` erzeugt. Fuer eine selbst betriebene Instanz, die
-       es umgekehrt haelt, steigt der Provider bei einer Ablehnung genau
-       einmal auf den ungefuehrten Weg ab und verlaesst sich dann auf die
-       Anweisung im Prompt plus die pydantic-Validierung.
+    1. **Erzwungene Ausgabeform ist hier aus, und zwar mit Absicht.** Der
+       gehostete Endpunkt kennt das dokumentierte `nvext.guided_json` nicht
+       (HTTP 400), und das OpenAI-Standardfeld `response_format` nimmt er
+       zwar an -- seine grammatikgesteuerte Dekodierung kann aber **keinen
+       Zeilenumbruch in einem String erzeugen**. Gemessen: derselbe Prompt
+       liefert gefuehrt eine einzeilige Klasse (syntaktisch tot), ungefuehrt
+       dieselbe Klasse mit 17 Zeilen (ADR-041).
+
+       Das trifft nicht nur den Generator. Jedes Freitextfeld -- die
+       Begruendung des Kritikers, die des Allokators -- wuerde dabei **still**
+       verstuemmelt: kein Fehler, nur zerstoerter Text. Ein Mechanismus, der
+       Inhalte lautlos beschaedigt, ist schlechter als keiner. Die Form
+       traegt deshalb die Anweisung im Systemprompt plus die
+       pydantic-Validierung. `guided=True` bleibt als Schalter fuer eine
+       Bereitstellung, die es besser kann.
     2. **Denk-Token zaehlen gegen `max_tokens`.** Mit eingeschaltetem Denken
        kann ein Aufruf sein gesamtes Budget im Gedankengang verbrauchen und
        eine abgeschnittene Antwort liefern. Das Budget wird deshalb angehoben,
@@ -293,6 +317,7 @@ class NimProvider:
         seed: int = 20240101,
         temperature: float = 1.0,
         top_p: float = 0.95,
+        guided: bool = False,
     ) -> None:
         self._client = client
         self.base_url = base_url
@@ -300,10 +325,27 @@ class NimProvider:
         self.seed = seed
         self.temperature = temperature
         self.top_p = top_p
+        # Default aus, siehe Punkt 1 im Klassen-Docstring: die gefuehrte
+        # Dekodierung dieses Endpunkts verschluckt Zeilenumbrueche. Der
+        # Schalter bleibt, weil eine andere Bereitstellung es koennen kann --
+        # aber er ist eine bewusste Entscheidung des Aufrufers, kein Default.
+        self.guided = guided
         # Wird auf True gesetzt, sobald der Endpunkt `response_format` einmal
         # abgelehnt hat. Ein Lauf macht hunderte Aufrufe; ohne dieses Merken
         # zahlte er den Fehlschlag jedes Mal erneut.
         self._schema_refused = False
+
+    @property
+    def cache_tag(self) -> str:
+        """Gefuehrt und ungefuehrt sind zwei Antworten, nicht eine.
+
+        Gemessen, nicht befuerchtet: gefuehrt kam der Strategie-Code einzeilig
+        zurueck, ungefuehrt mit 17 Zeilen (ADR-041). Waeren beide unter
+        demselben Key gelandet, lieferte der Cache nach der Korrektur weiter
+        die kaputte Fassung -- was er in genau diesem Projekt einmal getan
+        hat, und der Lauf sah aus, als haette sich nichts geaendert.
+        """
+        return f"{self.name}+gefuehrt" if self.guided else self.name
 
     # -- Aufruf --------------------------------------------------------------
 
@@ -348,7 +390,7 @@ class NimProvider:
     ) -> str:
         client = self._ensure_client()
         if gefuehrt is None:
-            gefuehrt = not self._schema_refused
+            gefuehrt = self.guided and not self._schema_refused
 
         weitere: dict[str, Any] = {}
         if gefuehrt:

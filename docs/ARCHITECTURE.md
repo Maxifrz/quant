@@ -163,7 +163,8 @@ Kritiker — kennen nur `provider.parse(...)`.
 
 | | `anthropic` (Default) | `nim` (NVIDIA) |
 |---|---|---|
-| Schnittstelle | Messages API, `output_format` | OpenAI-kompatibel, `response_format` |
+| Schnittstelle | Messages API, `output_format` | OpenAI-kompatibel, Chat Completions |
+| Form erzwungen | ja, per Schema | **nein** — frisst Umbrüche (ADR-041) |
 | Denksteuerung | `effort` in fünf Stufen | drei Zustände, siehe unten |
 | Denk-Token | getrenntes Budget | zählen gegen `max_tokens`, kein Budget-Regler |
 | Latenz je Aufruf | Sekunden | **90–155 s** (gemessen, ADR-040) |

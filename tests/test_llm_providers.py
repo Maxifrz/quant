@@ -86,9 +86,9 @@ class _FakeNim:
         self.chat = type("_Chat", (), {"completions": _FakeCompletions(self)})()
 
 
-def _nim(antworten=None, raise_on=None) -> tuple[NimProvider, _FakeNim]:
+def _nim(antworten=None, raise_on=None, guided: bool = False) -> tuple[NimProvider, _FakeNim]:
     fake = _FakeNim(antworten, raise_on)
-    return NimProvider(client=fake), fake
+    return NimProvider(client=fake, guided=guided), fake
 
 
 def _parse(provider: NimProvider, effort: str = "low"):
@@ -209,6 +209,29 @@ def test_derselbe_prompt_bei_zwei_anbietern_ergibt_zwei_cache_keys(tmp_path):
     assert anthropic._cache_key("brief") != nim._cache_key("brief")
 
 
+def test_gefuehrt_und_ungefuehrt_teilen_sich_keinen_cache_eintrag(tmp_path):
+    """Der dritte Fehler desselben Abends, und der heimtueckischste.
+
+    Nach dem Abschalten der erzwungenen Form lief der Research-Lauf erneut --
+    und lieferte Zeichen fuer Zeichen dasselbe kaputte Ergebnis, weil der
+    Cache die zehn alten Antworten zurueckgab. Die Korrektur sah wirkungslos
+    aus, obwohl sie wirkte. Derselbe Anbieter, dieselbe Frage, zwei
+    Aufrufformen: das sind zwei Antworten (ADR-041).
+    """
+    from qt.llm.cache import LLMCache
+    from qt.llm.client import GeneratorClient
+
+    cache = LLMCache(tmp_path, model="gleiches-modell")
+    frei = GeneratorClient(
+        model="gleiches-modell", cache=cache, provider=NimProvider(guided=False)
+    )
+    gefuehrt = GeneratorClient(
+        model="gleiches-modell", cache=cache, provider=NimProvider(guided=True)
+    )
+
+    assert frei._cache_key("brief") != gefuehrt._cache_key("brief")
+
+
 def test_der_anbieter_steht_in_jedem_der_vier_cache_keys(tmp_path):
     """Vier Clients, vier Keys -- und einer davon vergessen faellt nie auf."""
     from qt.llm.cache import LLMCache
@@ -298,26 +321,40 @@ def test_unbekannte_stufe_wird_benannt():
 # ---------------------------------------------------------------------------
 
 
-def test_response_format_und_das_schema_gehen_mit():
-    """`response_format` erzwingt die Form, der Prompt nennt den Inhalt.
+def test_die_form_wird_standardmaessig_nicht_erzwungen():
+    """Der teuerste Befund dieses Projekts bisher, als Test festgehalten.
 
-    Beides ist noetig: ein erzwungenes Schema sagt dem Modell nicht, *was* es
-    hineinschreiben soll. Dass es `response_format` ist und nicht das in der
-    NIM-Dokumentation empfohlene `nvext.guided_json`, ist am Endpunkt
-    gemessen -- siehe ADR-040.
+    Die grammatikgesteuerte Dekodierung des gehosteten Endpunkts kann keinen
+    Zeilenumbruch in einem String erzeugen. Gefuehrt kam derselbe Prompt als
+    einzeilige, syntaktisch tote Klasse zurueck, ungefuehrt mit 17 Zeilen
+    (ADR-041). Betroffen waere jedes Freitextfeld, auch die Begruendungen --
+    dort still, ohne Fehler. Deshalb ist der Schalter aus.
     """
     provider, fake = _nim()
     _parse(provider)
 
-    aufruf = fake.calls[0]
-    rf = aufruf["response_format"]
+    assert "response_format" not in fake.calls[0]
+    system = fake.calls[0]["messages"][0]["content"]
+    assert "overfitting_risk" in system, "Ohne erzwungene Form traegt der Prompt die Form"
+
+
+def test_guided_bleibt_als_bewusster_schalter():
+    """Fuer eine Bereitstellung, die es besser kann -- aber nur auf Ansage."""
+    fake = _FakeNim()
+    provider = NimProvider(client=fake, guided=True)
+    provider.parse(
+        system="Du pruefst Kandidaten.",
+        prompt="Kandidat XY",
+        schema=CandidateCritique,
+        model="nvidia/nemotron-3-ultra-550b-a55b",
+        max_tokens=1000,
+        effort="low",
+    )
+
+    rf = fake.calls[0]["response_format"]
     assert rf["type"] == "json_schema"
     assert rf["json_schema"]["name"] == "CandidateCritique"
     assert rf["json_schema"]["schema"]["title"] == "CandidateCritique"
-    assert "nvext" not in aufruf.get("extra_body", {}), "guided_json ist tot (ADR-040)"
-    system = aufruf["messages"][0]["content"]
-    assert "Du pruefst Kandidaten." in system
-    assert "overfitting_risk" in system, "Das Schema fehlt im Systemprompt"
 
 
 def test_der_eingefrorene_systemprompt_bleibt_unveraendert():
@@ -430,6 +467,7 @@ def test_abgelehntes_response_format_fuehrt_zu_genau_einem_abstieg():
     provider, fake = _nim(
         antworten=[_antwort(json.dumps(VERDIKT))],
         raise_on=[ValueError("unknown field `response_format`, expected one of ...")],
+        guided=True,
     )
 
     assert _parse(provider).recommendation == "proceed"
@@ -447,6 +485,7 @@ def test_der_abstieg_wird_gemerkt():
     provider, fake = _nim(
         antworten=[_antwort(json.dumps(VERDIKT)), _antwort(json.dumps(VERDIKT))],
         raise_on=[ValueError("unknown field `response_format`, expected one of ...")],
+        guided=True,
     )
 
     _parse(provider)
@@ -460,7 +499,7 @@ def test_ein_echter_fehler_loest_keinen_abstieg_aus():
     """Sonst verwandelt ein falscher Schluessel sich in einen zweiten,
     genauso aussichtslosen Aufruf -- und die Folgemeldung verdeckt die
     Ursache."""
-    provider, fake = _nim(raise_on=[ValueError("401 Unauthorized")])
+    provider, fake = _nim(raise_on=[ValueError("401 Unauthorized")], guided=True)
 
     with pytest.raises(LLMUnavailable) as fehler:
         _parse(provider)

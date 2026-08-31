@@ -5,6 +5,77 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-041 — Erzwungene JSON-Form ist auf NIM aus: sie frisst Zeilenumbrüche
+**Datum:** 2026-08-31
+
+ADR-040 hat `response_format` zum Primärweg gemacht, weil der Endpunkt es
+annimmt und ein verschachteltes Schema korrekt beantwortet. Der erste echte
+Research-Lauf hat gezeigt, dass "nimmt es an" und "beantwortet es richtig"
+zwei verschiedene Dinge sind.
+
+**Der Befund:** 10 von 10 Kandidaten an der Sandbox gescheitert, alle mit
+einem Syntaxfehler in **Zeile 1**. Der gespeicherte Code erklärt es:
+
+```
+"class SMAMomentum(Strategy):n    name = 'sma_momentum'n    LOOKBACK = 50n..."
+"class VolBreakout(Strategy):    name = 'vol_breakout'    LOOKBACK = 20..."
+```
+
+Beim einen wurde aus dem Umbruch der **Buchstabe `n`** (der Backslash fehlt),
+beim anderen ist er ersatzlos weg. Jede Klasse ist eine einzige Zeile und
+damit syntaktisch tot.
+
+**Die Ursache ist nicht das Modell, sondern die erzwungene Form.** Derselbe
+Prompt, zweimal, einziger Unterschied ist `response_format`:
+
+| | Zeilen im Code | echte Umbrüche |
+|---|---|---|
+| geführt (`response_format` + `json_schema`) | **1** | nein |
+| ungeführt (nur Prompt-Anweisung) | **17** | ja |
+
+Die grammatikgesteuerte Dekodierung dieses Endpunkts kann kein `\n` in einem
+String erzeugen.
+
+**Warum das schlimmer ist als "der Generator ist kaputt":** betroffen ist
+jedes Freitextfeld. `CandidateCritique.reasoning` und
+`AllocationProposal.reasoning` würden genauso verstümmelt — nur fällt es dort
+**nicht auf**, weil ein einzeiliger Fließtext kein Syntaxfehler ist. Ein
+Mechanismus, der Inhalte lautlos beschädigt, ist schlechter als keiner.
+Deshalb: `guided=False` als Default für NIM. Der Schalter bleibt für eine
+Bereitstellung, die es besser kann, aber er ist eine bewusste Entscheidung
+und kein Zustand, in den man hineinrutscht.
+
+**Der dritte Fehler desselben Abends, und der heimtückischste:** nach der
+Korrektur lief der Research-Lauf erneut — und lieferte Zeichen für Zeichen
+dasselbe kaputte Ergebnis. Zehn identische Kandidatennamen, zehn identische
+Syntaxfehler. Der Cache hatte die alten Antworten zurückgegeben, weil die
+**Aufrufform nicht im Key stand**. Die Korrektur sah wirkungslos aus, obwohl
+sie wirkte.
+
+Dieselbe Lehre wie bei Modell (ADR-028), Effort (ADR-028) und Anbieter
+(ADR-039), einmal mehr: *alles, was die Antwort mitbestimmt, gehört in den
+Key.* Der Anbieter liefert dafür jetzt einen `cache_tag` statt nur seines
+Namens — `nim` gegen `nim+gefuehrt`. Ein Provider-Name allein reicht nicht,
+sobald derselbe Anbieter auf zwei Arten aufgerufen werden kann.
+
+**Was das über die Testbarkeit sagt.** Alle drei Fehler dieses Abends —
+`guided_json` (ADR-040), die verschluckten Umbrüche und der zu grobe
+Cache-Key — waren gegen Attrappen unsichtbar, und zwar aus demselben Grund:
+eine Attrappe liefert genau den Text, den man ihr vorlegt. Sie kann nicht
+zeigen, dass der echte Endpunkt bei denselben Parametern etwas anderes tut.
+36 grüne Tests haben keinen davon gefunden; ein echter Aufruf hat alle drei
+gefunden. `tests/test_nim_live.py` prüft deshalb jetzt ausdrücklich, dass
+erzeugter Code mehr als drei Zeilen hat und eine eingerückte Zeile enthält —
+grob mit Absicht: nicht "der Code ist gut", sondern "der Code ist überhaupt
+Python".
+
+**Nicht behoben, nur benannt:** die zehn verworfenen Kandidaten des ersten
+Laufs bleiben in der Registry stehen. Sie haben den Versuchszähler korrekt
+**nicht** erhöht (ADR-032 — nur ein abgeschlossenes Screening zählt), und ein
+Audit-Pfad, aus dem man Fehlschläge entfernt, ist keiner.
+
+---
+
 ## ADR-040 — Der erste echte NIM-Aufruf hat zwei Fehler gefunden, die 34 grüne Tests nicht sahen
 **Datum:** 2026-08-31
 

@@ -183,7 +183,7 @@ class AllocatorClient:
             system=SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
-            provider=self.provider.name,
+            provider=self.provider.cache_tag,
         )
 
     # ------------------------------------------------------------------
@@ -326,7 +326,7 @@ class ScenarioClient:
             system=SCENARIO_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
-            provider=self.provider.name,
+            provider=self.provider.cache_tag,
             kind="scenario",
         )
 
@@ -553,7 +553,7 @@ class GeneratorClient:
             system=GENERATOR_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
-            provider=self.provider.name,
+            provider=self.provider.cache_tag,
             kind="candidate",
         )
 
@@ -618,7 +618,7 @@ class CriticClient:
             system=CRITIC_SYSTEM_PROMPT,
             model=self.model,
             effort=self.effort,
-            provider=self.provider.name,
+            provider=self.provider.cache_tag,
             kind="critique",
         )
 
