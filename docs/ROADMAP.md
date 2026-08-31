@@ -24,8 +24,15 @@
 >        --allocate-every 96 --effort low --model claude-sonnet-5
 >    ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen
 >    ```
->    Alternativ über NVIDIA NIM (ADR-039, `uv sync --extra nim` einmalig):
+>    Alternativ über NVIDIA NIM (ADR-039/040, `uv sync --extra nim` einmalig).
+>    Der Aufrufweg ist gegen den echten Endpunkt geprüft — aber **rechne mit
+>    4–6 Stunden** für das Gate: gemessene 90–155 Sekunden pro Aufruf mal 145.
+>    Also starten und liegen lassen, nicht nebenbei ausprobieren.
 >    ```bash
+>    # Erst der Pflichttest: zwei Aufrufe, ~5 Minuten, findet eine kaputte
+>    # Verdrahtung bevor der lange Lauf sie teuer findet.
+>    NVIDIA_API_KEY=nvapi-... uv run pytest tests/test_nim_live.py -m slow -v
+>
 >    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
 >        --allocate-every 96 --effort low --provider nim
 >    NVIDIA_API_KEY=nvapi-... uv run qt research --generate 10 --screen \

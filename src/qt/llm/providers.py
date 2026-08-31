@@ -195,7 +195,8 @@ NIM_KEY_VARS = ("NVIDIA_API_KEY", "NIM_API_KEY", "NVIDIA_NIM_API_KEY")
 # Anweisung, die dem Systemprompt fuer NIM angehaengt wird. Anthropic bekommt
 # das Schema ueber `output_format` und braucht sie nicht; ein
 # OpenAI-kompatibler Endpunkt muss dem Modell dagegen im Text sagen, was es
-# produzieren soll -- `guided_json` erzwingt nur die *Form*, nicht den Inhalt.
+# produzieren soll -- `response_format` erzwingt nur die *Form*, nicht den
+# Inhalt.
 #
 # Wichtig: der eingefrorene Systemprompt in `qt.llm.client` bleibt davon
 # unberuehrt. Diese Ergaenzung passiert hier, im Provider, und der Provider
@@ -218,21 +219,34 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 class NimProvider:
     """NVIDIA NIM ueber die OpenAI-kompatible Chat-Completions-Schnittstelle.
 
-    Vier Eigenheiten gegenueber Anthropic, die hier abgefangen werden:
+    Fuenf Eigenheiten gegenueber Anthropic, die hier abgefangen werden. Alle
+    fuenf sind am gehosteten Endpunkt gemessen, nicht aus der Dokumentation
+    abgeschrieben (ADR-040):
 
-    1. **Strukturierte Ausgabe heisst `nvext.guided_json`.** NVIDIA empfiehlt
-       das ausdruecklich gegenueber `response_format={"type": "json_object"}`,
-       weil letzteres jedes gueltige JSON erlaubt -- auch ein leeres Objekt.
-       Nicht jede Bereitstellung kennt `nvext`; deshalb steigt der Provider bei
-       einer Ablehnung genau einmal auf den ungefuehrten Weg ab und verlaesst
-       sich dann auf die Anweisung im Prompt plus die pydantic-Validierung.
+    1. **Strukturierte Ausgabe laeuft ueber `response_format`.** Die
+       NIM-Dokumentation empfiehlt `nvext.guided_json` -- der gehostete
+       Endpunkt lehnt das Feld aber mit HTTP 400 ab (`unknown field
+       'guided_json'`). Das OpenAI-Standardfeld funktioniert dort, auch mit
+       verschachtelten Schemata samt `$defs`/`$ref`, wie sie pydantic fuer
+       `AllocationProposal` erzeugt. Fuer eine selbst betriebene Instanz, die
+       es umgekehrt haelt, steigt der Provider bei einer Ablehnung genau
+       einmal auf den ungefuehrten Weg ab und verlaesst sich dann auf die
+       Anweisung im Prompt plus die pydantic-Validierung.
     2. **Denk-Token zaehlen gegen `max_tokens`.** Mit eingeschaltetem Denken
        kann ein Aufruf sein gesamtes Budget im Gedankengang verbrauchen und
        eine abgeschnittene Antwort liefern. Das Budget wird deshalb angehoben,
        und `finish_reason == "length"` wird als das benannt, was es ist.
-    3. **Der Gedankengang steht manchmal im Text.** `<think>...</think>` wird
-       entfernt, bevor das JSON gesucht wird.
-    4. **Temperatur 0 ist hier keine gute Idee.** NVIDIA empfiehlt fuer die
+    3. **Ein Denkbudget gibt es nicht.** `nvext.max_thinking_tokens` steht in
+       der Feldliste des Endpunkts, wird vom Runner aber abgelehnt
+       ("thinking_token_budget is not yet supported by the V2 model runner").
+       Deshalb bleibt die Effort-Abbildung bei den drei Zustaenden aus
+       `chat_template_kwargs` -- das ist eine gemessene Grenze, keine
+       Auslassung.
+    4. **Der Gedankengang kommt getrennt, meistens.** Am gehosteten Endpunkt
+       steht er in `reasoning_content`, der Inhalt bleibt sauber. Andere
+       Bereitstellungen schreiben ihn inline; `<think>...</think>` wird
+       deshalb trotzdem entfernt, bevor das JSON gesucht wird.
+    5. **Temperatur 0 ist hier keine gute Idee.** NVIDIA empfiehlt fuer die
        Reasoning-Modi ausdruecklich `temperature=1.0, top_p=0.95`; ein auf 0
        gedrehtes Reasoning-Modell wird nicht determiniert, sondern schlechter.
        Reproduzierbarkeit kommt in diesem Projekt ohnehin nicht vom Sampler,
@@ -257,6 +271,20 @@ class NimProvider:
     # Faktor auf `max_tokens`, weil der Gedankengang mitzaehlt (Punkt 2 oben).
     TOKEN_FACTOR = {"low": 1, "medium": 3, "high": 4, "xhigh": 6, "max": 8}
 
+    # Wiederholungen bei 429 und 5xx. Hoeher als die zwei des SDK, und
+    # ausdruecklich gesetzt statt geerbt: der gehostete Endpunkt hat im ersten
+    # echten Testlauf ein "Service temporarily overloaded" (HTTP 503)
+    # zurueckgegeben. Ein durchgereichter 503 wird im Allokator zu einem
+    # Rueckfall auf Gleichgewichtung -- der Lauf laeuft weiter, sieht gesund
+    # aus und misst heimlich eine Baseline (ADR-018). Ein Gate-Lauf mit 145
+    # Aufrufen darf daran nicht stillschweigend seine Aussage verlieren.
+    MAX_RETRIES = 4
+
+    # Der Default des SDK ist 600 Sekunden Lesezeit. Gemessen dauert ein
+    # Aufruf 40 bis 110 Sekunden; ein haengender wuerde einen Lauf zehn
+    # Minuten blockieren, bevor irgendjemand etwas merkt.
+    TIMEOUT_S = 300.0
+
     def __init__(
         self,
         client: Any = None,
@@ -272,10 +300,10 @@ class NimProvider:
         self.seed = seed
         self.temperature = temperature
         self.top_p = top_p
-        # Wird auf True gesetzt, sobald der Endpunkt `nvext` einmal abgelehnt
-        # hat. Ein Lauf macht hunderte Aufrufe; ohne dieses Merken zahlte er
-        # den Fehlschlag jedes Mal erneut.
-        self._guided_json_refused = False
+        # Wird auf True gesetzt, sobald der Endpunkt `response_format` einmal
+        # abgelehnt hat. Ein Lauf macht hunderte Aufrufe; ohne dieses Merken
+        # zahlte er den Fehlschlag jedes Mal erneut.
+        self._schema_refused = False
 
     # -- Aufruf --------------------------------------------------------------
 
@@ -298,6 +326,7 @@ class NimProvider:
         text = self._complete(
             system=system_text,
             prompt=prompt,
+            schema=schema,
             json_schema=json_schema,
             model=model,
             max_tokens=budget,
@@ -310,21 +339,23 @@ class NimProvider:
         *,
         system: str,
         prompt: str,
+        schema: type[BaseModel],
         json_schema: dict,
         model: str,
         max_tokens: int,
         effort: str,
-        guided: bool | None = None,
+        gefuehrt: bool | None = None,
     ) -> str:
         client = self._ensure_client()
-        if guided is None:
-            guided = not self._guided_json_refused
+        if gefuehrt is None:
+            gefuehrt = not self._schema_refused
 
-        extra: dict[str, Any] = {
-            "chat_template_kwargs": self._chat_template_kwargs(effort)
-        }
-        if guided:
-            extra["nvext"] = {"guided_json": json_schema}
+        weitere: dict[str, Any] = {}
+        if gefuehrt:
+            weitere["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": schema.__name__, "schema": json_schema},
+            }
 
         try:
             response = client.chat.completions.create(
@@ -337,23 +368,25 @@ class NimProvider:
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
-                extra_body=extra,
+                extra_body={"chat_template_kwargs": self._chat_template_kwargs(effort)},
+                **weitere,
             )
         except Exception as exc:
-            if guided and _looks_like_rejected_parameter(exc):
+            if gefuehrt and _looks_like_rejected_parameter(exc):
                 # Genau ein Abstieg, und er wird gemerkt. Danach traegt die
                 # Anweisung im Systemprompt die Form, und die
                 # pydantic-Validierung faengt, was das Modell trotzdem
                 # danebenlegt.
-                self._guided_json_refused = True
+                self._schema_refused = True
                 return self._complete(
                     system=system,
                     prompt=prompt,
+                    schema=schema,
                     json_schema=json_schema,
                     model=model,
                     max_tokens=max_tokens,
                     effort=effort,
-                    guided=False,
+                    gefuehrt=False,
                 )
             raise LLMUnavailable(
                 f"NIM-Aufruf fehlgeschlagen ({type(exc).__name__}): {exc}. "
@@ -399,7 +432,12 @@ class NimProvider:
             )
 
         try:
-            self._client = openai.OpenAI(base_url=self.base_url, api_key=key)
+            self._client = openai.OpenAI(
+                base_url=self.base_url,
+                api_key=key,
+                max_retries=self.MAX_RETRIES,
+                timeout=self.TIMEOUT_S,
+            )
         except Exception as exc:
             raise LLMUnavailable(
                 f"NIM-Client liess sich nicht bauen ({type(exc).__name__}): {exc}"
@@ -522,15 +560,19 @@ def _validate(text: str, schema: type[BaseModel]) -> BaseModel:
 
 
 def _looks_like_rejected_parameter(exc: Exception) -> bool:
-    """Hat der Endpunkt `nvext` abgelehnt -- oder ist etwas anderes kaputt?
+    """Hat der Endpunkt `response_format` abgelehnt -- oder ist etwas anderes kaputt?
 
     Bewusst eng gefasst. Ein Abstieg bei *jedem* Fehler wuerde einen
     Netzwerkausfall oder einen falschen Schluessel in einen zweiten,
     genauso aussichtslosen Aufruf verwandeln und die eigentliche Ursache hinter
     der Folgemeldung verstecken.
+
+    Die Wortliste ist am echten Fehlerbild geeicht: der gehostete Endpunkt
+    antwortet auf ein unbekanntes Feld mit `unknown field 'X', expected one of
+    ...` und HTTP 400.
     """
     text = f"{exc}".lower()
-    if "nvext" in text or "guided_json" in text:
+    if "response_format" in text or "json_schema" in text:
         return True
     unbekannt = ("unknown" in text or "unrecognized" in text or "unsupported" in text)
     return unbekannt and ("field" in text or "parameter" in text or "body" in text)

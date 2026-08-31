@@ -139,7 +139,8 @@ def test_der_aufruf_passt_zur_installierten_bibliothek():
 
     for name in ("model", "messages", "max_tokens", "temperature", "top_p", "seed"):
         assert name in parameter, name
-    assert "extra_body" in parameter, "Ohne extra_body kein nvext und kein Denk-Schalter"
+    assert "extra_body" in parameter, "Ohne extra_body kein Denk-Schalter"
+    assert "response_format" in parameter, "Ohne response_format keine feste Form"
 
 
 def test_ohne_modellangabe_kommt_der_default_des_anbieters():
@@ -297,19 +298,23 @@ def test_unbekannte_stufe_wird_benannt():
 # ---------------------------------------------------------------------------
 
 
-def test_guided_json_und_das_schema_gehen_mit():
-    """`nvext.guided_json` erzwingt die Form, der Prompt nennt den Inhalt.
+def test_response_format_und_das_schema_gehen_mit():
+    """`response_format` erzwingt die Form, der Prompt nennt den Inhalt.
 
-    Beides ist noetig: NVIDIA empfiehlt `guided_json` ausdruecklich gegenueber
-    `response_format={"type": "json_object"}`, weil letzteres jedes gueltige
-    JSON erlaubt -- auch ein leeres Objekt. Und ein erzwungenes Schema sagt
-    dem Modell trotzdem nicht, *was* es hineinschreiben soll.
+    Beides ist noetig: ein erzwungenes Schema sagt dem Modell nicht, *was* es
+    hineinschreiben soll. Dass es `response_format` ist und nicht das in der
+    NIM-Dokumentation empfohlene `nvext.guided_json`, ist am Endpunkt
+    gemessen -- siehe ADR-040.
     """
     provider, fake = _nim()
     _parse(provider)
 
     aufruf = fake.calls[0]
-    assert aufruf["extra_body"]["nvext"]["guided_json"]["title"] == "CandidateCritique"
+    rf = aufruf["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"] == "CandidateCritique"
+    assert rf["json_schema"]["schema"]["title"] == "CandidateCritique"
+    assert "nvext" not in aufruf.get("extra_body", {}), "guided_json ist tot (ADR-040)"
     system = aufruf["messages"][0]["content"]
     assert "Du pruefst Kandidaten." in system
     assert "overfitting_risk" in system, "Das Schema fehlt im Systemprompt"
@@ -415,8 +420,8 @@ def test_antwort_ohne_auswahl_wird_benannt():
 # ---------------------------------------------------------------------------
 
 
-def test_abgelehntes_nvext_fuehrt_zu_genau_einem_abstieg():
-    """Nicht jede NIM-Bereitstellung kennt `nvext`.
+def test_abgelehntes_response_format_fuehrt_zu_genau_einem_abstieg():
+    """Nicht jede NIM-Bereitstellung kennt `response_format`.
 
     Der zweite Versuch verlaesst sich auf die Anweisung im Systemprompt plus
     die pydantic-Validierung -- schwaecher, aber brauchbar. Ein Lauf soll
@@ -424,13 +429,13 @@ def test_abgelehntes_nvext_fuehrt_zu_genau_einem_abstieg():
     """
     provider, fake = _nim(
         antworten=[_antwort(json.dumps(VERDIKT))],
-        raise_on=[ValueError("unknown field: nvext")],
+        raise_on=[ValueError("unknown field `response_format`, expected one of ...")],
     )
 
     assert _parse(provider).recommendation == "proceed"
     assert len(fake.calls) == 2
-    assert "nvext" in fake.calls[0]["extra_body"]
-    assert "nvext" not in fake.calls[1]["extra_body"]
+    assert "response_format" in fake.calls[0]
+    assert "response_format" not in fake.calls[1]
 
 
 def test_der_abstieg_wird_gemerkt():
@@ -441,14 +446,14 @@ def test_der_abstieg_wird_gemerkt():
     """
     provider, fake = _nim(
         antworten=[_antwort(json.dumps(VERDIKT)), _antwort(json.dumps(VERDIKT))],
-        raise_on=[ValueError("unknown field: nvext")],
+        raise_on=[ValueError("unknown field `response_format`, expected one of ...")],
     )
 
     _parse(provider)
     _parse(provider)
 
-    assert len(fake.calls) == 3, "Der zweite Aufruf hat es erneut mit nvext versucht"
-    assert "nvext" not in fake.calls[2]["extra_body"]
+    assert len(fake.calls) == 3, "Der zweite Aufruf hat es erneut gefuehrt versucht"
+    assert "response_format" not in fake.calls[2]
 
 
 def test_ein_echter_fehler_loest_keinen_abstieg_aus():

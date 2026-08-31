@@ -5,6 +5,78 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-040 — Der erste echte NIM-Aufruf hat zwei Fehler gefunden, die 34 grüne Tests nicht sahen
+**Datum:** 2026-08-31
+
+ADR-039 hat die Anbieter-Naht gegen Attrappen gebaut und dort ausdrücklich
+festgehalten, was nicht bewiesen ist: "ob der gehostete Endpunkt sich so
+verhält, wie seine Dokumentation sagt". Der erste echte Aufruf hat die Frage
+beantwortet — mit Nein, und zwar zweimal.
+
+**Fehler 1: `nvext.guided_json` gibt es am gehosteten Endpunkt nicht.** Die
+NIM-Dokumentation empfiehlt es ausdrücklich gegenüber `response_format`, und
+genau danach war der Provider gebaut. Die Antwort von
+`integrate.api.nvidia.com` ist HTTP 400: `unknown field 'guided_json',
+expected one of ... max_thinking_tokens, cache_salt, ...`. Der Abstiegspfad
+aus ADR-039 hat das aufgefangen — jeder Aufruf lief ungeführt durch, lieferte
+gültiges JSON und *sah deshalb erfolgreich aus*. Ohne die Diagnosezeile
+"guided_json akzeptiert: nein" wäre das nie aufgefallen: ein dauerhaft
+degradierter Pfad, der funktioniert.
+
+**Die Korrektur:** `response_format` mit `json_schema` ist jetzt der
+Primärweg. Gemessen angenommen, auch mit dem **verschachtelten** Schema von
+`AllocationProposal` samt `$defs`/`$ref`, das pydantic erzeugt — die erste
+Probe lief gegen ein flaches Schema und bewies für den Allokator nichts, die
+zweite gegen das echte. `guided_json` ist ersatzlos raus; der eine gemerkte
+Abstieg bleibt für eine selbst betriebene Instanz, die es umgekehrt hält.
+
+**Fehler 2: kein Denkbudget.** `nvext.max_thinking_tokens` steht in der
+Feldliste, die der 400er zurückgibt — es sah nach dem fehlenden echten Regler
+für die Effort-Abbildung aus. Der Runner lehnt es trotzdem ab:
+`thinking_token_budget is not yet supported by the V2 model runner`. Die
+Abbildung bleibt damit bei den drei Zuständen aus `chat_template_kwargs`. Das
+ist jetzt eine gemessene Grenze und keine Auslassung aus Unsicherheit — und
+steht so im Code, damit es niemand "korrigiert".
+
+**Fehler 3, kein Codefehler, aber ein Ergebnis: HTTP 503.** Der
+Kontrollaufruf kam als "Service temporarily overloaded" zurück. Ein
+durchgereichter 503 wird im Allokator zu einem Rückfall auf Gleichgewichtung —
+der Lauf läuft weiter, sieht gesund aus und misst heimlich eine Baseline
+(ADR-018). Deshalb sind `max_retries=4` und `timeout=300s` jetzt **ausdrücklich
+gesetzt** statt vom SDK geerbt (dessen Defaults 2 und 600 Sekunden sind). Ein
+Gate-Lauf mit 145 Aufrufen darf seine Aussage nicht an einer Überlastung
+verlieren, die niemand sieht.
+
+**Die Zahl, die die Planung ändert: 90 bis 155 Sekunden pro Aufruf.** Vier
+Messungen: 89 s und 106 s vor der Korrektur, 133 s und 155 s danach — die
+Schwankung ist Auslastung des geteilten Endpunkts, nicht Effort (auch
+`low` mit Denken *aus* und 7 Token Antwort brauchte 36 s). Hochgerechnet:
+
+| Lauf | Aufrufe | NIM | Anthropic |
+|---|---|---|---|
+| `qt alloc --compare-baselines --allocate-every 96` | 145 | **4–6 Stunden** | Minuten |
+| `qt research --generate 10 --screen` | ≤ 20 | **30–50 Minuten** | Minuten |
+
+Das ist kein Argument gegen NIM, aber es macht den Gate-Lauf zu etwas, das man
+startet und liegen lässt — nicht zu etwas, das man nebenbei ausprobiert. Der
+Antwort-Cache federt jeden Wiederholungslauf ab; der erste kostet die Zeit.
+
+**Inhaltlich hat Nemotron bestanden.** Der Testkandidat enthält `close >
+42000`, eine magische Preiskonstante. Beide Effort-Stufen haben sie benannt,
+mit Zeilenbezug, und `reject` empfohlen (Overfitting-Risiko 0.85 bis 1.0). Als
+Vorfilter taugt das Modell also. Über den *Generator* sagt das nichts — ob
+Nemotron sandbox-legalen Code schreibt, entscheidet erst die Quote "Sandbox
+verworfen" im ersten echten Research-Lauf.
+
+**Die Lehre, die über NIM hinausgeht:** 34 grüne Tests gegen Attrappen haben
+einen falschen Primärparameter nicht gesehen, weil Attrappen alles annehmen,
+was man ihnen gibt. Deshalb liegt der Aufruf jetzt als `tests/test_nim_live.py`
+im Repo — übersprungen ohne Schlüssel, mit `slow` markiert, und er prüft
+ausdrücklich `not provider._schema_refused`. Ein stiller Abstieg ist ab jetzt
+ein roter Test und keine Diagnosezeile, die jemand lesen muss.
+
+---
+
 ## ADR-039 — Ein zweiter Anbieter als Naht, nicht als zweite Client-Familie
 **Datum:** 2026-08-31
 

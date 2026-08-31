@@ -163,9 +163,10 @@ Kritiker — kennen nur `provider.parse(...)`.
 
 | | `anthropic` (Default) | `nim` (NVIDIA) |
 |---|---|---|
-| Schnittstelle | Messages API, `output_format` | OpenAI-kompatibel, `nvext.guided_json` |
+| Schnittstelle | Messages API, `output_format` | OpenAI-kompatibel, `response_format` |
 | Denksteuerung | `effort` in fünf Stufen | drei Zustände, siehe unten |
-| Denk-Token | getrenntes Budget | zählen gegen `max_tokens` |
+| Denk-Token | getrenntes Budget | zählen gegen `max_tokens`, kein Budget-Regler |
+| Latenz je Aufruf | Sekunden | **90–155 s** (gemessen, ADR-040) |
 | SDK | `anthropic` (Grundabhängigkeit) | `openai` (`uv sync --extra nim`) |
 
 Die Effort-Stufen bleiben **eine Sprache, aber keine Äquivalenz**: NIM kennt
