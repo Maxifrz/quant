@@ -1,0 +1,22 @@
+{
+ "key": "9a0bd38c3437260b60a34ad48196f2ee5030391a5a22259bcd47d6e22b6a3835",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative returns and Sharpe across all windows; 40% drawdown since peak 207 bars ago.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive returns and Sharpe across all windows; low drawdown (16%) and only 7 bars since peak.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A shows negative performance in every window (384-bar return -34.8%, Sharpe -3.66) with a deep ongoing drawdown. STRAT_B is the exact inverse (correlation -0.93) and delivers positive returns and Sharpe in every window (384-bar return +30.4%, Sharpe 2.86). The data strongly favors STRAT_B. Weight capped at 0.5 to limit single-strategy risk and reduce turnover costs from the current 100% STRAT_A allocation.",
+  "regime": "STRAT_A failed; STRAT_B acts as effective hedge."
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "ae500983beadc13f9ca5457c917ec0d70bc17fb283f09459a95db43f37f82594",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe ueber 384 Bars (-1.85) und negativer Return (-16.5%) zeigen keine belastbare Kante; Inversion waere reine Spekulation auf Mean-Reversion.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positiver Sharpe ueber 384 Bars (1.82) bei 12.9% Return und 55.5% Hit-Rate; negative Korrelation zu A waere nur relevant, wenn A allokiert wuerde.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "Allokation voll auf STRAT_B: 384-Bar-Sharpe von 1.82 ist der einzige belastbare Qualitaetsindikator. STRAT_A hat ueber dasselbe Fenster -1.849 Sharpe und -16.5% Return -- keine Grundlage fuer Long oder Short. 24-Bar-Fenster rauschen (keine Daten), 96-Bar-Fenster bei beiden Strategien negativ. Starke negative Korrelation (-0.78) wuerde nur Diversifikation bringen, wenn beide Kanten haetten. Da nur B eine hat, ist Konzentration auf B korrekt. Abweichung von aktueller Allokation (A: -0.1, B: 0.3) gerechtfertigt, da A's Short-Position keine statistische Begruendung hat.",
+  "regime": "STRAT_B zeigt stabile Kante im langen Fenster; STRAT_A im Drawdown ohne Erholungssignale"
+ }
+}

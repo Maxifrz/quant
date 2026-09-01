@@ -1,0 +1,22 @@
+{
+ "key": "e4285f1a9c2c7accf9a7b85ffe8448b5c6453009e4288d4ba87c3c86accefbc2",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe in allen Fenstern (96: -10.8, 384: -5.0) und Drawdown -47.9% zeigen keine Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive Sharpe in allen Fenstern (96: 11.8, 384: 3.9), Drawdown nur -14.9% und geringe Korrelation (-0.48) zu STRAT_A.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A hat in allen drei Fenstern (24, 96, 384) negative Sharpe-Ratios und einen Drawdown von -47.9%, was auf eine strukturell negative Kante hindeutet. STRAT_B liefert konsistent positive Sharpe-Werte (bis 11.8 im 96er-Fenster), moderate Drawdowns (-14.9%) und eine negative Korrelation zu STRAT_A (-0.48). Die aktuelle 50/50-Allokation gewichtet einen dauerhaften Verlierer gleich schwer. Umschichtung auf 100% STRAT_B wird durch die fundamentale Diskrepanz der Kennzahlen getragen, nicht durch kurzfristiges Rauschen.",
+  "regime": "STRAT_B zeigt klare Outperformance mit starker Kante; STRAT_A ist dauerhaft negativ."
+ }
+}

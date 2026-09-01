@@ -1,0 +1,22 @@
+{
+ "key": "d27f69f7311814b290c630ccdbd52e4123ac9897be505c99cadb88bb0ca00a77",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe 1.81 über 384 Bars bei 49 % Zeit im Markt; kurze Fenster rauschen.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.9
+   },
+   {
+    "reason": "Negativer Sharpe -0.68 über 384 Bars, keine Signale in 24/96 Bars; bleibt als kleiner Diversifikator bei stark negativer Korrelation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.1
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "Einziges langes Fenster (384 Bars) zeigt für STRAT_A eine klare positive Kante (Sharpe 1.81, Return 6,2 %). STRAT_B liefert im selben Fenster negativen Sharpe (-0,68) und in den kurzen Fenstern gar keine Signale (time_in_market 0). Die Korrelation von -0,9 ist nur auf dem Papier Diversifikation, da STRAT_B faktisch flach liegt. Ein Umbau der Allokation würde Transaktionskosten verursachen, ohne dass die Kennzahlen eine belastbare Verbesserung nahelegen. Daher Beibehaltung der aktuellen Gewichte (0,9 / 0,1).",
+  "regime": "STRAT_A dominiert mit stabiler Kante, STRAT_B inaktiv/negativ"
+ }
+}
