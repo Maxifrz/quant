@@ -361,3 +361,36 @@ def test_cache_does_not_serve_another_models_answer(tmp_path):
 
     assert result.from_cache is False
     assert sonnet.requests == 1
+
+
+def test_telemetrie_summiert_ueber_fenster_statt_nur_das_letzte_zu_zeigen():
+    """Die Rueckfallquote muss den ganzen Lauf beschreiben, nicht ein Fenster.
+
+    Der Gate-Lauf baut pro Walk-Forward-Fenster einen frischen Allokator.
+    Frueher merkte sich `qt alloc` nur das zuletzt gebaute Telemetrie-Objekt
+    -- bei 29 Fenstern zu je 5 Aufrufen beschrieb die gemeldete Quote also
+    5 von 145 Aufrufen. Genau der Fall unten: 28 Fenster fallen komplett
+    zurueck, das letzte nicht. Die Einzelansicht meldet 0%, der Lauf lag bei
+    97%. Das ist die Zahl, an der man heimliche Gleichgewichtung erkennt
+    (ADR-018) -- sie darf nicht am Stichprobenfenster haengen.
+    """
+    from qt.portfolio.llm_allocator import AllocatorTelemetry
+
+    fenster = []
+    for _ in range(28):
+        t = AllocatorTelemetry()
+        t.calls, t.fallbacks = 5, 5
+        fenster.append(t)
+    letztes = AllocatorTelemetry()
+    letztes.calls, letztes.fallbacks = 5, 0
+    fenster.append(letztes)
+
+    assert letztes.fallback_rate == 0.0, "Ausgangslage: das letzte Fenster ist sauber"
+
+    gesamt = AllocatorTelemetry()
+    for t in fenster:
+        gesamt.merge(t)
+
+    assert gesamt.calls == 145
+    assert gesamt.fallbacks == 140
+    assert gesamt.fallback_rate > 0.96

@@ -399,7 +399,7 @@ def alloc(
     from qt.llm.client import AllocatorClient, StubClient
     from qt.portfolio import baselines
     from qt.portfolio.gate import run_gate
-    from qt.portfolio.llm_allocator import LLMAllocator
+    from qt.portfolio.llm_allocator import AllocatorTelemetry, LLMAllocator
     from qt.portfolio.risk import RiskEngine
     from qt.strategy.registry import get as get_strategy
     from qt.strategy.registry import load_library
@@ -427,7 +427,11 @@ def alloc(
     def make_strategies():
         return {name: get_strategy(name)(symbol_list, tf) for name in strategy_names}
 
-    allocator_telemetry = {}
+    # Ein Eintrag je Fenster, nicht einer fuer den Lauf: `make_candidate`
+    # laeuft pro Walk-Forward-Fenster einmal. Frueher hielt hier ein
+    # einzelner Slot nur das letzte Fenster fest -- die Rueckfallquote im
+    # Bericht beschrieb dann 5 von 145 Aufrufen (ADR-043).
+    allocator_telemetries: list[AllocatorTelemetry] = []
 
     def make_candidate():
         if candidate != "llm":
@@ -443,7 +447,7 @@ def alloc(
             )
         )
         instance = LLMAllocator(client=client)
-        allocator_telemetry["last"] = instance.telemetry
+        allocator_telemetries.append(instance.telemetry)
         return instance
 
     if candidate == "llm" and stub:
@@ -469,8 +473,10 @@ def alloc(
     typer.echo()
     typer.echo(result.verdict())
 
-    telemetry = allocator_telemetry.get("last")
-    if telemetry is not None and telemetry.calls:
+    telemetry = AllocatorTelemetry()
+    for je_fenster in allocator_telemetries:
+        telemetry.merge(je_fenster)
+    if telemetry.calls:
         typer.echo(f"\n  {telemetry.summary()}")
         if telemetry.fallback_rate > 0:
             typer.echo(

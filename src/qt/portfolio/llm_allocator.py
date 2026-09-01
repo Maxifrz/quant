@@ -56,6 +56,28 @@ class AllocatorTelemetry:
     def fallback_rate(self) -> float:
         return self.fallbacks / self.calls if self.calls else 0.0
 
+    def merge(self, other: "AllocatorTelemetry") -> None:
+        """Zahlen eines weiteren Allokators dazuzaehlen.
+
+        Der Gate-Lauf baut pro Walk-Forward-Fenster einen **frischen**
+        Allokator (sonst truege Zustand aus Fenster n nach n+1 -- genau das
+        Leck, gegen das Purging und Embargo gebaut sind). Damit gibt es am
+        Ende so viele Telemetrie-Objekte wie Fenster, und wer nur eines davon
+        anschaut, sieht bei 29 Fenstern 1/29 des Laufs.
+
+        Das ist bei der Rueckfallquote gefaehrlich: sie ist die Zahl, an der
+        man erkennt, ob der Allokator heimlich Gleichgewichtung war
+        (ADR-018). Eine Quote ueber ein einzelnes Fenster kann null sein,
+        waehrend der Lauf zur Haelfte zurueckgefallen ist.
+        """
+        self.calls += other.calls
+        self.cache_hits += other.cache_hits
+        self.fallbacks += other.fallbacks
+        self.deliberate_flats += other.deliberate_flats
+        self.hallucinated_labels += other.hallucinated_labels
+        self.warmup_skips += other.warmup_skips
+        self.reasons.extend(other.reasons)
+
     def summary(self) -> str:
         return (
             f"Aufrufe {self.calls}, davon aus Cache {self.cache_hits}, "

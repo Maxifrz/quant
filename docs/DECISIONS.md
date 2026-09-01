@@ -5,6 +5,47 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-043 — Die Rückfallquote beschrieb 5 von 145 Aufrufen
+**Datum:** 2026-09-01
+
+Bei der Vorbereitung des Gate-Laufs (ADR-004) fiel auf, dass `qt alloc` nach
+einem kompletten Lauf über 29 Walk-Forward-Fenster `Aufrufe 5` meldete. Fünf
+ist die Zahl der Aufrufe in *einem* Fenster: 500 Testbars durch einen Takt von
+96. Der Gate-Lauf baut pro Fenster einen frischen Allokator — richtig so, sonst
+trüge Zustand aus Fenster *n* nach *n+1* und unterliefe genau das Purging, für
+das Embargo und Walk-Forward gebaut sind. Die CLI hielt aber nur einen Slot
+(`allocator_telemetry["last"]`) und überschrieb ihn pro Fenster.
+
+**Warum das mehr ist als eine falsche Zahl im Bericht:** die betroffene Größe
+ist die Rückfallquote, und die ist nach ADR-018 die einzige Zahl, an der man
+erkennt, ob der Allokator heimlich Gleichgewichtung war. Ein Lauf, der in 28
+von 29 Fenstern auf Equal-Weight zurückfällt und im letzten nicht, meldete
+`Rueckfaelle 0 (0.0%)`. Das Gate hätte dann sauber ausgesehen, während es in
+Wahrheit eine Baseline gegen sich selbst gemessen hätte — der Fehler, gegen den
+ADR-018 überhaupt geschrieben wurde, unsichtbar gemacht durch die Anzeige.
+
+Besonders relevant für NIM: an diesem Endpunkt ist HTTP 503 gemessen (ADR-040),
+und ein durchgereichter 503 wird zum Rückfall. Über sechs Stunden Laufzeit ist
+vorübergehende Überlast wahrscheinlich, nicht möglich. Eine um Faktor 29 zu
+niedrig gemeldete Quote hätte genau die Härtung verdeckt, die dafür eingebaut
+wurde (`max_retries=4`).
+
+**Konsequenz:** `AllocatorTelemetry.merge()` summiert die Zähler; `qt alloc`
+sammelt ein Objekt je Fenster und faltet sie vor der Ausgabe zusammen. Der
+Stub-Lauf meldet jetzt `Aufrufe 145` — die Zahl, die in der ROADMAP schon
+richtig stand, nur nirgends gemessen wurde.
+
+Der Test dazu konstruiert den bösartigen Fall ausdrücklich: 28 Fenster mit
+100% Rückfall, ein sauberes am Ende. Die Einzelansicht sagt 0%, die Summe 97%.
+
+Lektion, zum dritten Mal in dieser Reihe (ADR-040, ADR-042): **eine Kennzahl,
+die nie gegen einen bekannten Wert geprüft wurde, ist eine Behauptung.** Hier
+stand die richtige Zahl seit Wochen in der ROADMAP und wurde vom Werkzeug nie
+bestätigt — niemandem fiel der Widerspruch auf, weil nie jemand beides
+nebeneinander gelegt hat.
+
+---
+
 ## ADR-042 — `bars_per_year` gehört in die Sandbox: ein dokumentierter Indikator war nicht aufrufbar
 **Datum:** 2026-08-31
 
