@@ -143,6 +143,27 @@ def data_pull(
     typer.echo("\nJetzt pruefen: qt data report")
 
 
+@data_app.command("resample")
+def data_resample(
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = DEFAULT_SYMBOLS,
+    quelle: Annotated[str, typer.Option("--from", help="Quell-Timeframe")] = "1d",
+    ziel: Annotated[str, typer.Option("--to", help="Ziel-Timeframes, kommagetrennt")] = "2d,3d,1w",
+) -> None:
+    """Groebere Bars aus feineren ableiten (fuer Timeframes ueber 1d).
+
+    Die erzeugten Dateien liegen im selben Store wie gezogene Daten und sind
+    danach nicht mehr als abgeleitet erkennbar. Das ist Absicht -- jede
+    nachgelagerte Stufe soll sie gleich behandeln -- aber es heisst auch:
+    ein spaeterer `qt data pull` mit demselben Timeframe ueberschreibt sie.
+    """
+    from qt.data.ingest import resample_store
+
+    typer.echo(f"Leite {ziel} aus {quelle} ab fuer {symbols} ...")
+    written = resample_store(_split(symbols), quelle, _split(ziel))
+    for (symbol, timeframe), n in sorted(written.items()):
+        typer.echo(f"  {symbol:>10} {timeframe:>3}  {n:>7,} Bars")
+
+
 @data_app.command("report")
 def data_report() -> None:
     """Bestand und Integritaet aller gespeicherten Daten anzeigen."""

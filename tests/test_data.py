@@ -88,3 +88,36 @@ def test_to_bars_preserves_close_time():
     assert len(bars) == 3
     assert (bars[0].close_ts - bars[0].ts).total_seconds() == 3600
     assert bars[0].close_ts == bars[1].ts
+
+
+def test_resample_store_schreibt_groebere_bars_in_den_store(tmp_path):
+    """`qt data resample` fuer Timeframes ueber 1d.
+
+    Der Test existiert vor allem wegen der Namensfalle: es gab bereits ein
+    `resample(df, timeframe)`, und eine zweite Funktion desselben Namens hat
+    sie beim Anlegen dieses Features still ueberschrieben. Aufgefallen ist
+    das nur, weil `test_resample_drops_incomplete_bucket` sofort brach.
+    """
+    from qt.data.ingest import resample_store
+
+    write_bars("BTC/USD", "1d", _frame(14, freq="1d"), data_dir=tmp_path)
+    geschrieben = resample_store(["BTC/USD"], "1d", ["2d"], data_dir=tmp_path)
+
+    assert geschrieben[("BTC/USD", "2d")] == 7
+    grob = read_bars("BTC/USD", "2d", data_dir=tmp_path)
+    fein = read_bars("BTC/USD", "1d", data_dir=tmp_path)
+
+    # Kantentreu: Open des groben Bars ist das erste Open, High das Maximum.
+    assert grob["open"].iloc[0] == fein["open"].iloc[0]
+    assert grob["high"].iloc[0] == fein["high"].iloc[:2].max()
+    assert grob["volume"].iloc[0] == fein["volume"].iloc[:2].sum()
+
+
+def test_resample_store_lehnt_krumme_vielfache_ab(tmp_path):
+    # 3d aus 2d waere ein Bucket, der nicht auf Bar-Grenzen liegt -- die
+    # Aggregation ergaebe stillschweigend falsche Hochs und Tiefs.
+    from qt.data.ingest import resample_store
+
+    write_bars("BTC/USD", "2d", _frame(10, freq="2d"), data_dir=tmp_path)
+    with pytest.raises(ValueError, match="Vielfaches"):
+        resample_store(["BTC/USD"], "2d", ["3d"], data_dir=tmp_path)

@@ -18,6 +18,13 @@ TIMEFRAMES: dict[str, int] = {
     "1h": 3600,
     "4h": 14400,
     "1d": 86400,
+    # Groesser als ein Tag. Keine Boerse liefert 2d und 3d, sie entstehen durch
+    # Resampling aus 1d (`qt data resample`). 1w gaebe es zwar am Endpunkt,
+    # wird aber aus demselben Grund abgeleitet: eine Woche, die woanders
+    # beginnt als unsere, waere ein stiller Unterschied im Vergleich.
+    "2d": 172800,
+    "3d": 259200,
+    "1w": 604800,
 }
 
 

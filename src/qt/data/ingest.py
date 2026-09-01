@@ -184,3 +184,42 @@ def pull(
                 written[(symbol, tf)] = len(df)
 
     return written
+
+
+def resample_store(
+    symbols: list[str],
+    source: str,
+    targets: list[str],
+    data_dir=None,
+) -> dict[tuple[str, str], int]:
+    """Groebere Bars aus gespeicherten feineren ableiten und zurueckschreiben.
+
+    Duenner Aufsatz auf `resample` -- die Aggregation und die Regel zum
+    unvollstaendigen letzten Bucket stehen dort und bleiben dort. Eine zweite
+    Implementierung waere eine zweite Stelle, an der der Lookahead-Schutz
+    kaputtgehen kann.
+
+    Gedacht fuer Timeframes oberhalb von `1d`: `2d` und `3d` liefert keine
+    Boerse, und eine Wochenkerze der Boerse begaenne moeglicherweise an einem
+    anderen Wochentag als unsere -- ein stiller Unterschied genau in dem
+    Vergleich, fuer den die Daten da sind.
+    """
+    from qt.data.store import read_bars, write_bars
+
+    source_seconds = timeframe_seconds(source)
+    written: dict[tuple[str, str], int] = {}
+
+    for symbol in symbols:
+        raw = read_bars(symbol, source, data_dir=data_dir)
+        for target in targets:
+            target_seconds = timeframe_seconds(target)
+            if target_seconds <= source_seconds or target_seconds % source_seconds:
+                raise ValueError(
+                    f"{target} ist kein echtes ganzzahliges Vielfaches von "
+                    f"{source} -- ein Bucket laege dann nicht auf Bar-Grenzen."
+                )
+            coarse = resample(raw, target)
+            write_bars(symbol, target, coarse, data_dir=data_dir)
+            written[(symbol, target)] = len(coarse)
+
+    return written
