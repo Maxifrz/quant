@@ -2,6 +2,16 @@
 
 > ## ▶ HIER WEITER
 >
+> **Das Paper-Konto läuft** (ADR-051) — `macross` auf BTC/USD und ETH/USD,
+> je 1d, zwei getrennte Konten. `scripts/paper_tick.sh` sichert den Zustand
+> nach jedem Tick ins Repo. Der Grund, warum es vorher **nicht** lief, war
+> nicht nur die `.gitignore`: ein Tick zog 5 Bars nach, `macross` braucht 52
+> Warmup. Jetzt kaltstartfähig und gegengeprüft.
+>
+> **Ab hier ist Warten die Arbeit.** Bei ~4 Trades im Jahr liefern die ersten
+> Wochen wahrscheinlich null Trades. Gemessen wird Divergenz zu den
+> Backtest-Annahmen, nicht Rendite — die Kriterien stehen in ADR-051.
+>
 > **Neu (ADR-050): echtes ML ist gebaut, geprüft und durchgefallen.**
 > 14 Märkte, 32.122 Bars → 5.304 Labels → **effektiv 2.506** (mittlere
 > Einzigartigkeit 0,47). Meta-Labeling auf `macross`, Triple-Barrier mit

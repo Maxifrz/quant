@@ -5,6 +5,77 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-051 — Das Paper-Konto lief nicht, weil ein Tick 5 Bars zieht und 52 braucht
+**Datum:** 2026-09-01
+
+Fünf geprüfte Hypothesen, fünf gescheitert (ADR-045 bis ADR-050). Jede weitere
+Suche auf denselben Daten hebt die DSR-Schwelle und hat eine Trefferquote von
+0/5. **Die einzige Informationsquelle, die ein Backtest nicht liefern kann,
+ist Vorwärtszeit** — und die ist uhrgebunden: Rechenzeit lässt sich aufholen,
+Kalenderzeit nicht.
+
+Dazu ein Befund aus der Round-Trip-Sicht (ADR-049): **ohne die zwei besten
+Trades ist `macross` negativ** (−63.557 gegen +1.424.232). Die einzige positive
+Zahl des Projekts steht auf zwei Beobachtungen.
+
+### Der eigentliche Fehler war nicht die `.gitignore`
+
+`qt.live.state` ist bereits containerbewusst entworfen — jeder Tick ist ein
+vollständiger deterministischer Replay, überleben muss nur der Broker-Zustand
+plus ein Cursor, als kleine JSON-Datei. Insofern war die naheliegende Diagnose
+(„`/data/` ist gitignored") nur die halbe Wahrheit.
+
+**Die andere Hälfte:** `REFRESH_BARS = 5` — ein Tick zieht fünf Bars nach.
+`macross` braucht `warmup_bars = 52`. In einem frischen Container mit leerem
+`data/ohlcv/` endete der Tick deshalb mit „erst `qt data pull` laufen lassen",
+also mit einem Handgriff, den ein geplanter Job nicht tun kann. **Genau daran
+ist das Konto beim letzten Containerwechsel stehengeblieben, wochenlang, ohne
+dass es jemandem auffiel** — die ROADMAP behauptete die ganze Zeit, es laufe.
+
+Eine Zeile in der `.gitignore` hätte den Zustand gerettet und das Konto
+trotzdem nicht zum Laufen gebracht.
+
+**Konsequenz:** `_refresh_recent_bars` ist warmup-bewusst. Reicht der Bestand
+nicht für `warmup_bars + 60`, wird einmalig ein langes Fenster gezogen; danach
+greift wieder das kleine. Die Prüfung läuft **je Symbol** — ein neu
+dazugenommenes Symbol soll nicht die Historie der anderen mitziehen.
+Zusätzlich die `.gitignore`-Ausnahme für `/data/paper/`: Bars sind
+nachziehbar, ein Konto ist es nicht.
+
+Der Kaltstart ist gegengeprüft, nicht behauptet: `data/ohlcv/` geleert, Tick
+gestartet, 112 Bars wurden nachgezogen und das Konto lief an. Der Test dazu
+schlägt mit der alten Logik fehl.
+
+### Was läuft
+
+Zwei getrennte Konten, `macross` auf BTC/USD und ETH/USD, je 1d. BTC lieferte
+OOS 0,31, ETH 0,32 (ADR-035) — **zwei unabhängige Vorwärtstests sind mehr wert
+als eine bessere Einzelzahl.** `scripts/paper_tick.sh` macht ziehen → ticken →
+committen → pushen; Git steht bewusst im Skript und nicht in der CLI.
+
+### Vorab registriert, bevor Daten anfallen
+
+**Gemessen wird Divergenz, nicht Gewinn.** Bei ~4 Trades im Jahr dauert eine
+Aussage über Rentabilität Jahre. Die beantwortbare Frage ist, ob die
+Papier-Kurve zu den Backtest-Annahmen passt:
+
+1. **Fill-Preise** gegen das Kostenmodell — liegt der realisierte Slippage
+   systematisch über den angenommenen 90 bps?
+2. **Signalzeitpunkte** — fallen Ein- und Ausstiege dort, wo der Backtest sie
+   erwartet, oder verschiebt die Refresh-Logik sie?
+3. **Trades je Zeit** gegen die Backtest-Rate von ~4,3 im Jahr.
+
+Eine systematische Abweichung in 1 oder 2 wäre ein Fehler in den
+Backtest-Annahmen — **wertvoller als jede Renditezahl**, weil er alle
+bisherigen Ergebnisse relativiert.
+
+**Erwartungsmanagement:** die ersten Wochen liefern mit hoher
+Wahrscheinlichkeit **null Trades**. Das ist kein Fehlschlag, sondern die
+Frequenz, die `macross` überhaupt erst profitabel macht (ADR-035). Wer nach
+zwei Wochen ein Ergebnis erwartet, misst das Falsche.
+
+---
+
 ## ADR-050 — ML auf Marktdaten: gebaut, geprüft, an der eigenen Kontrolle gescheitert
 **Datum:** 2026-09-01
 

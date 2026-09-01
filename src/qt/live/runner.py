@@ -48,6 +48,11 @@ from qt.strategy.base import Strategy, clip_weight
 # im Store und wird hier nicht jedes Mal neu gezogen.
 REFRESH_BARS = 5
 
+# Puffer ueber den Warmup hinaus, wenn der Store kalt ist. Bars fallen aus
+# (Wartungsfenster der Exchange, Netzfehler beim Abzug), und ein Konto, das
+# genau am Warmup entlangschrammt, laeuft dann nicht an.
+COLD_START_BUFFER = 60
+
 
 @dataclass(slots=True)
 class TickReport:
@@ -106,7 +111,7 @@ def run_paper_tick(
     now = now or datetime.now(timezone.utc)
 
     if refresh:
-        _refresh_recent_bars(symbols, timeframe, data_dir)
+        _refresh_recent_bars(symbols, timeframe, data_dir, strategy.warmup_bars)
 
     bars_by_symbol = _load_bars(symbols, timeframe, data_dir)
     if not bars_by_symbol or all(len(v) == 0 for v in bars_by_symbol.values()):
@@ -264,22 +269,56 @@ def _persist_broker(broker: SimBroker, state: PaperState) -> None:
 
 
 def _refresh_recent_bars(
-    symbols: list[str], timeframe: str, data_dir: Path | None
+    symbols: list[str], timeframe: str, data_dir: Path | None, warmup_bars: int = 0
 ) -> None:
-    """Die juengsten Bars nachziehen, ohne die grosse Historie neu zu holen.
+    """Die juengsten Bars nachziehen -- und bei kaltem Store genug davon.
 
-    Bewusst ein kleines Fenster: `qt.data.ingest.pull` und `write_bars` sind
-    additiv und dedupliziert (siehe `qt.data.store.write_bars`), ein
-    ueberlappender Pull ist also unschaedlich -- aber ein taeglicher Tick,
-    der jedes Mal Jahre an Historie neu abfragt, waere langsam und unhoeflich
+    Im Normalfall ein kleines Fenster: `qt.data.ingest.pull` und `write_bars`
+    sind additiv und dedupliziert (siehe `qt.data.store.write_bars`), ein
+    ueberlappender Pull ist also unschaedlich -- aber ein taeglicher Tick, der
+    jedes Mal Jahre an Historie neu abfragt, waere langsam und unhoeflich
     gegenueber der Exchange, ohne dass es etwas braechte.
+
+    **Der Kaltstart ist der Grund, warum diese Funktion mehr tut als ihr Name
+    sagt.** Ein Konto laeuft ueber Wochen, eine Session nicht: der Container
+    wird neu gebaut, `data/ohlcv/` ist gitignored und damit leer, und ein
+    Auffrischen um fuenf Bars reicht dann fuer keinen Warmup -- `macross`
+    braucht 52. Frueher endete der Tick an dieser Stelle mit "erst `qt data
+    pull` laufen lassen", also mit einem Handgriff, den ein geplanter Job
+    nicht tun kann. Genau daran ist das Konto beim letzten Containerwechsel
+    stehengeblieben, ohne dass es jemandem auffiel.
+
+    Deshalb: reicht der Bestand nicht fuer den Warmup, wird einmalig ein
+    langes Fenster gezogen. Danach greift wieder das kleine, weil der Store
+    dann warm ist. Die Pruefung laeuft je Symbol -- ein neu dazugenommenes
+    Symbol soll nicht die Historie der anderen mitziehen.
     """
     from qt.data.ingest import pull
+    from qt.data.store import read_bars
 
-    since = datetime.now(timezone.utc) - timedelta(
-        seconds=REFRESH_BARS * timeframe_seconds(timeframe)
-    )
-    pull(symbols, [timeframe], since, cfg=DataConfig(data_dir=data_dir) if data_dir else None)
+    tf_sekunden = timeframe_seconds(timeframe)
+    jetzt = datetime.now(timezone.utc)
+    noetig = warmup_bars + COLD_START_BUFFER
+
+    kalt: list[str] = []
+    warm: list[str] = []
+    for symbol in symbols:
+        try:
+            vorhanden = len(read_bars(symbol, timeframe, data_dir=data_dir))
+        except FileNotFoundError:
+            vorhanden = 0
+        (kalt if vorhanden < noetig else warm).append(symbol)
+
+    cfg = DataConfig(data_dir=data_dir) if data_dir else None
+    if warm:
+        pull(
+            warm,
+            [timeframe],
+            jetzt - timedelta(seconds=REFRESH_BARS * tf_sekunden),
+            cfg=cfg,
+        )
+    if kalt:
+        pull(kalt, [timeframe], jetzt - timedelta(seconds=noetig * tf_sekunden), cfg=cfg)
 
 
 def _load_bars(

@@ -7,6 +7,13 @@ __pycache__/
 # Marktdaten und Ergebnisse werden nicht versioniert.
 # Fuehrender Slash ist wichtig: 'data/' wuerde sonst auch src/qt/data/ treffen.
 /data/
+# Ausnahme: der Kontostand des Paper-Kontos. Er ist wenige Kilobyte JSON,
+# enthaelt keine Geheimnisse -- und er ist das **einzige** im Datenverzeichnis,
+# das sich nicht rekonstruieren laesst. Bars zieht ein Tick bei kaltem Store
+# selbst nach (qt.live.runner), ein Konto kann das nicht: seine Geschichte ist
+# weg, wenn die Datei weg ist. Ein Paper-Lauf ueber Wochen in einem Container,
+# der taeglich neu gebaut wird, braucht deshalb genau diese Zeile.
+!/data/paper/
 /reports/
 # Der LLM-Cache ist ausgenommen, sobald ein teurer Lauf drinsteckt: der
 # Gate-Lauf kostet 145 Aufrufe und knapp vier Stunden, und der Cache macht ihn

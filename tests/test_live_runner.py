@@ -407,3 +407,110 @@ def test_der_unfertige_bar_wird_verarbeitet_sobald_die_zeit_ihn_einholt(tmp_path
     )
     assert report.new_bars == 1
     assert report.last_bar_ts == unfertig[0].close_ts
+
+
+# ---------------------------------------------------------------------------
+# Kaltstart: der Fall, an dem das Konto in der Praxis stehengeblieben ist
+# ---------------------------------------------------------------------------
+
+
+def test_bei_kaltem_store_wird_genug_historie_gezogen(tmp_path, monkeypatch):
+    """Ein leerer Store darf den Tick nicht stoppen, sondern muss ihn fuellen.
+
+    Das ist kein hypothetischer Fall. `data/ohlcv/` ist gitignored, der
+    Container wird neu gebaut, und `REFRESH_BARS = 5` reicht fuer keinen
+    Warmup -- `macross` braucht 52. Frueher endete der Tick hier mit "erst
+    `qt data pull` laufen lassen", also mit einem Handgriff, den ein
+    geplanter Job nicht tun kann. Genau daran ist das Paper-Konto beim
+    letzten Containerwechsel stehengeblieben.
+    """
+    from qt.live import runner
+
+    gezogen: list[tuple[list[str], float]] = []
+
+    def fake_pull(symbols, timeframes, since, cfg=None):
+        spanne = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(since)).total_seconds()
+        gezogen.append((list(symbols), spanne / 86400))
+        # Der echte Pull wuerde schreiben; hier reicht die Aufzeichnung.
+        return {}
+
+    monkeypatch.setattr("qt.data.ingest.pull", fake_pull)
+
+    runner._refresh_recent_bars(["BTC/USD"], "1d", tmp_path, warmup_bars=52)
+
+    assert len(gezogen) == 1, "genau ein Pull fuer ein kaltes Symbol"
+    symbole, tage = gezogen[0]
+    assert symbole == ["BTC/USD"]
+    assert tage >= 52, (
+        f"nur {tage:.0f} Tage gezogen -- das reicht nicht fuer 52 Bars Warmup"
+    )
+
+
+def test_bei_warmem_store_bleibt_es_beim_kleinen_fenster(tmp_path, monkeypatch):
+    """Sonst fragt jeder taegliche Tick Jahre an Historie neu ab."""
+    from qt.live import runner
+
+    bars = make_bars(200, symbol="BTC/USD", timeframe="1d")
+    write_bars(
+        "BTC/USD",
+        "1d",
+        pd.DataFrame(
+            {
+                "ts": [b.ts for b in bars],
+                "open": [b.open for b in bars],
+                "high": [b.high for b in bars],
+                "low": [b.low for b in bars],
+                "close": [b.close for b in bars],
+                "volume": [b.volume for b in bars],
+            }
+        ),
+        data_dir=tmp_path,
+    )
+
+    gezogen: list[float] = []
+
+    def fake_pull(symbols, timeframes, since, cfg=None):
+        spanne = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(since)).total_seconds()
+        gezogen.append(spanne / 86400)
+        return {}
+
+    monkeypatch.setattr("qt.data.ingest.pull", fake_pull)
+    runner._refresh_recent_bars(["BTC/USD"], "1d", tmp_path, warmup_bars=52)
+
+    assert gezogen == [pytest.approx(runner.REFRESH_BARS, abs=1)]
+
+
+def test_kaltes_und_warmes_symbol_werden_getrennt_gezogen(tmp_path, monkeypatch):
+    """Ein neu dazugenommenes Symbol darf die anderen nicht mitziehen."""
+    from qt.live import runner
+
+    bars = make_bars(200, symbol="BTC/USD", timeframe="1d")
+    write_bars(
+        "BTC/USD",
+        "1d",
+        pd.DataFrame(
+            {
+                "ts": [b.ts for b in bars],
+                "open": [b.open for b in bars],
+                "high": [b.high for b in bars],
+                "low": [b.low for b in bars],
+                "close": [b.close for b in bars],
+                "volume": [b.volume for b in bars],
+            }
+        ),
+        data_dir=tmp_path,
+    )
+
+    gezogen: dict[str, float] = {}
+
+    def fake_pull(symbols, timeframes, since, cfg=None):
+        spanne = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(since)).total_seconds()
+        for s in symbols:
+            gezogen[s] = spanne / 86400
+        return {}
+
+    monkeypatch.setattr("qt.data.ingest.pull", fake_pull)
+    runner._refresh_recent_bars(["BTC/USD", "ETH/USD"], "1d", tmp_path, warmup_bars=52)
+
+    assert gezogen["BTC/USD"] < 10, "warmes Symbol nur auffrischen"
+    assert gezogen["ETH/USD"] >= 52, "kaltes Symbol braucht die volle Historie"
