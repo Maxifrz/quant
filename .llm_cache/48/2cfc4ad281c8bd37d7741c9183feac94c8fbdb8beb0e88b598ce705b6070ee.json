@@ -1,0 +1,22 @@
+{
+ "key": "482cfc4ad281c8bd37d7741c9183feac94c8fbdb8beb0e88b598ce705b6070ee",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (384b: -0.083) and 9% drawdown with no sign of recovery after 189 bars.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Negative Sharpe on the two longest windows (96b: -2.46, 384b: -1.90) and 19% drawdown after 510 bars without new highs.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "The only positive Sharpe is STRAT_B at 24 bars (5.3), which is too short to be reliable. STRAT_A has negative Sharpe at every horizon. STRAT_B's longer-horizon Sharpe is deeply negative (-1.9 to -2.5) with a large, aged drawdown. The -0.71 correlation would normally support combining them, but combining two negative-edge strategies does not create a positive edge. With no strategy showing a credible positive expected return, the optimal allocation is zero exposure.",
+  "regime": "Both strategies show persistently negative risk-adjusted returns; no allocatable edge detected."
+ }
+}

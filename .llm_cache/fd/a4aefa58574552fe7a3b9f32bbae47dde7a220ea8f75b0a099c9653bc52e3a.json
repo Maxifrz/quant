@@ -1,0 +1,22 @@
+{
+ "key": "fda4aefa58574552fe7a3b9f32bbae47dde7a220ea8f75b0a099c9653bc52e3a",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Invertiert: 96-Bar-Fenster zeigt Sharpe -8,2 und Return -14,2 %; 384-Bar-Fenster Sharpe -6,2 und Return -36,6 %. Negative Kante ist konsistent.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.3
+   },
+   {
+    "reason": "Behalten: 384-Bar-Fenster liefert Sharpe 5,8 und Return 42,7 % bei Vol 36,2 %; 96-Bar-Fenster Sharpe 4,6. Positive Kedge über lange Fenster, aktuell nah am Peak.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.7
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A zeigt über 96 und 384 Bars durchgängig stark negative Sharpe-Ratios und hohe Drawdowns – Beleg für dauerhaft negative Kante, daher Inversion. STRAT_B liefert über 384 Bars starken positiven Sharpe (5,8) und Return (42,7 %), bestätigt durch 96-Bar-Sharpe 4,6; Drawdown nur 6,3 %. Korrelation -0,64 macht Inversion von A und Long B zu natürlicher Diversifikation. Aktuelle Allokation (0,3 / 0,7) wird auf -0,3 / 0,7 angepasst; Gross Exposure 1,0.",
+  "regime": "STRAT_A im tiefen Drawdown mit negativer Kante; STRAT_B stabil profitabel"
+ }
+}

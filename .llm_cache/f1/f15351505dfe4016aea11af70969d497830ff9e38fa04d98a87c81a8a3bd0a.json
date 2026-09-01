@@ -1,0 +1,22 @@
+{
+ "key": "f1f15351505dfe4016aea11af70969d497830ff9e38fa04d98a87c81a8a3bd0a",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe on long windows (1.79 @ 384, 20.3 @ 24) vs. negative on both for STRAT_B.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative Sharpe on 384 (-1.22) and 24 (-5.0) bars; only 96-bar window is positive.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A delivers positive risk-adjusted returns on the two longest windows (384-bar Sharpe 1.79, 24-bar 20.3). STRAT_B shows negative Sharpe on those same windows (-1.22 and -5.03). The strong negative correlation (-0.86) would normally favour a paired allocation, but STRAT_B's persistent negative edge on the long horizon makes it a drag. Removing STRAT_B eliminates the drag and avoids turnover costs from rebalancing a losing leg. Equal-weight fallback applies only when no edge exists; here STRAT_A's long-window Sharpe > 1.5 provides clear evidence.",
+  "regime": "STRAT_A has edge; STRAT_B acts as noisy hedge."
+ }
+}

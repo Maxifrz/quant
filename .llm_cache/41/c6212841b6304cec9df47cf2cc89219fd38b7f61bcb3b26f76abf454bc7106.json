@@ -1,0 +1,22 @@
+{
+ "key": "41c6212841b6304cec9df47cf2cc89219fd38b7f61bcb3b26f76abf454bc7106",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Invertiert: 384-Bar Sharpe -3.69 bei negativem Return, 27 % Drawdown seit 254 Bars.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.75
+   },
+   {
+    "reason": "384-Bar Sharpe 3.38, positives Return 0.20, nur 3.6 % Drawdown; stark negativ korreliert zu A.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.25
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A zeigt über alle Fenster negative Sharpe-Ratios und einen anhaltenden 27%-Drawdown; die Inversion nutzt die -0.89-Korrelation zu STRAT_B. STRAT_B liefert über das längste Fenster (384 Bars) eine positive Edge (Sharpe 3.38, Return 0.20) bei minimalem Drawdown. Die Kombination invertiert A und gewichtet B moderat, um Transaktionskosten gering zu halten und die Diversifikation durch die starke negative Korrelation zu nutzen.",
+  "regime": "STRAT_A in tiefer Drawdown-Phase, STRAT_B nahe Allzeithoch mit stabiler Edge"
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "key": "4eb95f3e7ca6facd57cf677cd15d2299defbf977ae88e727f7745a54c576a8a4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "VWAPReversion",
+  "code": "class VWAPReversion(Strategy):\n    name = \"vwap_reversion\"\n    LOOKBACK = 48\n    THRESHOLD = 0.015\n    warmup_bars = 50\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        volumes = window.volumes()\n        # volume‑weighted average price over the lookback window\n        vwap = np.sum(closes * volumes) / np.sum(volumes)\n        ratio = closes[-1] / vwap\n        if ratio > 1.0 + self.THRESHOLD:\n            return -1.0\n        if ratio < 1.0 - self.THRESHOLD:\n            return 1.0\n        return 0.0",
+  "name": "vwap_reversion",
+  "rationale": "Volume‑weighted average price (VWAP) represents the fair value of an asset weighted by traded volume over a recent window. Prices frequently oscillate around VWAP because large participants execute near this benchmark; sustained deviations imply temporary supply‑demand imbalances that tend to revert. By measuring the close‑to‑VWAP ratio and trading when it exceeds a modest band, the strategy captures mean‑reversion pressure without relying on fixed price levels, and the volume weighting makes the signal adaptive to changing liquidity conditions."
+ }
+}

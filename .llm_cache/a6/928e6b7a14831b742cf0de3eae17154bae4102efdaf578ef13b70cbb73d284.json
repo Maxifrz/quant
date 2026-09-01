@@ -1,0 +1,22 @@
+{
+ "key": "a6928e6b7a14831b742cf0de3eae17154bae4102efdaf578ef13b70cbb73d284",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-4.4) and negative total return (-25.9%) show no persistent edge; 96-bar Sharpe is positive but short-window noise.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (4.57) and positive return (+33%) indicate a durable edge; current 96-bar slump is typical noise, not regime change.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Allocate fully to STRAT_B: its 384-bar Sharpe of 4.57 and +33% return demonstrate a robust, persistent edge. STRAT_A shows a -4.4 Sharpe and -25.9% return over the same horizon, confirming no edge. The -0.94 correlation would offer diversification if both had positive expectation, but combining a winning strategy with a losing one only drags performance. Current allocation already matches the evidence; rebalancing would incur costs without improvement.",
+  "regime": "STRAT_B in drawdown but long-term metrics healthy; STRAT_A consistently negative."
+ }
+}

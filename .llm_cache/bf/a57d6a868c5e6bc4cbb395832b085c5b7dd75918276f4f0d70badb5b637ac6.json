@@ -1,0 +1,22 @@
+{
+ "key": "bfa57d6a868c5e6bc4cbb395832b085c5b7dd75918276f4f0d70badb5b637ac6",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (384b: -1.14) confirms no persistent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive Sharpe across all windows (384b: 1.142, 96b: 2.999) with negative correlation to STRAT_A.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B is the only strategy with positive risk-adjusted returns across all horizons. The strong negative correlation (-0.804) means holding both would cancel returns, not diversify. Current allocation wastes 75% on a negative-edge strategy. Full allocation to STRAT_B maximizes Sharpe and uses the hedge property implicitly.",
+  "regime": "STRAT_B shows consistent positive edge; STRAT_A negative. Correlation -0.8 supports concentration."
+ }
+}

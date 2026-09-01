@@ -1,0 +1,22 @@
+{
+ "key": "89320c4a6602d6aa812f152df775158024730dcd53c48ad6c15681c75f0e4522",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe in all windows (-3.3 to -12.8); keep small for negative correlation hedge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Positive Sharpe in all windows (3.96 to 10.2) with low drawdown (-1.5%); primary alpha source.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B shows consistent positive Sharpe across 24/96/384 bars (8.89, 10.21, 3.96) with minimal drawdown (-1.5%) and high hit rates (58-63%). STRAT_A has negative Sharpe in all windows (-8.89 to -12.82) and 19% drawdown. The -0.82 correlation means combining them reduces portfolio volatility significantly. Equal 50/50 split captures diversification benefit while limiting exposure to STRAT_A's negative edge. Current 100% STRAT_A allocation is unjustified by metrics.",
+  "regime": "STRAT_B strong uptrend; STRAT_A drawdown; -0.82 corr enables hedge."
+ }
+}

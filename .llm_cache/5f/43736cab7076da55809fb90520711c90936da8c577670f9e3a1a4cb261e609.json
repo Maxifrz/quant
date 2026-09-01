@@ -1,0 +1,22 @@
+{
+ "key": "5f43736cab7076da55809fb90520711c90936da8c577670f9e3a1a4cb261e609",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer 384-Bar-Sharpe (-4.95) und Drawdown -33 % zeigen keine belastbare Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positiver 384-Bar-Sharpe (3.84) mit geringem Drawdown (-4 %) rechtfertigt volle Allokation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B liefert ueber das langste Fenster (384 Bars) einen konsistenten positiven Sharpe (3.84) bei niedrigem Drawdown (4 %), waehrend STRAT_A ueber dieselbe Periode stark negativ ist (Sharpe -4.95, DD -33 %). Die starke negative Korrelation (-0.82) waere theoretisch attraktiv fuer Diversifikation, doch da STRAT_A keine eigenständige positive Kante aufweist, wuerde eine Beimischung die Portfolio-Qualitaet verduenen. Gleichgewichtung wuerde die risikoadjustierte Performance senken. Daher bleibt die volle Allokation auf STRAT_B gerechtfertigt.",
+  "regime": "STRAT_B dominiert langfristig; STRAT_A im anhaltenden Drawdown"
+ }
+}

@@ -1,0 +1,14 @@
+{
+ "key": "26f132a61e2ef0f6014c7c31af579a072ca9fa79c4c6dad9724ff63a76d654ff",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.1,
+  "rationale_code_mismatch": false,
+  "reasoning": "The strategy uses a single parameter (LOOKBACK=50) with no absolute price constants, making it adaptive to price levels. Turnover is naturally low because signals only flip when price crosses the SMA, which occurs infrequently with a 50-bar lookback (typically <10% of bars). With ~1000 OOS bars and 1 degree of freedom, the parameter-to-data ratio is conservative. The rationale (medium-term trend following via SMA crossover) matches the code exactly: it computes a 50-bar SMA and returns +1/-1 based on price relative to SMA. No overfitting indicators found -- the single parameter is a standard trend-filter choice, not a tuned threshold.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

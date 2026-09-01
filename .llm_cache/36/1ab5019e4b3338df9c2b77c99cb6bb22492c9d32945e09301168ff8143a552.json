@@ -1,0 +1,22 @@
+{
+ "key": "361ab5019e4b3338df9c2b77c99cb6bb22492c9d32945e09301168ff8143a552",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (-2.75 over 384 bars) and deep drawdown (-29.7%) indicate no persistent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong positive Sharpe across windows (2.89 over 384 bars, 3.37 over 96 bars) with low drawdown (-10.8%) signals durable edge; negative correlation to STRAT_A adds diversification but STRAT_A adds only drag.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_B shows consistent positive risk-adjusted returns across 96- and 384-bar windows (Sharpe 3.37 and 2.89), hit-rates above 50%, and modest drawdown (10.8%). STRAT_A shows uniformly negative Sharpe (-1.47 to -2.75), hit-rates below 45%, and a 29.7% drawdown persisting 401 bars. The -0.69 correlation would normally favor combining both, but STRAT_A contributes negative expected return, so the optimal portfolio allocates fully to STRAT_B. Rebalancing from 50/50 is justified by the stark performance divergence over the 384-bar window.",
+  "regime": "STRAT_B in confirmed uptrend with high risk-adjusted returns; STRAT_A in prolonged drawdown with negative edge."
+ }
+}

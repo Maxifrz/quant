@@ -1,0 +1,22 @@
+{
+ "key": "397602c6feb773860b61bc5887848b6fd0a0ce2ff804b9ef7ef6e4df61e77770",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-4.83) and deep drawdown (-31.2%); keep minimal inverse weight for diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.1
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (5.96) and positive return (52.8%) despite negative 96-bar window; primary allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.9
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B shows a robust long-term edge (384-bar Sharpe 5.96, 52.8% return, 7.3% drawdown) while STRAT_A has a negative long-term Sharpe (-4.83) and 31.2% drawdown. The -0.9 correlation offers diversification, but STRAT_A's persistent underperformance argues against a large inverse position. A 90/10 split favors the winning strategy while retaining a small hedge. Rebalancing from the current -50/50 reduces exposure to STRAT_A's negative drift.",
+  "regime": "STRAT_B outperforming; STRAT_A in deep drawdown."
+ }
+}

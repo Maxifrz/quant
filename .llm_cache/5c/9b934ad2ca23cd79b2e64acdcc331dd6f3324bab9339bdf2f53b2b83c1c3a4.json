@@ -1,0 +1,22 @@
+{
+ "key": "5c9b934ad2ca23cd79b2e64acdcc331dd6f3324bab9339bdf2f53b2b83c1c3a4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (1.25-6.87) vs STRAT_B negative Sharpe (-9.67 to -0.04); STRAT_A has 9.9% return vs -2.7% for STRAT_B over 384 bars",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative Sharpe and returns across all windows (-9.67 to -0.04 Sharpe, -6.5% to -2.7% return); 26.8% drawdown vs 8.4% for STRAT_A",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A dominates STRAT_B on every meaningful metric: positive Sharpe (1.25-6.87) vs negative Sharpe (-9.67 to -0.04) across all windows; positive returns (3.9%-9.9%) vs negative returns (-5.9% to -2.7%); lower drawdown (8.4% vs 26.8%); higher hit rates (50-53.8% vs 42.9-48.1%). The -0.87 correlation would normally suggest diversification value, but STRAT_B has no standalone edge to contribute. Current 50/50 allocation wastes half the capital on a losing strategy. Full allocation to STRAT_A is justified.",
+  "regime": "STRAT_A showing consistent positive edge; STRAT_B persistently unprofitable"
+ }
+}

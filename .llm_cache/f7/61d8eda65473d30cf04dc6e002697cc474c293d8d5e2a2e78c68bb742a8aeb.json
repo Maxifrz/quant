@@ -1,0 +1,22 @@
+{
+ "key": "f761d8eda65473d30cf04dc6e002697cc474c293d8d5e2a2e78c68bb742a8aeb",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Persistently negative Sharpe (-2.20) and return (-51.5%) over the longest window (384 bars) with high volatility (1.41), despite negative correlation to STRAT_B.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong positive Sharpe (2.85) and return (59.1%) over the longest window (384 bars); currently flat with zero drawdown, justifying full allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Allocation remains at current weights (0/1) because the 384-bar window -- the only one with sufficient sample size -- shows STRAT_B with a strong risk-adjusted edge (Sharpe 2.85, +59% return) while STRAT_A has a deeply negative edge (Sharpe -2.20, -51% return). The -0.82 correlation would normally favor diversification, but STRAT_A's persistent underperformance and 57% drawdown over 511 bars outweigh the hedging benefit. Shorter windows (24/96) are too noisy and show STRAT_B flat (0% time in market), consistent with a strategy waiting for setups. No transaction cost justification to reduce STRAT_B.",
+  "regime": "STRAT_B dominant regime; STRAT_A in extended drawdown with no recent edge"
+ }
+}

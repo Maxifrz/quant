@@ -1,0 +1,22 @@
+{
+ "key": "3482cc406644099db20fd800fe1263f4355170b411afc1efe7110f5597156a10",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive long-term Sharpe (2.88 over 384 bars) with 60% hit rate; negative correlation to STRAT_B improves diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.75
+   },
+   {
+    "reason": "Negative long-term Sharpe (-2.51) and low hit rate (37%) justify inversion; negative correlation makes -0.25 additive to portfolio.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.25
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "Allocation favors STRAT_A at 0.75 due to its positive 384-bar Sharpe (2.88) and 60% hit rate, indicating a persistent edge. STRAT_B shows negative 384-bar Sharpe (-2.51) and 37% hit rate, justifying a short allocation. The -0.84 correlation means shorting STRAT_B adds diversifying return rather than just hedging. Gross exposure sums to 1.0. Current allocation (0.6 / -0.4) already leans this way; the shift increases conviction on the stronger long-term signal while reducing exposure to the weaker strategy. Short windows (24, 96) are noisy and discounted.",
+  "regime": "STRAT_A in moderate drawdown (7.6%) with strong long-term edge; STRAT_B far from peak but structurally weak."
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "67203ba451292c2b602a8b1863fc6980d090757092afecfa442058bbb02370e5",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-1.738) and return (-15.2%) indicate no persistent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive 384-bar Sharpe (2.554) and return (+19.3%) show a durable edge; perfect negative correlation with A provides no diversification benefit for A.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "Only the 384-bar window is statistically meaningful. STRAT_B has a Sharpe of 2.55 and positive return; STRAT_A has a Sharpe of -1.74 and negative return. The correlation of -0.85 means they are the same risk factor inverted. Allocating to both cancels the edge. Full allocation to STRAT_B captures the positive expectancy without offsetting it.",
+  "regime": "STRAT_B demonstrates a consistent long-term edge while STRAT_A does not; the pair is perfectly negatively correlated."
+ }
+}

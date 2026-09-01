@@ -1,0 +1,22 @@
+{
+ "key": "feaa7d9f904f904d8f4fc48e4100abdb1c7d8062321a943dfe947e6bac626602",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong long-term Sharpe (2.35) over 384 bars; negative correlation to STRAT_B provides diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Strong long-term Sharpe (2.35) over 384 bars; negative correlation to STRAT_A provides diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Both strategies show positive long-term Sharpe (~2.35) over 384 bars. STRAT_A is in a deep drawdown (-16.1%, 390 bars since peak) while STRAT_B is near peak (-10.9%, 15 bars). Correlation is -0.9, providing strong diversification. Equal weighting balances the allocation and captures diversification benefits without overreacting to short-term noise.",
+  "regime": "STRAT_B uptrend; STRAT_A deep drawdown. Negative correlation."
+ }
+}

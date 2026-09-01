@@ -1,0 +1,22 @@
+{
+ "key": "231fe6b7d20e5c4b2274d2c6d498626e310f3cf3b0fe0409df4d80defa09bbce",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer Sharpe (-0.694) im laengsten Fenster (384), negative Rendite (-3,3 %), Hit-Rate < 0,5: keine Kante, aber starke negative Korrelation zu B.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Positiver Sharpe (+0,588) im laengsten Fenster (384), positive Rendite (+1,7 %), Hit-Rate > 0,5: einzige Strategie mit nachweisbarer Kante.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_B ist die einzige Strategie mit positivem 384-Bar-Sharpe und positiver 384-Bar-Rendite; STRAT_A ist in allen Fenstern negativ. Die starke negative Korrelation (-0,822) macht ein 50/50-Portfolio effizienter als die heutige 75/25-Allokation, ohne dass eine Strategie invertiert werden muss. Die Umstellung reduziert Konzentrationsrisiko und nutzt die Diversifikation.",
+  "regime": "Seitwaerts/Range mit leichten Trendphasen"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "d7bf50b5a95e98ab80e256c9536327ac4c4d1465307bd6622469ee2c8f4f586a",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Persistent negative edge across all windows (Sharpe -6.97 at 384 bars) justifies maintaining short exposure for hedging.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.2
+   },
+   {
+    "reason": "Strong positive edge across all windows (Sharpe 6.22 at 384 bars, hit rate 56.4%) warrants increased allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.8
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B shows consistent positive Sharpe across all windows (6.54/1.07/6.22) with hit rates >56%, confirming durable edge. STRAT_A shows persistent negative Sharpe (-6.54/-1.43/-6.97) and hit rates ~40-44%, confirming durable negative edge suitable for inversion. The -0.84 correlation means inverted STRAT_A (+0.2) and STRAT_B (+0.8) provide diversified exposure rather than concentrated bets. Gross allocation 1.0. Moving from current (-0.3/+0.7) to (-0.2/+0.8) modestly increases STRAT_B weight given its superior risk-adjusted returns while maintaining hedge.",
+  "regime": "Strong trending regime favoring STRAT_B direction; STRAT_A acts as reliable hedge with -0.84 correlation"
+ }
+}

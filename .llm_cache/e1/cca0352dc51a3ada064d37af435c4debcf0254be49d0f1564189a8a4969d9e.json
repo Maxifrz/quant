@@ -1,0 +1,22 @@
+{
+ "key": "e1cca0352dc51a3ada064d37af435c4debcf0254be49d0f1564189a8a4969d9e",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "STRAT_A zeigt über alle Fenster positive Renditen und hohe Sharpes (384: 4.0, 96: 8.5), während STRAT_B über 384 Bars negativ ist (Return -0.067, Sharpe -0.57) und über 96 Bars gar nicht handelt (time_in_market 0.021).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "STRAT_B hat über das längste Fenster (384) negative Rendite und negativen Sharpe; im mittleren Fenster (96) nahezu keine Marktteilnahme und stark negativer Sharpe. Keine statistische Kante erkennbar.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Die Allokation wird vollständig auf STRAT_A konzentriert, da es über alle drei Fenster (24, 96, 384) konsistent positive Renditen und hohe Sharpe-Ratios aufweist. STRAT_B zeigt über das längste Fenster (384 Bars) eine negative Rendite (-0.067) und negativen Sharpe (-0.569), über 96 Bars praktisch keine Handelsaktivität (time_in_market 0.021) und einen stark negativen Sharpe (-6.78). Die negative Korrelation (-0.557) würde Diversifikation nahelegen, aber STRAT_B besitzt keine positive Erwartungswerte, die ein Halten rechtfertigen würden. Ein negatives Gewicht (Inversion) ist nicht angebracht, da die Datenbasis für STRAT_B zu dünn und rauschend ist, um eine dauerhaft negative Kante zu bestätigen. Die aktuelle Allokation (0.85/0.15) wird daher auf 1.0/0.0 angepasst.",
+  "regime": "STRAT_A dominiert; STRAT_B liefert keine belastbare Kante."
+ }
+}

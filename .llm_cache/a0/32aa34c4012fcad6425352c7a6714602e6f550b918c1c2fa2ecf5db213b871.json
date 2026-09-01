@@ -1,0 +1,22 @@
+{
+ "key": "a032aa34c4012fcad6425352c7a6714602e6f550b918c1c2fa2ecf5db213b871",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Persistent negative returns and negative Sharpe across medium and long windows (96-bar Sharpe -5.3, 384-bar Sharpe -4.5) with deep drawdown -42.7% indicate no edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Consistently positive returns and strong Sharpe across medium and long windows (96-bar Sharpe 7.55, 384-bar Sharpe 3.89) with moderate drawdown -19.7% confirm a durable edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "The two strategies are strongly negatively correlated (-0.89), but correlation alone does not justify allocating to a strategy with a proven negative edge. STRAT_A shows negative returns and negative Sharpe at both the 96-bar and 384-bar windows, with a deep -42.7% drawdown and 501 bars since peak — indicating structural underperformance, not a temporary slump. STRAT_B shows positive returns and strong positive Sharpe at both 96-bar (7.55) and 384-bar (3.89) windows, with a modest -19.7% drawdown and only 39 bars since peak. The 24-bar window is too noisy to rely on (STRAT_B even shows zero activity). Allocating 100% to STRAT_B captures the only strategy with a statistically credible positive edge. Current 50/50 allocation dilutes performance with a losing strategy; rebalancing is warranted despite transaction costs because the evidence is persistent across multiple long windows.",
+  "regime": "STRAT_A in sustained drawdown with negative edge; STRAT_B in uptrend with positive edge across horizons"
+ }
+}

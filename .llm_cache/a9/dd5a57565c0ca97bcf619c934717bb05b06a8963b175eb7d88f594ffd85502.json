@@ -1,0 +1,22 @@
+{
+ "key": "a9dd5a57565c0ca97bcf619c934717bb05b06a8963b175eb7d88f594ffd85502",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (-5.1 to -10.1) and -29.5% drawdown from peak confirm a persistent negative edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive Sharpe across all windows (3.5 to 8.8), low drawdown (-3.9%), and negative correlation to STRAT_A justify full allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A shows negative Sharpe at 24/96/384 bars (-5.1/-10.1/-5.6) with 29.5% drawdown and 365 bars since peak -- clear negative edge. STRAT_B shows positive Sharpe at all windows (8.2/8.8/3.5), only 3.9% drawdown, 61 bars since peak. Correlation -0.78 means STRAT_A adds no diversification benefit when its standalone edge is negative. Inverting STRAT_A would flip the sign but not fix the unstable hit rates (~40-44%). Full allocation to STRAT_B is warranted.",
+  "regime": "STRAT_B positive edge across horizons; STRAT_A persistently negative."
+ }
+}

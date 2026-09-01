@@ -1,0 +1,22 @@
+{
+ "key": "d07b4cbbf2679251d86c38fce590ed0d71c7f81225a1a38edfb7fe36e354af87",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Schlechter 384er Sharpe (-1.24) und aktueller Drawdown (-7.3%) sprechen gegen Erhöhung, aber negative Korrelation zu STRAT_B (-0.78) rechtfertigt Beibehaltung zur Diversifikation.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Positiver 384er Sharpe (1.96) und Rendite (+6.9%) überwiegen kurze 96er Schwäche; negative Korrelation zu STRAT_A (-0.78) stabilisiert Portfolio.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.55,
+  "reasoning": "Beide Strategien zeigen inkonsistente Signale über Fenster: STRAT_A stark im 96er (Sharpe 7.8) aber schwach im 384er (Sharpe -1.24), STRAT_B umgekehrt (384er Sharpe 1.96, 96er -4.1). Die starke negative Korrelation (-0.78) ist der einzige stabile Diversifikator. Aktuelle Allokation (50/50) nutzt diesen Hedge optimal. Kein Fenster rechtfertigt klares Über- oder Untergewichten; Umschichtungskosten würden Nutzen aufzehren. Gleichgewichtung bleibt robusteste Wahl.",
+  "regime": "Seitwärts/Unklare Trendphase mit hoher Unsicherheit in kürzeren Fenstern"
+ }
+}

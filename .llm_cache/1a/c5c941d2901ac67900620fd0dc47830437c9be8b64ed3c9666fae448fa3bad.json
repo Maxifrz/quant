@@ -1,0 +1,22 @@
+{
+ "key": "1ac5c941d2901ac67900620fd0dc47830437c9be8b64ed3c9666fae448fa3bad",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe in allen Fenstern (-18.7/24, -7.7/96, -1.9/384) und -18% Drawdown seit Peak zeigen dauerhaft negative Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive Sharpe in allen Fenstern (13.4/24, 6.6/96, 2.4/384), nur -6% Drawdown, starke negative Korrelation zu STRAT_A (-0.75) als Diversifikator.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A hat in allen drei Fenstern (24, 96, 384) negative Sharpe-Ratios und einen Drawdown von -18% seit dem Peak vor 160 Bars. STRAT_B zeigt konsistent positive Sharpe-Ratios in allen Fenstern, nur -6% Drawdown seit Peak vor 3 Bars und eine hohe Hit-Rate von 67% im 24er und 96er Fenster. Die starke negative Korrelation (-0.75) zwischen beiden Strategien wäre normalerweise ein Diversifikationsargument, aber da STRAT_A eine nachweislich negative Erwartungswert-Kante hat, würde jede Allokation an STRAT_A die Portfolio-Performance verschlechtern. Volle Allokation in STRAT_B ist durch die Kennzahlen getragen.",
+  "regime": "STRAT_B dominiert klar; STRAT_A zeigt dauerhaft negative Kante. Negative Korrelation senkt Portfolio-Risiko."
+ }
+}

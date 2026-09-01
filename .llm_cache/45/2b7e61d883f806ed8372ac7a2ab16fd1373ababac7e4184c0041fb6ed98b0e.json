@@ -1,0 +1,22 @@
+{
+ "key": "452b7e61d883f806ed8372ac7a2ab16fd1373ababac7e4184c0041fb6ed98b0e",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe ueber alle Fenster (7.2 bei 96B, 2.3 bei 384B) und 0 Drawdown; STRAT_B zeigt dauerhaft negative Kante (Sharpe -3.0 bei 384B, -29% Drawdown).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Rendite und Sharpe ueber das lange Fenster (384B) bei hoher Zeit im Markt; Inversion waere Spekulation ohne belastbare Kante.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A liefert ueber 96B (Sharpe 7.2) und 384B (Sharpe 2.3) stabile risikoadjustierte Renditen bei 0% Drawdown vom Peak. STRAT_B zeigt ueber 384B eine Rendite von -21% bei Sharpe -3.0 und 29% Drawdown -- eine dauerhaft negative Kante. Die Korrelation von -0.37 ist moderat, aber da STRAT_B keine positive Erwartung hat, bringt Beimischung keinen Diversifikationsnutzen, nur Drag. Kurze Fenster (24B) rauschen (STRAT_A Hitrate 100%, STRAT_B 0% Zeit im Markt) und werden ignoriert. Aktuelle Allokation (80/20) untergewichtet die uelegene Strategie; volle Allokation auf STRAT_A ist durch die Kennzahlen getragen.",
+  "regime": "STRAT_A dominiert mit konsistenter Kante; STRAT_B in anhaltender Schwachephase ohne Erholungssignale."
+ }
+}

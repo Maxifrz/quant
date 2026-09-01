@@ -1,0 +1,22 @@
+{
+ "key": "611588ea4f092ae49b59675fce6b06104f15cfb7f3821ebd4efaf6c95c103023",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negatives 384-bar Sharpe (-4,34) und Drawdown -58 % zeigen dauerhaft negative Kante; Inversion wandelt die Strategie in einen positiven Beitrag.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Positives 384-bar Sharpe (5,72) und Return 1,28 signalisieren stabile Kante; starke negative Korrelation (-0,91) zu STRAT_A liefert Diversifikation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.78,
+  "reasoning": "STRAT_A weist ueber das langste Fenster (384 Bars) einen stark negativen Sharpe (-4,34) und einen Drawdown von -58 % auf, was auf eine strukturell negative Kedge hinweist. STRAT_B zeigt im gleichen Fenster einen positiven Sharpe von 5,72 und Return von 1,28. Die fast perfekte negative Korrelation (-0,91) bedeutet, dass die Inversion von STRAT_A (Short) und Long in STRAT_B nahezu identische PnL-Profile erzeugen und sich das Portfolio-Risiko stark reduziert. Die aktuelle 50/50-Long-Allokation verdoppelt das Risiko statt es zu streuen. Umschichtung auf -0,5 / +0,5 nutzt die Korrelation aus und dreht die negative Edge von STRAT_A in positive um. Groesster Teil der Historie (384 Bars) traegt die Entscheidung; 24-Bar-Fenster wird als Rauschen ignoriert.",
+  "regime": "STRAT_A im tiefen Drawdown mit negativer Long-Edge, STRAT_B in Erholung mit positiver Edge"
+ }
+}

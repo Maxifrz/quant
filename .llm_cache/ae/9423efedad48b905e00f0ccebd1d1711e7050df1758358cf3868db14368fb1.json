@@ -1,0 +1,22 @@
+{
+ "key": "ae9423efedad48b905e00f0ccebd1d1711e7050df1758358cf3868db14368fb1",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-3.8) and 30.6% drawdown; negative weight retains the long-side hedge benefit.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (4.52), positive return (0.355), low drawdown (7.6%); primary return driver.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B shows consistent positive edge across windows (384-bar Sharpe 4.52, 96-bar 4.34). STRAT_A has negative 384-bar Sharpe (-3.81) and large drawdown (-30.6%). The -0.935 correlation means holding both reduces portfolio volatility. Current allocation (-0.75/0.25) overweights the losing strategy. Equal-weighting the hedge (STRAT_A short) and alpha (STRAT_B long) improves risk-adjusted returns while keeping gross exposure at 1.0.",
+  "regime": "STRAT_B in uptrend, STRAT_A in deep drawdown; negative correlation offers hedge."
+ }
+}

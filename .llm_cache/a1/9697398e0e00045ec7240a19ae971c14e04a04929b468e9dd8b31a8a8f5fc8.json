@@ -1,0 +1,22 @@
+{
+ "key": "a19697398e0e00045ec7240a19ae971c14e04a04929b468e9dd8b31a8a8f5fc8",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe über alle langfristigen Fenster (384: 1.35) und positive Rendite; Drawdown moderat (-5.7%).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Durchgängig negative Sharpe (384: -3.1) und negative Rendite über alle Fenster; hoher Drawdown (-30.2%).",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A liefert über das langfristige 384-Bar-Fenster eine Sharpe von 1.345 bei +10,9% Rendite und nur -5,7% Drawdown – ein konsistenter positiver Erwartungswert. STRAT_B zeigt über alle Fenster negative Sharpe (384: -3,1) und -25,6% Rendite bei -30,2% Drawdown. Die starke negative Korrelation (-0,80) würde theoretisch Diversifikation bieten, aber da STRAT_B eine dauerhaft negative Kante hat, würde Beimischung das Portfolio verschlechtern. Shorting STRAT_B (negatives Gewicht) ist verlockend, aber Short-Seiten von verlustreichen Long-Strategien sind oft unzuverlässig (Gap-Risiko, Ausführungsprobleme). Aktuelle Allokation (100% STRAT_A) wird beibehalten – keine Umschichtungskosten, Datenlage trägt Abweichung nicht.",
+  "regime": "STRAT_A zeigt stabile positive Kante; STRAT_B ist strukturell negativ."
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "key": "0cecbc220e8f4d4598b656614f9ff8aa594a43feea2197472199e3e368395412",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "ZScoreMomentum",
+  "code": "class ZScoreMomentum(Strategy):\n    name = \"zscore_momentum\"\n    LOOKBACK = 30\n    THRESHOLD = 1.5\n    warmup_bars = 35\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        if len(closes) < 2:\n            return math.nan\n        rets = np.diff(np.log(closes))\n        z = ta.zscore(rets, self.LOOKBACK)\n        if not math.isfinite(z):\n            return math.nan\n        if z > self.THRESHOLD:\n            return 1.0\n        if z < -self.THRESHOLD:\n            return -1.0\n        return 0.0",
+  "name": "zscore_momentum",
+  "rationale": "The strategy exploits short‑term momentum measured in standardized log‑returns. When the latest return is several standard deviations away from its recent distribution (high z‑score), it signals a strong directional move that tends to persist for a few bars before mean‑reverting. Using a z‑score normalises the signal across assets and market regimes, avoiding absolute price levels. The approach is distinct from pure price‑level trend or channel breakouts because it reacts to the statistical extremeness of recent returns rather than price position relative to a moving average or channel."
+ }
+}

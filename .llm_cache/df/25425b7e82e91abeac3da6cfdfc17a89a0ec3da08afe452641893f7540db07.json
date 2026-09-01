@@ -1,0 +1,22 @@
+{
+ "key": "df25425b7e82e91abeac3da6cfdfc17a89a0ec3da08afe452641893f7540db07",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar return (-0.216) and Sharpe (-1.94) outweigh the recent 96-bar strength; keeping it would rely on a short window that the rules warn against.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (3.11) and positive return (0.322) indicate a persistent edge, while the weak 96-bar window is treated as noise per the short-window rule.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "The allocation shifts fully to STRAT_B because its 384-bar metrics (return 0.322, Sharpe 3.11) demonstrate a consistent positive edge, whereas STRAT_A's 384-bar metrics (return -0.216, Sharpe -1.94) show a negative edge. The 96-bar windows are disregarded as noisy per the short-window rule. The -0.93 correlation would normally suggest keeping both for diversification, but STRAT_A's long-window underperformance makes it a drag rather than a hedge. Moving from 50/50 to 0/100 is justified by the clear long-window evidence.",
+  "regime": "STRAT_B shows a durable long-window edge; STRAT_A does not."
+ }
+}

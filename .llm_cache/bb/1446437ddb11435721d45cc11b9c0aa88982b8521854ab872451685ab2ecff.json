@@ -1,0 +1,22 @@
+{
+ "key": "bb1446437ddb11435721d45cc11b9c0aa88982b8521854ab872451685ab2ecff",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong negative Sharpe over 384 bars (-1.099) and deep drawdown (-30.6%) indicate persistent negative edge, justifying inverse position.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Positive Sharpe over 384 bars (1.291) with lower drawdown (-21.5%) shows durable edge, supporting long allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A shows consistently negative returns and Sharpe over the longest window (384 bars: return -0.142, Sharpe -1.099) with 511 bars since peak and -30.6% drawdown, confirming a durable negative edge that justifies the current inverse allocation (-0.5). STRAT_B delivers positive return (0.103) and Sharpe (1.291) over 384 bars with only -21.5% drawdown and 205 bars since peak, supporting its long allocation (0.5). The strong negative correlation (-0.838) between strategies means they act as a hedge pair; the current gross allocation of 1.0 with opposite signs is efficient. No rebalancing needed as metrics support status quo.",
+  "regime": "Mean-reverting regime favoring STRAT_B; STRAT_A exhibits persistent negative edge."
+ }
+}

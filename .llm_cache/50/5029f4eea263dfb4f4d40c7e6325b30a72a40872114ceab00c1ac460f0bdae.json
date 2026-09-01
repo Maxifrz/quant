@@ -1,0 +1,22 @@
+{
+ "key": "505029f4eea263dfb4f4d40c7e6325b30a72a40872114ceab00c1ac460f0bdae",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-4.22) shows persistent edge loss; equal-weight to reduce STRAT_B concentration risk given -0.91 correlation.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (4.25) and positive return (0.437) confirm durable edge; 50% weight halves single-strategy exposure.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B demonstrates a robust long-window edge (384-bar Sharpe 4.25, return 0.437) while STRAT_A shows persistent deterioration (384-bar Sharpe -4.22, return -0.359). The -0.91 correlation creates genuine diversification value. Equal weighting balances STRAT_B's proven edge with STRAT_A's potential mean reversion, reducing concentration risk from the current 100% STRAT_B allocation. Short windows (24, 96) are noisy and discounted per rules.",
+  "regime": "STRAT_B in confirmed uptrend; STRAT_A in deep drawdown. Strong negative correlation enables diversification."
+ }
+}

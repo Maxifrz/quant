@@ -1,0 +1,22 @@
+{
+ "key": "382b9dbee92598ea37a57978790211f69515079d4d8f9b727acf582ac38bd029",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar Sharpe 1.63 shows positive edge; negative weight exploits -0.82 correlation with STRAT_B and preserves current allocation to avoid turnover.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "384-bar Sharpe -1.526 shows negative edge; positive weight combined with STRAT_A's negative weight creates diversified exposure via -0.82 correlation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Only the 384-bar window provides statistically meaningful evidence (384 bars vs 24/96 noise). STRAT_A has positive 384-bar Sharpe (1.63) while STRAT_B has negative (-1.526). The -0.82 correlation means inverting STRAT_A (negative weight) and keeping STRAT_B positive creates a diversified portfolio where both legs contribute positively to risk-adjusted returns. Current allocation (-0.5, 0.5) already matches this logic; deviating would incur turnover costs without better evidence.",
+  "regime": "Medium-term mean-reversion dominant; short-term momentum noise"
+ }
+}
