@@ -2,77 +2,65 @@
 
 > ## ▶ HIER WEITER
 >
-> **Das Paper-Konto läuft** (ADR-051) — `macross` auf BTC/USD und ETH/USD,
-> je 1d, zwei getrennte Konten. `scripts/paper_tick.sh` sichert den Zustand
-> nach jedem Tick ins Repo. Der Grund, warum es vorher **nicht** lief, war
-> nicht nur die `.gitignore`: ein Tick zog 5 Bars nach, `macross` braucht 52
-> Warmup. Jetzt kaltstartfähig und gegengeprüft.
+> ### Zustand nachsehen, nicht nachlesen
 >
-> **Ab hier ist Warten die Arbeit.** Bei ~4 Trades im Jahr liefern die ersten
-> Wochen wahrscheinlich null Trades. Gemessen wird Divergenz zu den
-> Backtest-Annahmen, nicht Rendite — die Kriterien stehen in ADR-051.
->
-> **Neu (ADR-050): echtes ML ist gebaut, geprüft und durchgefallen.**
-> 14 Märkte, 32.122 Bars → 5.304 Labels → **effektiv 2.506** (mittlere
-> Einzigartigkeit 0,47). Meta-Labeling auf `macross`, Triple-Barrier mit
-> Kostenschwelle, gepurgte Vorwärts-Folds. Das Modell schlägt die Basis in
-> **2 von 5 Folds** — vertauschte Labels schaffen bei einem Seed **4 von 5**.
-> Die Infrastruktur (`qt.ml`) bleibt und ist wiederverwendbar; die
-> Point-in-Time-Zusage der Merkmale hängt dort **allein an einem Test**.
->
-> Ebenfalls neu: `qt trades` zeigt Round-Trips (ADR-049). Erster Befund bei
-> `macross`: Verlierer zahlen 52,8% ihres Bruttoergebnisses an Gebühren,
-> Gewinner 9,1% — und der größte Einzelgewinn trägt 63% des Ergebnisses.
->
-> **`hashribbon` ist gebaut, geprüft und durchgefallen (ADR-048).**
-> Sharpe +0,16 gegen die Messlatte 0,31 von `macross`. Der Placebo hält (ETH
-> −0,16, das Signal ist wirklich BTC-spezifisch), aber die Negativkontrolle
-> kippt es: **eine von fünf zufällig permutierten Hashrate-Reihen schlägt die
-> echte** (+0,32 gegen +0,16). Von Zufall nicht zu unterscheiden. Die
-> Strategie bleibt als geprüfter Negativbefund im Repo, nicht als Kandidat.
-> Neu nutzbar: `qt data onchain` (blockchain.info, jahrweise geblättert).
->
-> **Der LLM-Allokator ist zweimal durchgefallen, und die naheliegende
-> Reparatur ist widerlegt.** Takt 96: Sharpe −1,18. Takt 384: −2,19, während
-> jede regelbasierte Baseline besser wurde (ADR-046). Weniger Umsatz,
-> schlechteres Ergebnis — die Kostenthese ist zweimal unabhängig tot.
->
-> Parallel dazu: `1d` schlägt `4h` und `1h` in **8 von 8** Strategie/Symbol-
-> Kombinationen, und oberhalb von `1d` hört jedes Muster auf (ADR-047).
->
-> **Der nächste Schritt ist deshalb nicht ein weiterer Parameter am
-> Allokator, sondern ein Korb, in dem etwas Verdienendes liegt.** Alle
-> bisherigen Gate-Läufe verteilten `trend` und `meanrev` auf `4h` — beide
-> verlieren dort dreistellig. Ein Allokator kann nicht verteilen, was nicht
-> da ist.
+> Dieser Abschnitt **behauptet keinen Laufzeitzustand mehr**. Zweimal hat eine
+> Prosa-Behauptung hier länger gestimmt als die Wirklichkeit — einmal lief das
+> Paper-Konto wochenlang nicht, während hier stand, es laufe (ADR-051), und
+> einmal widersprachen sich zwei Absätze desselben Blocks (ADR-052). Eine
+> Behauptung veraltet still, ein Befehl nicht:
 >
 > ```bash
-> NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
->     --strategies macross,trend,meanrev --tf 1d \
->     --allocate-every 24 --effort low --provider nim
+> uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
+> uv run qt paper status --strategy macross --symbols ETH/USD --tf 1d
 > ```
-> Vorher prüfen, wie viele Aufrufe das ergibt (`--stub` und die
-> Telemetriezeile lesen) — bei `1d` sind die Testfenster in Bars kürzer,
-> der Lauf also billiger als die 145 des 4h-Laufs.
+> Erwartet: „Status: laeuft", und über Wochen hinweg **null Fills** — `macross`
+> handelt rund viermal im Jahr. Steht dort „ANGEHALTEN", hat der Kill-Switch
+> ausgelöst; das ist der einzige Fall, der eine Entscheidung braucht.
 >
-> **Danach offen, nach Wert sortiert:**
+> ```bash
+> bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
+> uv run qt data report         # Bestand und Lücken
+> ```
 >
-> 1. **Paper-Trading auf einer Maschine, die überlebt.** `data/paper/` ist
->    leer; `/data/` ist gitignored und der Container wird neu gebaut. Ein
->    Paper-Konto braucht Persistenz und eine Uhr — beides hat eine flüchtige
->    Session nicht. Das ist der einzige offene Punkt, der mit Wartezeit statt
->    mit Rechenzeit bezahlt wird, also der, der am längsten braucht.
-> 2. **Ein Jahr Order-Flow für `orderflow`.** Der Bestand täuscht: 2,4 Mio
->    Trades über 361 Tage Spanne, aber mit einem **301-Tage-Loch**. Real sind
->    zwei Blöcke, 33 und 26 Tage. Fortsetzbar über `qt data trades --days 365`.
-> 3. **Research-Loop erneut laufen lassen** — aber der Versuchszähler steht
->    auf 8, und jeder Lauf verschärft die DSR-Schwelle dauerhaft für alle
->    künftigen Kandidaten (ADR-032). Das Budget ist nicht gratis.
+> ### Der Stand in einem Satz
 >
-> **Was gemessen und erledigt ist:** Phase 3 (Gate, zweimal, ADR-045/046),
-> Phase 5 (Research-Loop, ADR-042), die Timeframe-Frage (ADR-047). Der
-> LLM-Cache des 4h-Laufs ist versioniert — diese Zahlen sind in jedem
-> Container in Minuten reproduzierbar statt in vier Stunden.
+> **Sechs Hypothesen geprüft, sechs gescheitert.** LLM-Allokator zweimal
+> (ADR-045/046), `hashribbon` (ADR-048), echtes ML (ADR-050), dazu die
+> Timeframe-Frage (ADR-047) und zwei BTC-Mechanismen, die vor der ersten
+> Codezeile fielen (ADR-048). Übrig ist `macross` auf 1d — und dessen
+> Ergebnis steht auf zwei von 33 Trades (ADR-049).
+>
+> ### Was als Nächstes Sinn ergibt
+>
+> 1. **Warten und ticken lassen.** Vorwärtszeit ist die einzige Evidenz, die
+>    ein Backtest nicht liefern kann, und sie ist uhrgebunden. Zwei Konten
+>    laufen; sie sind nach ADR-052 zusammen **1,2 unabhängige Tests wert**,
+>    nicht 2 — die Equity-Kurven korrelieren mit 0,65.
+> 2. **Ein Jahr Order-Flow für `orderflow`.** Die einzigen *ungenutzten Daten*
+>    statt ungenutzter Ideen. Der Bestand täuscht: 2,4 Mio Trades über 361
+>    Tage Spanne, aber mit einem **301-Tage-Loch** — real zwei Blöcke von 33
+>    und 26 Tagen. Fortsetzbar über `qt data trades --days 365`; dreimal an
+>    Container-Neustarts gestorben (ADR-034), braucht also dieselbe
+>    Sicherungslogik wie der Paper-Zustand.
+> 3. **Gate mit `macross` im Korb**, falls der LLM-Allokator noch eine Chance
+>    bekommen soll. Alle bisherigen Läufe verteilten `trend` und `meanrev` auf
+>    4h — beide verlieren dort dreistellig. Ein Allokator kann nicht
+>    verteilen, was nicht da ist.
+>    ```bash
+>    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
+>        --strategies macross,trend,meanrev --tf 1d \
+>        --allocate-every 24 --effort low --provider nim
+>    ```
+>    Vorher mit `--stub` die Aufrufzahl aus der Telemetriezeile lesen.
+> 4. **Research-Loop erneut** — aber der Versuchszähler steht auf 8, und jeder
+>    Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
+>    (ADR-032). Das Budget ist nicht gratis.
+>
+> **Was ausdrücklich nicht empfohlen wird:** noch eine Strategie-Idee. Nicht
+> weil Ideen schlecht wären, sondern weil dieses Projekt gerade sechsmal
+> gezeigt hat, dass es sie zuverlässig widerlegt — und jede kostet einen
+> Versuch im Nenner.
 
 ---
 

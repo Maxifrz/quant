@@ -5,6 +5,76 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-052 — Zwei Paper-Konten sind 1,2 Konten, nicht 2 (und zwei eigene Fehler)
+**Datum:** 2026-09-02
+
+Auf die Frage nach dem nächsten Schritt habe ich den Zustand geprüft statt aus
+dem Gedächtnis zu antworten. Dabei kamen drei Dinge heraus, zwei davon eigene
+Fehler vom Vortag.
+
+### Der Datenbestand war beschädigt, und zwar durch mich
+
+Beim Kaltstart-Test (ADR-051) wurde `data/ohlcv/` beiseitegelegt und danach mit
+`cp -rn` zurückgeholt. `-n` heisst **no-clobber**: der Kaltstart hatte
+`BTC-USD/1d.parquet` bereits mit 112 frisch gezogenen Bars neu angelegt, und
+die Wiederherstellung prallte wortlos daran ab.
+
+```
+BTC-USD/1d   129.119 B -> 8.920 B   (2.793 -> 112 Bars)
+ETH-USD/1d   122.230 B -> 8.680 B   (2.788 -> 112 Bars)
+```
+
+Genau zwei Dateien, alles andere identisch. **Aufgefallen ist es nur, weil
+eine Round-Trip-Auswertung 1 Trade statt 33 meldete.** Wäre die Zahl weniger
+absurd gewesen, wäre auf 4% der Historie gerechnet und das Ergebnis geglaubt
+worden. Kein Codefehler, sondern ein Shell-Flag — ein Test dafür wäre Theater.
+Was bleibt: beim Wiederherstellen ist `cp -n` die falsche Wahl.
+
+### Die ROADMAP widersprach sich selbst
+
+Oben stand „Das Paper-Konto läuft", Punkt 1 der Liste darunter „`data/paper/`
+ist leer … der einzige offene Punkt". Der neue Block war vorangestellt, ohne
+den alten aufzulösen — **exakt die Fehlerform, die das Konto schon einmal
+wochenlang unbemerkt stillstehen liess.**
+
+**Konsequenz, strukturell statt kosmetisch:** die ROADMAP behauptet keinen
+Laufzeitzustand mehr, sie nennt den Befehl, mit dem man ihn nachsieht. Eine
+Behauptung veraltet still, ein Befehl nicht.
+
+### Die geprüfte Behauptung: „repliziert auf ETH" — teilweise
+
+ADR-035 führt BTC (OOS 0,31) und ETH (0,32) als Replikation ohne Neuanpassung,
+und darauf wurden gestern zwei Paper-Konten als **zwei unabhängige
+Vorwärtstests** gestartet. Vorab festgelegt war: liegen die Spitzengewinne im
+selben Regime, gilt die Aussage als relativiert.
+
+| | grösster Gewinn | zweitgrösster |
+|---|---|---|
+| BTC | **2020-10 bis 2021-04** (63%) | 2024-09 bis 2024-12 (42%) |
+| ETH | 2025-07 bis 2025-09 (41%) | **2020-10 bis 2021-03** (38%) |
+
+Bei beiden liegt ein Grossgewinner im **selben Fenster**, dem Bullenlauf
+2020/21; der jeweils zweite liegt in unterschiedlichen. Die Equity-Kurven
+korrelieren mit **0,65** auf Tagesbasis, stabil über alle Jahre (0,57–0,75).
+
+**Damit sind zwei Konten rechnerisch 1,21 Konten**
+(n_eff = 2/(1+ρ) = 2/1,65). Meine Formulierung „zwei unabhängige
+Vorwärtstests kosten nichts und sind mehr wert als eine bessere Einzelzahl"
+war zu grosszügig: sie sind **20% mehr wert**, nicht doppelt.
+
+Ein Nebenbefund, der die Gewichte verschiebt: **ETH ist robuster als BTC.**
+Ohne die zwei besten Trades bleibt ETH bei +436.109 (21% des Originals,
+positiv), BTC fällt auf −63.557. Die Kopfzahl des Projekts steht auf dem
+schwächeren der beiden Märkte.
+
+**Konsequenz:** ADR-035s „repliziert auf ETH ohne Neuanpassung" bleibt
+richtig, aber die Unabhängigkeit war überzeichnet. Beide Konten laufen weiter
+— sie kosten nichts, und ab jetzt erzeugen sie *neue* Fenster statt geteilter
+Vergangenheit. Genau das ist der Zweck des Vorwärtstests. Die Erwartung an die
+Aussagekraft wird auf 1,2 Konten korrigiert, nicht auf 2.
+
+---
+
 ## ADR-051 — Das Paper-Konto lief nicht, weil ein Tick 5 Bars zieht und 52 braucht
 **Datum:** 2026-09-01
 
