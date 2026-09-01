@@ -18,6 +18,8 @@ data_app = typer.Typer(help="Marktdaten ziehen und pruefen", no_args_is_help=Tru
 app.add_typer(data_app, name="data")
 paper_app = typer.Typer(help="Paper-Konto: sicher wiederholbare Ticks", no_args_is_help=True)
 app.add_typer(paper_app, name="paper")
+report_app = typer.Typer(help="Reports erzeugen", no_args_is_help=True)
+app.add_typer(report_app, name="report")
 
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
@@ -1139,3 +1141,62 @@ def paper_reset(
         typer.echo(str(exc))
         raise typer.Exit(code=1) from None
     typer.echo(f"Kill-Switch zurueckgesetzt. halted={state.halted}")
+
+
+@report_app.command("html")
+def report_html(
+    strategy: Annotated[str, typer.Option(help="Strategiename des Paper-Kontos")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    paper: Annotated[
+        bool, typer.Option("--paper/--no-paper", help="Paper-Konto einbeziehen")
+    ] = True,
+    max_drawdown: Annotated[
+        float,
+        typer.Option(
+            help="Kill-Switch-Schwelle, mit der `qt paper run` laeuft. Steht "
+            "nicht im Kontostand und wird deshalb hier angenommen."
+        ),
+    ] = 0.20,
+    out: Annotated[Path | None, typer.Option(help="Zieldatei")] = None,
+) -> None:
+    """Cockpit und Datenbestand als eine einzelne HTML-Datei.
+
+    Eine Datei und kein Server: `data/` und `reports/` verschwinden mit dem
+    Container, eine heruntergeladene Datei nicht. Sie enthaelt keine externe
+    Anfrage und laesst sich auf einem Telefon lesen -- ein Paper-Konto wird
+    ueber Wochen taeglich angeschaut.
+
+    Die Seite liest nur. Befehle stehen darin als Text, nicht als Knopf.
+    """
+    from qt.report.cockpit import collect
+    from qt.report.html import write
+
+    symbol_list = _split(symbols)
+    befehl = (
+        f"qt report html --strategy {strategy} --symbols {symbols} --tf {tf}"
+        f"{'' if paper else ' --no-paper'} --max-drawdown {max_drawdown}"
+    )
+
+    cockpit = collect(
+        strategy,
+        symbol_list,
+        tf,
+        max_drawdown=max_drawdown,
+        command=befehl,
+    )
+    if not paper:
+        cockpit.paper = None
+        cockpit.missing_paper_path = None
+
+    path = write(cockpit, out)
+
+    if cockpit.paper is None and paper:
+        typer.echo(
+            f"Kein Paper-Konto unter {cockpit.missing_paper_path} -- "
+            "die Seite zeigt nur den Datenbestand."
+        )
+    if not cockpit.series:
+        typer.echo("Store ist leer. Erst ziehen: qt data pull")
+
+    typer.echo(f"Cockpit: {path}")

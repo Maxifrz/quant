@@ -6,7 +6,8 @@
 > das auf `main` fußt — der Code, auf den er sich bezieht, ist hier also
 > **nicht** eingecheckt. Alle Dateipfade unten meinen die des Quant-Branches.
 >
-> **Status:** Entwurf. Kein Code geschrieben. Die offenen Fragen stehen am Ende.
+> **Status:** UI-Phase 1 ist gebaut (`qt report html`), Phase 2–4 sind Entwurf.
+> Was dabei anders kam als geplant, steht in §12.
 
 ---
 
@@ -438,15 +439,15 @@ und die ruft die Originalfunktion auf.
 Dasselbe Prinzip wie die Roadmap des Systems: jede Phase endet mit etwas
 Sichtbarem und hat **einen Befehl**. Man kann nach jeder aufhören.
 
-### UI-Phase 1 — Cockpit als Datei
-`qt report html --paper --strategy macross --symbols BTC/USD --tf 1d`
+### ✅ UI-Phase 1 — Cockpit als Datei
+`qt report html --strategy macross --symbols BTC/USD --tf 1d`
 
 Screens 5.1 und 5.2. Braucht **kein** Manifest — `PaperState` und
 `IntegrityReport` liegen schon vor. Ergebnis: eine HTML-Datei, die man täglich
 auf dem Handy ansieht, und die Abdeckungsleiste, die das 301-Tage-Loch zeigt.
 
-*Das ist die Phase mit dem besten Verhältnis von Aufwand zu Nutzen, und sie ist
-von allem anderen unabhängig.*
+Gebaut in `qt.report.cockpit` (Sammeln) und `qt.report.html` (Rendern), 18
+Tests in `tests/test_report_html.py`. Details in §12.
 
 ### UI-Phase 2 — Manifeste + Ergebnis-Screens
 `qt report html --runs` (alle Läufe aus `reports/runs/`)
@@ -530,3 +531,69 @@ ADR-046):
   `git_commit` als Pflichtfeldern.
 * **Evidenzgrad ist eine Darstellungsregel, keine Beschriftung** — In-Sample
   bleibt sichtbar In-Sample, dauerhaft und nicht wegklickbar.
+
+---
+
+## 12. Was beim Bauen von Phase 1 anders kam
+
+Vier Abweichungen vom Entwurf, alle mit Grund:
+
+**Kein Jinja2.** §7 schlug es vor; gebaut ist es mit `html.escape` und
+f-Strings. Eine Vorlagensprache für eine einzelne Seite ist eine Abhängigkeit
+für wenig — und `uv sync` in dieser Umgebung ist teurer als der Nutzen. Sobald
+Phase 2 mehrere Seiten aus Manifesten baut, ist die Entscheidung neu zu
+stellen. Was bleibt: **jeder Fremdtext läuft durch `escape`.** Halt-Gründe
+kommen aus `qt paper reset-killswitch --note`, sind also frei getippter Text,
+und ein Test hält fest, dass `<script>` darin escaped ankommt.
+
+**Die Abdeckungsleiste ist Inline-SVG, kein PNG.** §7 sagte „genau eine
+Chart-Engine im Projekt" und meinte matplotlib. Für die Leiste wäre das ein
+Bild mit fester Auflösung gewesen, das man auf dem Telefon nicht lesen kann.
+Das SVG skaliert, kostet keine Zeichenbibliothek und ist im Quelltext lesbar —
+man sieht der Datei an, wo die Lücke sitzt, ohne sie zu rendern. Für die
+Tearsheets in Phase 2 bleibt matplotlib die Wahl.
+
+**Eine Zeile Bestandscode geändert.** `qt.core.types.equity()` ist neu; der
+`SimBroker` ruft sie jetzt auf statt die Formel selbst zu führen. Grund ist
+Querregel R7: der Report braucht Eigenkapital, und zwei Implementierungen
+derselben Größe driften. Es ist dieselbe Überlegung, mit der ADR-001 einen
+Backtest-Pfad statt zweier hat.
+
+**Der Kill-Switch bekam einen dritten Zustand.** Nicht geplant, sondern beim
+ersten echten Durchlauf gefunden: das Konto stand 39% unter dem Höchststand,
+`halted` war `false`, und die Kachel war grün. Beides stimmte — `halted`
+beschreibt, was der **letzte Tick** entschieden hat, der Drawdown die
+**aktuellen** Preise, und dazwischen lagen vier unverarbeitete Bars. Ein
+grünes „läuft" über dieser Lage wäre genau die Zeile, wegen der jemand nicht
+hinsieht. Es gibt jetzt „ausgelöst", „läuft" und „nicht ausgelöst, aber die
+Schwelle ist rechnerisch überschritten".
+
+Das ist zugleich der Beleg für §9: derselbe Zustand war als Textausgabe
+unauffällig und wurde erst als Kachel neben dem Drawdown-Balken zur Frage.
+
+### Zwei Grenzen, die die Seite selbst benennt
+
+* **Die Kill-Switch-Schwelle ist eine Annahme.** Sie ist ein Aufrufparameter
+  von `qt paper run` und steht nicht im Kontostand. Der Report nimmt 20% an,
+  nennt das so, und `--max-drawdown` korrigiert es. Sauber wäre, die Schwelle
+  im `PaperState` zu speichern — das ist eine Änderung am Kontoformat und
+  gehört dem, der Phase 6 betreibt.
+* **Rückstand wird gezählt wie der Tick ihn abarbeiten würde**, mit
+  `merge_bar_streams` und derselben Grenze `ts <= now`: `BarEvent.ts` ist die
+  Close-Zeit, `read_bars` liefert Open-Zeiten, und ein Bar mit Close in der
+  Zukunft wird vollständig verworfen (ADR-038). Nachgebaut wäre die Zahl um
+  einen Bar daneben — dauerhaft, unsichtbar und immer in dieselbe Richtung.
+  Zwei Tests halten das fest.
+
+### ADR-Kandidat aus dem Gebauten
+
+Zu §11 kommt eine fünfte Entscheidung, die erst beim Bauen entstand: **ein
+gespeicherter Zustandswert und eine daraus abgeleitete Kennzahl dürfen sich im
+Report widersprechen, und der Widerspruch ist die Anzeige** — nicht ein Fehler,
+den man durch Bevorzugen einer Seite wegdefiniert.
+
+Die ADRs stehen bewusst hier und nicht in `docs/DECISIONS.md`: dort läuft
+parallel die Arbeit an ADR-046 ff. auf einem anderen Branch, und zwei Sitzungen,
+die dieselbe Nummer vergeben, erzeugen einen Konflikt in der einen Datei, die
+das Projekt am wenigsten gebrauchen kann. Beim Zusammenführen wandern sie mit
+der nächsten freien Nummer hinüber.

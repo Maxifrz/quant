@@ -19,7 +19,7 @@ from datetime import datetime
 
 from qt.backtest.costs import FillContext, FillModel, FlatFillModel
 from qt.core.config import BacktestConfig
-from qt.core.types import Fill, Order, Position
+from qt.core.types import Fill, Order, Position, equity
 
 
 class SimBroker:
@@ -157,10 +157,7 @@ class SimBroker:
 
     def equity(self, prices: dict[str, float]) -> float:
         """Eigenkapital: Cash plus Marktwert aller Positionen."""
-        return self.cash + sum(
-            position.qty * prices.get(symbol, position.avg_price)
-            for symbol, position in self.positions.items()
-        )
+        return equity(self.cash, self.positions, prices)
 
     def has_pending(self) -> bool:
         return bool(self._pending)

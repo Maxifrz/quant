@@ -6,6 +6,7 @@ mitwandern. Alles, was nur ein Modul braucht, gehoert dorthin.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -119,6 +120,29 @@ class Position:
 
     def market_value(self, price: float) -> float:
         return self.qty * price
+
+
+def equity(
+    cash: float,
+    positions: Mapping[str, Position],
+    prices: Mapping[str, float],
+) -> float:
+    """Eigenkapital: Cash plus Marktwert aller Positionen.
+
+    Fehlt fuer ein Symbol ein Preis, wird der Einstand angesetzt. Das ist
+    keine Schaetzung, sondern die einzige ehrliche Wahl: ohne Preis ist die
+    unrealisierte Bewertung unbekannt, und sie mit null anzusetzen waere ein
+    Totalverlust, den niemand gemeldet hat.
+
+    Steht hier und nicht in `qt.backtest.broker_sim`, weil ausser dem Broker
+    inzwischen auch der Report-Pfad Eigenkapital ausrechnet -- und zwei
+    Implementierungen derselben Groesse driften. Genau das ist der Fehler,
+    den ADR-001 fuer den Backtest-Pfad vermeidet.
+    """
+    return cash + sum(
+        position.market_value(prices.get(symbol, position.avg_price))
+        for symbol, position in positions.items()
+    )
 
 
 @dataclass(slots=True)
