@@ -1,0 +1,17 @@
+{
+  "bars_seen": {},
+  "cash": 100000.0,
+  "created_at": "2026-09-01T18:53:13.683334+00:00",
+  "fees_paid": 0.0,
+  "halt_reasons": [],
+  "halted": false,
+  "last_processed_ts": "2026-09-01T00:00:00+00:00",
+  "n_fills": 0,
+  "peak_equity": 100000.0,
+  "pending": [],
+  "positions": {},
+  "target": {},
+  "turnover": 0.0,
+  "updated_at": "2026-09-01T18:53:13.683355+00:00",
+  "warmup_end": null
+}
