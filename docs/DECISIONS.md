@@ -5,6 +5,77 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-049 — Das Trade-Journal dokumentiert, es schlussfolgert nicht
+**Datum:** 2026-09-01
+
+Gewünscht war ein LLM-„Skill", der Trades dokumentiert, durchspielt warum ein
+Setup schieflief, und daraus Lehren für künftige Trades zieht. Der zweite und
+dritte Teil sind **überwachtes Lernen auf Marktdaten** mit dem LLM als
+Funktionsapproximator: gelabelte Beispiele (Gewinner/Verlierer) rein, Muster
+raus, Muster werden zu Regeln.
+
+**Und zwar eine Variante mit schlechteren Eigenschaften als klassisches ML:**
+
+1. **Kein Holdout, per Konstruktion.** Das Modell sieht alle Trades eines
+   abgeschlossenen Laufs; jede Lehre ist auf denselben Daten gefittet, gegen
+   die sie danach bewertet würde.
+2. **Unzählbare Kapazität.** Ein Baum hat zählbare Parameter, die man
+   regularisieren kann. Freitext-Lehren können beliebig spezifisch werden.
+   Was man nicht zählen kann, kann man nicht korrigieren.
+3. **Der Versuchszähler wird blind.** Das ist die schlimmste Eigenschaft. Eine
+   Lehre, die in einen Prompt wandert, ist eine auf denselben Daten selektierte
+   Hypothese, die der DSR-Nenner (ADR-032) nie sieht. Der Schutz wäre dann
+   nicht abgeschaltet, sondern **still falsch** — schlimmer, weil er weiter
+   grüne Zahlen liefert.
+4. **n ist zu klein.** `macross` auf BTC/1d: **33 Round-Trips in 7,6 Jahren**.
+5. **Narrativ-Fehlschluss obendrauf.** Ein Modell, das „warum ist das
+   gescheitert?" gefragt wird, antwortet immer. Es hat keinen Prior für „war
+   Rauschen"; eine Regression meldet wenigstens ein niedriges R².
+
+**Die Trennlinie: ein Journal, das dokumentiert, ist kein ML. Eines, das
+schlussfolgert, ist es.**
+
+**Konsequenz:** Gebaut wird nur der deterministische Teil.
+`qt.backtest.roundtrips` verdichtet Fills zu Round-Trips (Position von null
+nach null) und `qt trades` zeigt sie. Kein Modell, keine Deutung.
+
+Der interpretierende Teil ist nicht verworfen, sondern verlegt: er darf keine
+Freitext-Lehren erzeugen, die in Prompts wandern, sondern **Kandidaten, die
+durch das bestehende Phase-5-Tor gehen** — Sandbox, Walk-Forward, DSR gegen
+den Versuchszähler. Dann liegt das Lernen *innerhalb* der statistischen
+Kontrolle statt an ihr vorbei, und jede Lehre kostet einen Versuch. Technisch
+wäre das kein neuer Mechanismus, sondern ein zusätzlicher Briefing-Typ für den
+vorhandenen Generator.
+
+### Was die Messung sofort zeigte
+
+`macross` BTC/1d, 33 Round-Trips:
+
+| | Gewinner | Verlierer |
+|---|---|---|
+| Anzahl | 15 (45,5%) | 18 |
+| Rendite i.M. | +48,9% | −9,3% |
+| **Kostenanteil i.M.** | **9,1%** | **52,8%** |
+| Haltedauer i.M. | 78 Bars | 18 Bars |
+
+Die Verlierer zahlen die **Hälfte ihres Bruttoergebnisses an Gebühren**. Die
+Median-Rendite über alle Trades ist **−1,08%** bei einem Mittelwert von
++17,1%, und **der größte Einzelgewinn trägt 63% des Gesamtergebnisses**.
+
+Das ist die erwartete Signatur einer Trendfolge — wenige große Gewinner,
+viele kleine Verlierer — aber die Konzentration relativiert den OOS-Sharpe von
+0,31 aus ADR-035 erheblich: ohne den besten Trade bleibt wenig übrig. Keine
+dieser Zahlen war aus der Equity-Kurve ablesbar, und `Metrics.hit_rate` half
+nicht: sie zählt Bars mit positiver Rendite, nicht Trades mit positivem
+Ergebnis (48,6% gegen 45,5% sind hier zufällig ähnlich, messen aber
+Verschiedenes).
+
+**Bemerkenswert ist, was hier nicht steht:** keine Erklärung, warum die
+Verlierer verloren. Die Zahlen laden dazu ein ("kürzere Haltedauer, also
+Fehlausbrüche") — genau diese Einladung auszuschlagen ist der Zweck des ADR.
+
+---
+
 ## ADR-048 — Miner-Kapitulation: BTC-spezifisch, aber nicht von Zufall zu unterscheiden
 **Datum:** 2026-09-01
 

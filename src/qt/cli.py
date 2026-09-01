@@ -264,6 +264,64 @@ def backtest(
     typer.echo(f"\nTearsheet: {path}")
 
 
+@app.command("trades")
+def trades(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbol: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    limit: Annotated[int, typer.Option(help="Wieviele Trades einzeln zeigen")] = 15,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Round-Trips eines Laufs: was wurde wirklich gehandelt.
+
+    Beantwortet die Frage, die weder Equity-Kurve noch `Metrics.hit_rate`
+    beantworten: kam ein Verlust aus wenigen grossen Fehlgriffen oder aus
+    vielen kleinen Gebuehrenverlusten. `hit_rate` zaehlt Bars, nicht Trades.
+
+    Bewusst **ohne Interpretation** (ADR-049): hier steht, was passiert ist,
+    nicht warum. Aus Gewinnern und Verlierern Regeln abzuleiten waere
+    ueberwachtes Lernen auf denselben Daten, und zwar an der Deflated Sharpe
+    Ratio vorbei.
+    """
+    from qt.backtest.engine import run_backtest
+    from qt.backtest.roundtrips import round_trips, summary_table
+    from qt.data.store import read_bars, to_bars
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    symbols = _split(symbol)
+    strategy_obj = get(strategy)(symbols, tf)
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbols
+    }
+
+    result = run_backtest(strategy_obj, bars)
+    trades_list = round_trips(result)
+
+    typer.echo(f"\n{strategy}  |  {', '.join(symbols)}  |  {tf}")
+    typer.echo(f"{len(result.fills)} Fills -> {len(trades_list)} Round-Trips\n")
+
+    if trades_list:
+        typer.echo(
+            f"{'#':>3} {'Einstieg':>12} {'Ri':>3} {'Bars':>5} "
+            f"{'Rendite':>9} {'Kosten':>8} {'MAE':>8} {'MFE':>8}"
+        )
+        typer.echo("-" * 62)
+        for i, t in enumerate(trades_list[-limit:], start=max(1, len(trades_list) - limit + 1)):
+            typer.echo(
+                f"{i:>3} {t.entry_ts.date()!s:>12} {'L' if t.direction > 0 else 'S':>3} "
+                f"{t.bars_held:>5} {t.return_pct:>8.1%} {t.cost_share:>7.0%} "
+                f"{t.mae:>7.1%} {t.mfe:>7.1%}"
+            )
+        if len(trades_list) > limit:
+            typer.echo(f"    ... {len(trades_list) - limit} weitere davor")
+        typer.echo("")
+
+    typer.echo(summary_table(trades_list))
+
+
 @app.command("wf")
 def walkforward(
     strategy: Annotated[str, typer.Option(help="Strategiename")] = "trend",
