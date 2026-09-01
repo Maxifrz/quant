@@ -43,7 +43,7 @@ def test_clock_cannot_run_backwards():
         clock.advance(START + timedelta(hours=1))
 
 
-@pytest.mark.parametrize("strategy_name", ["trend", "meanrev"])
+@pytest.mark.parametrize("strategy_name", ["trend", "meanrev", "macross", "elliott"])
 def test_future_data_cannot_change_the_past(strategy_name):
     """Der Kern: Bars der Zukunft aendern die Vergangenheit nicht.
 
@@ -51,6 +51,15 @@ def test_future_data_cannot_change_the_past(strategy_name):
     Kursverlauf *danach*. Der gemeinsame Zeitraum muss bitidentisch sein.
     Wuerde irgendwo ueber den ganzen Datensatz statt ueber die Historie bis
     `now` gerechnet, faellt das hier auf.
+
+    **Die Liste hat lange nur `trend` und `meanrev` enthalten** -- also
+    ausgerechnet die beiden Strategien, die das Projekt als unbrauchbar
+    verworfen hat, waehrend `macross` (die einzige, die live auf einem
+    Paper-Konto laeuft) und `elliott` (Grundlage des Timeframe-Vergleichs
+    in ADR-047) ungeprueft blieben. Der wichtigste Test des Projekts deckte
+    die wichtigsten Strategien nicht ab (ADR-053). Wer hier eine Strategie
+    hinzufuegt, kostet Sekunden; wer eine weglaesst, verliert die Zusage
+    stillschweigend.
     """
     n_common = 400
     rng = np.random.default_rng(7)

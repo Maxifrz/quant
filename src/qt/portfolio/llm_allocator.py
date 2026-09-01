@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from qt.core.config import DEFAULT_LLM_MODEL
 from qt.llm import briefing as briefing_mod
 from qt.llm.client import AllocatorClient, LLMUnavailable
 from qt.portfolio.base import Allocation, AllocationContext, Allocator
@@ -98,7 +99,11 @@ class LLMAllocator(Allocator):
         self,
         client=None,
         min_history: int = 96,
-        model: str = "claude-opus-5",
+        # Importiert, nicht abgeschrieben. `qt.core.config` warnt ausdruecklich
+        # davor, denselben Default an zwei Stellen zu fuehren -- und genau hier
+        # stand die zweite Kopie: ein Modellwechsel in der Config haette diesen
+        # Pfad stumm auf dem alten Modell gelassen (ADR-053).
+        model: str = DEFAULT_LLM_MODEL,
         cache=None,
     ) -> None:
         # `client` ist einspritzbar, damit Tests und Laeufe ohne API-Zugang

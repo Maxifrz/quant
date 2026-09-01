@@ -219,7 +219,11 @@ def resample_store(
                     f"{source} -- ein Bucket laege dann nicht auf Bar-Grenzen."
                 )
             coarse = resample(raw, target)
-            write_bars(symbol, target, coarse, data_dir=data_dir)
+            # **Ersetzen, nicht vereinigen.** Eine abgeleitete Reihe ist eine
+            # Funktion ihrer Quelle; sie waechst nicht, sie wird neu gerechnet.
+            # Siehe `write_bars` -- vereinigen legt bei verschobenem
+            # Bucket-Raster zwei Reihen unter einen Namen (ADR-053).
+            write_bars(symbol, target, coarse, data_dir=data_dir, replace=True)
             written[(symbol, target)] = len(coarse)
 
     return written

@@ -260,3 +260,55 @@ def test_unbekannte_reihe_wird_benannt(tmp_path):
 def test_fehlende_datei_sagt_wie_man_sie_bekommt(tmp_path):
     with pytest.raises(FileNotFoundError, match="qt data onchain"):
         onchain.load_series("hash-rate", data_dir=tmp_path)
+
+
+def test_eine_einzige_luecke_legt_ein_ganzes_fenster_still():
+    """Die Zahl, die niemand hatte: wie **weit** eine Luecke reicht.
+
+    Dass ein fehlender Wert `nan` ergibt, war getestet. Wie lange dieser
+    Zustand anhaelt, nicht -- und das ist die Groesse, die zaehlt: die
+    Strategie liest ein Fenster von `slow + LAG_BARS` Werten, ein einziger
+    fehlender Tag blendet also jeden Bar aus, dessen Fenster ihn beruehrt.
+
+    Auf der echten Reihe sind das 11 fehlende Tage und **78 von 400** Bars
+    ohne Meinung, also 19,5% des letzten Jahres -- gemessen in ADR-053. Eine
+    Strategie, die ein Fuenftel der Zeit keine Meinung hat, haelt in dieser
+    Zeit stumm ihre alte Position.
+    """
+    n, slow = 200, 10
+    fehlt_bei = 150
+    tabelle = _hashrate(n)
+    del tabelle[START + fehlt_bei * TAG]
+
+    strategie = HashRibbon(["BTC/USD"], "1d", fast=5, slow=slow, hashrate=tabelle)
+    bars = _bars(n)
+
+    stumm = 0
+    store = _store_mit(bars[: strategie.warmup_bars])
+    for i in range(strategie.warmup_bars, n):
+        store = _store_mit(bars[: i + 1])
+        if math.isnan(strategie.on_bar("BTC/USD", store)):
+            stumm += 1
+
+    # `slow + LAG_BARS`, nicht `slow`: das gelesene Fenster ist um einen
+    # Wert breiter, als `ta.sma` verbraucht -- die Endlichkeitspruefung deckt
+    # ihn mit ab. Ein Bar mehr Stille je Luecke, bewusst stehengelassen: die
+    # Pruefung enger zu ziehen aenderte die Signalhistorie der Strategie fuer
+    # einen Bar Reaktionszeit.
+    erwartet = slow + LAG_BARS
+    assert stumm == erwartet, (
+        f"eine Luecke legt {stumm} Bars stumm, erwartet waren {erwartet} "
+        f"(slow + LAG_BARS) -- die Reichweite hat sich geaendert"
+    )
+
+
+def test_ohne_luecke_ist_die_strategie_durchgehend_meinungsstark():
+    """Gegenprobe: sonst misst der Test oben nur, dass die Reihe kurz ist."""
+    n, slow = 200, 10
+    strategie = HashRibbon(["BTC/USD"], "1d", fast=5, slow=slow, hashrate=_hashrate(n))
+    bars = _bars(n)
+    stumm = sum(
+        math.isnan(strategie.on_bar("BTC/USD", _store_mit(bars[: i + 1])))
+        for i in range(strategie.warmup_bars, n)
+    )
+    assert stumm == 0

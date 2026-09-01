@@ -264,6 +264,7 @@ FORBIDDEN_ATTR_NAMES: frozenset[str] = frozenset(
 # gar nicht erkennen *muss*: die Methode existiert auf diesem Objekt nicht,
 # egal unter welchem lokalen Namen der Kandidat es weiterreicht.
 _NP_EXPORTS: tuple[str, ...] = (
+    "arange",
     "array",
     "asarray",
     "mean",
@@ -321,8 +322,15 @@ SAFE_BUILTINS: dict[str, Any] = {
     "int": int,
     "bool": bool,
     "sorted": sorted,
-    "enumerate": enumerate,
-    "range": range,
+    # `range` und `enumerate` stehen hier bewusst **nicht** mehr.
+    #
+    # Sie sind ohne Schleifen ohnehin nutzlos -- und Schleifen sind verboten.
+    # Was uebrig blieb, war genau ein Nutzen: `sum(range(10**12))` laeuft
+    # stundenlang, ohne Speicher zu belegen, und der Probe-Timeout kann den
+    # Thread nur *melden*, nicht beenden (siehe `probe`). Ein
+    # `np.arange`-Bombe scheitert dagegen sofort an MemoryError und wird
+    # sauber als Fehlschlag berichtet. Wer einen Indexvektor braucht, nimmt
+    # `np.arange` (ADR-053).
     "True": True,
     "False": False,
     "None": None,
@@ -768,13 +776,32 @@ def probe(
     worker.start()
     worker.join(timeout_s)
     if worker.is_alive():
+        # **Der Timeout meldet, er beendet nicht.** Python-Threads lassen sich
+        # nicht toeten; der Kandidat rechnet im Hintergrund weiter, bis der
+        # Prozess endet. Der Kandidat gilt trotzdem als abgelehnt und der Lauf
+        # geht weiter -- was hier bleibt, sind CPU-Zyklen, keine Ergebnisse.
+        # Der praktisch einzige Weg zu einer *unbegrenzten* Schleife war
+        # `sum(range(...))`; `range` steht deshalb nicht mehr in
+        # SAFE_BUILTINS (ADR-053).
         return ProbeReport(
             ok=False,
             reason=f"Timeout: on_bar war nach {timeout_s}s nicht fertig",
             warmup_bars=state["warmup"],
             n_calls=state["calls"],
         )
-    return box["report"]
+    # `.get` statt `[...]`: `_run` faengt `Exception`, nicht `BaseException`.
+    # Stirbt der Thread an einer solchen, waere `box` leer -- und ein
+    # KeyError an dieser Stelle saehe aus wie ein Fehler der Sandbox statt
+    # wie einer des Kandidaten.
+    return box.get(
+        "report",
+        ProbeReport(
+            ok=False,
+            reason="Probelauf ohne Ergebnis abgebrochen",
+            warmup_bars=state["warmup"],
+            n_calls=state["calls"],
+        ),
+    )
 
 
 def _probe_body(

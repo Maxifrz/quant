@@ -19,10 +19,21 @@ ausschließlich in zwei austauschbaren Komponenten: der Clock und dem Broker.
 ```
                   ┌────────────────┐
 BacktestClock  →  │                │  →  SimBroker    (Parquet-Replay, simulierte Fills)
-PaperClock     →  │   qt.engine    │  →  SimBroker    (Live-Daten, simulierte Fills)
-LiveClock      →  │                │  →  CcxtBroker   (echte Orders)
+BacktestClock  →  │   qt.engine    │  →  SimBroker    (Paper: live gezogene Bars, simulierte Fills)
+LiveClock      →  │                │  →  CcxtBroker   (Phase 7, nicht gebaut)
                   └────────────────┘
 ```
+
+Es sind **zwei** Uhrenklassen, nicht drei: `qt.core.clock` kennt
+`BacktestClock` und `LiveClock`. Hier stand lange eine `PaperClock`, die es
+nie gab (ADR-053).
+
+Und der Paper-Tick benutzt tatsächlich `BacktestClock` — das ist kein
+Versehen, sondern der Kern von ADR-037: **jeder Tick ist ein vollständiger
+Replay der bekannten Historie**, also derselbe Vorgang wie ein Backtest, nur
+mit einem Cursor darauf, bis wohin schon entschieden wurde. Die reale Uhr
+kommt separat als *Grenze* dazu (`events = [e for e in events if e.ts <= now]`),
+nicht als Taktgeber. `LiveClock` wartet auf Phase 7.
 
 Backtest-vs-Live-Divergenz entsteht in der Praxis fast immer dadurch, dass es zwei
 getrennte Codepfade gibt: einer, der über einen DataFrame vektorisiert, und einer, der
@@ -286,20 +297,27 @@ eines Ensembles aus echten historischen Eigenschaften), er ist beschränkbar
 |---|---|
 | `qt.core` | Clock, Events, Typen, Config — die Begriffe, die alle teilen |
 | `qt.data` | Ingest (ccxt), Parquet-Store, Integritätsprüfung |
-| `qt.features` | Point-in-Time-Feature-Store, TA-Bausteine, Regime-Features |
-| `qt.strategy` | Strategie-Interface, Registry, Bibliothek (Trend, Mean-Reversion, TimesFM-Forecast) |
+| `qt.features` | Point-in-Time-Feature-Store, TA-Bausteine, Order-Flow-Aggregation |
+| `qt.strategy` | Strategie-Interface, Registry, Bibliothek (`trend`, `meanrev`, `macross`, `elliott`, `hashribbon`, `orderflow`, `timesfm`) |
 | `qt.backtest` | Engine, SimBroker, Kosten, Metriken, Walk-Forward |
 | `qt.portfolio` | Baselines, LLM-Allokator, Risk-Engine |
 | `qt.sim` | Pfad-Ensembles: Bootstrap, GARCH/HMM, Szenario-Priors, CVaR-Zielfunktion |
 | `qt.research` | Strategie-Generator, Sandbox, Screening, Registry |
 | `qt.llm` | Clients, Anbieter-Naht (Anthropic/NIM), Briefing-Bau, Output-Schemas, Cache |
-| `qt.live` | Runner, CCXT-Broker, Reconciliation, Kill-Switch |
+| `qt.live` | Paper-Tick, Kontozustand, Kill-Switch |
+| `qt.ml` | Labeling, Merkmalspanel, gepurgte Validierung (ADR-050) |
 | `qt.report` | Tearsheets, Tagesreport |
 
-Gebaut sind aktuell alle: `core`, `data`, `features`, `strategy`, `backtest`,
-`portfolio`, `llm`, `sim`, `research`, `live`, `report`. Von `qt.live` fehlt
-nur der `CcxtBroker` — Phase 7 ist eine eigene Entscheidung, siehe
-`ROADMAP.md`.
+Gebaut sind `core`, `data`, `features`, `strategy`, `backtest`, `portfolio`,
+`llm`, `sim`, `research`, `ml`, `live`, `report`.
+
+**Was in `qt.live` fehlt, und warum es zwei Dinge sind:** `broker_ccxt`
+(echte Orders) gehört zu Phase 7 und ist eine eigene Entscheidung mit echtem
+Geld. `reconcile` (Soll-gegen-Ist) ist *absichtlich* nicht gebaut: ein
+Abgleich braucht zwei unabhängige Quellen, und mit nur einem `SimBroker` gibt
+es nichts, wogegen man abgleichen könnte. Hier stand lange „fehlt nur der
+`CcxtBroker`" — die ROADMAP sagte gleichzeitig das Richtige, und zwei
+Dokumente über denselben Gegenstand liefen auseinander (ADR-053).
 
 ---
 
@@ -385,16 +403,38 @@ atomar (Schreiben in eine temporaere Datei, dann `replace`) -- ein Absturz
 darf hoechstens die Zeit bis zum naechsten Aufruf kosten, nie einen bereits
 gebuchten Fill.
 
-### Dieselbe Risk-Engine, keine zweite
+### Dieselbe Risk-Engine — aber nicht dieselbe Einstellung
 
 Der Kill-Switch ist keine neue Komponente. `qt.portfolio.risk.RiskEngine`
-existiert seit Phase 2 fuer den Portfolio-Pfad; der Paper-Tick ruft
-`risk.apply()` mit genau demselben `RiskState`-Aufbau wie
-`qt.backtest.portfolio_engine` auf. Der einzige neue Baustein ist
-`RiskEngine.restore_halted()`: da jeder Tick die Engine neu aufbaut, muss der
-Kill-Switch-Zustand explizit aus dem persistierten Konto uebernommen werden --
-sonst vergaesse ein frisch aufgebauter `RiskEngine` bei jedem Tick, dass er
-schon einmal angehalten hat, und der Kill-Switch waere keiner.
+existiert seit Phase 2 fuer den Portfolio-Pfad; der Paper-Tick ruft dieselbe
+`risk.apply()`. Neu ist `RiskEngine.restore_halted()`: da jeder Tick die
+Engine neu aufbaut, muss der Kill-Switch-Zustand explizit aus dem
+persistierten Konto uebernommen werden -- sonst vergaesse ein frisch
+aufgebauter `RiskEngine` bei jedem Tick, dass er schon einmal angehalten hat.
+
+**Hier stand lange, der Tick rufe die Engine "mit genau demselben
+`RiskState`-Aufbau" wie die Portfolio-Engine auf. Das war falsch, in zwei
+Richtungen** (ADR-053):
+
+| | Einzelstrategie-Backtest | Portfolio-Backtest | Paper-Tick |
+|---|---|---|---|
+| Risk-Engine | **keine** | ja, ganzes Portfolio | ja |
+| Gewicht, das ankommt | 1,0 | geformt | **jetzt** 1,0 |
+
+`qt backtest` und `qt wf` -- also die Quelle *jeder* gemessenen Zahl dieses
+Projekts -- rufen ueberhaupt keine Risk-Engine auf. Der Paper-Tick tat es mit
+den Portfolio-Defaults und handelte damit rund ein Viertel der Groesse: bei
+BTCs Tagesvola von 0,44 skalierte das Vol-Targeting auf 0,46, der Symbol-Cap
+schnitt auf 0,25. Das Konto pruefte also nicht die Strategie nach, gegen die
+es verglichen wurde, und der Kill-Switch bei 20% Kontodrawdown haette rund
+80% Marktdrawdown gebraucht.
+
+**Die Trennung, die daraus folgt: die Engine *sichert* immer, sie *formt* nur
+auf Ansage.** `RiskConfig.vol_targeting` und `max_weight_per_symbol` sind im
+Paper-Tick per Default aus (`qt paper run --shape-risk` schaltet sie an), der
+Drawdown-Kill-Switch ist immer an. Und der Tick uebergibt der Engine jetzt
+**alle** Symbole des Kontos auf einmal -- vorher sah sie je Bar ein einzelnes,
+womit `max_gross_exposure` als Konto-Grenze wirkungslos war.
 
 ### Die reale Uhr ist eine zusaetzliche Grenze, keine automatische
 

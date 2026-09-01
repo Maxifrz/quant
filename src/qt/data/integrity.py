@@ -40,6 +40,7 @@ class IntegrityReport:
     non_monotonic: int = 0
     ohlc_violations: int = 0
     non_positive: int = 0
+    too_fine: int = 0
 
     @property
     def missing_bars(self) -> int:
@@ -57,29 +58,45 @@ class IntegrityReport:
 
         Luecken allein sind kein K.o. -- Exchanges haben Ausfaelle. Kaputte
         Bars sind einer: sie erzeugen falsche Signale statt fehlender.
+
+        `too_fine` ebenfalls: eine Reihe, deren Bars enger stehen als ihr
+        Timeframe, ist keine Reihe dieses Timeframes.
         """
         return (
             self.duplicates == 0
             and self.non_monotonic == 0
             and self.ohlc_violations == 0
             and self.non_positive == 0
+            and self.too_fine == 0
         )
 
     def summary(self) -> str:
         if self.n_bars == 0:
             return f"{self.symbol:>10} {self.timeframe:>3}  LEER"
         flag = "ok " if self.ok else "!! "
-        return (
+        zeile = (
             f"{flag}{self.symbol:>10} {self.timeframe:>3}  "
             f"{self.n_bars:>7,} Bars  "
             f"{self.start:%Y-%m-%d} .. {self.end:%Y-%m-%d}  "
             f"Abdeckung {self.coverage:6.2%}  "
             f"Luecken {len(self.gaps):>3} ({self.missing_bars:,} Bars)"
         )
+        if self.too_fine:
+            zeile += f"  !! {self.too_fine:,} Bars enger als {self.timeframe}"
+        return zeile
 
 
 def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
-    """Einen Datensatz auf die vier Fehlerklassen pruefen, die real vorkommen."""
+    """Einen Datensatz auf die fuenf Fehlerklassen pruefen, die real vorkommen.
+
+    Die fuenfte -- `too_fine`, Bars enger als ihr Timeframe -- kam spaet dazu
+    und aus einem konkreten Anlass: `find_gaps` sucht ausschliesslich nach
+    Abstaenden, die zu **gross** sind. Eine 2d-Datei, in die versehentlich
+    eine zweite, um einen Tag verschobene Reihe gemischt wurde, hatte damit
+    lauter 1-Tages-Abstaende und bekam ein makelloses Zeugnis: "ok, 100.00%
+    Abdeckung, 0 Luecken" (ADR-053). Ein Pruefer, der nur in eine Richtung
+    schaut, uebersieht die andere zuverlaessig.
+    """
     if df.empty:
         return IntegrityReport(symbol, timeframe, 0, None, None)
 
@@ -107,7 +124,19 @@ def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
     )
 
     report.gaps = find_gaps(ts, timeframe)
+    report.too_fine = count_too_fine(ts, timeframe)
     return report
+
+
+def count_too_fine(ts: pd.Series, timeframe: str) -> int:
+    """Bars, die enger auf ihren Vorgaenger folgen als der Timeframe erlaubt.
+
+    Duplikate (Abstand exakt null) zaehlen hier nicht mit -- die haben ihre
+    eigene Kennzahl und ihre eigene Ursache.
+    """
+    step = pd.Timedelta(seconds=timeframe_seconds(timeframe))
+    deltas = ts.diff().dropna()
+    return int(((deltas > pd.Timedelta(0)) & (deltas < step)).sum())
 
 
 def find_gaps(ts: pd.Series, timeframe: str) -> list[Gap]:

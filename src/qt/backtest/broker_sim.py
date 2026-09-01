@@ -126,25 +126,44 @@ class SimBroker:
     def _update_position(position: Position, qty: float, price: float) -> None:
         """Menge und Durchschnittspreis fortschreiben.
 
-        Der Durchschnittspreis wird nur beim Aufstocken neu gemischt. Beim
-        Reduzieren bleibt er stehen, beim Drehen startet er neu -- sonst
-        beschreibt er eine Position, die es nicht mehr gibt.
+        Vier Faelle, und jeder behandelt den Einstandspreis anders:
+
+            eroeffnen (aus flach)   -> Einstand ist der Fill-Preis
+            aufstocken              -> Einstand mengengewichtet neu gemischt
+            reduzieren              -> Einstand bleibt stehen
+            drehen                  -> Einstand startet neu beim Fill-Preis
+
+        Beim Reduzieren stehenzulassen ist kein Detail: ein neu gemischter
+        Einstand beschriebe eine Position, die es so nie gab.
+
+        Die frueheren verschachtelten Bedingungen liessen genau einen Fall
+        durchfallen -- eine **Short-Position aus flach**: mit `position.qty=0`
+        und `qty<0` sind `(0>0)` und `(new_qty>0)` beide falsch, der innere
+        Zweig griff nicht, und `avg_price` blieb auf 0.0 stehen. Sichtbar
+        wurde das nirgends, weil das Projekt long-only handelt -- der Wert
+        haette aber im Tagesreport, in der Zustandsdatei und im
+        Rueckfallpfad von `equity()` gestanden (ADR-053).
         """
         new_qty = position.qty + qty
-        if position.qty == 0 or (position.qty > 0) != (qty > 0):
-            if abs(new_qty) < 1e-12:
-                position.qty = 0.0
-                position.avg_price = 0.0
-                return
-            if (position.qty > 0) != (new_qty > 0):
-                position.qty = new_qty
-                position.avg_price = price
-                return
-        else:
+
+        if abs(new_qty) < 1e-12:  # glattgestellt
+            position.qty = 0.0
+            position.avg_price = 0.0
+            return
+
+        eroeffnet = position.qty == 0.0
+        gegenlaeufig = not eroeffnet and (position.qty > 0) != (qty > 0)
+        gedreht = gegenlaeufig and (position.qty > 0) != (new_qty > 0)
+
+        if eroeffnet or gedreht:
+            position.avg_price = price
+        elif not gegenlaeufig:  # aufgestockt
             total = abs(position.qty) + abs(qty)
             position.avg_price = (
                 position.avg_price * abs(position.qty) + price * abs(qty)
             ) / total
+        # reduziert: Einstand bleibt, wie er ist.
+
         position.qty = new_qty
 
     # ------------------------------------------------------------------

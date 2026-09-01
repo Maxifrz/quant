@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from qt.data.ingest import resample
+from qt.data.ingest import resample, resample_store
 from qt.data.integrity import check
 from qt.data.store import read_bars, to_bars, write_bars
 
@@ -100,7 +101,7 @@ def test_resample_store_schreibt_groebere_bars_in_den_store(tmp_path):
     """
     from qt.data.ingest import resample_store
 
-    write_bars("BTC/USD", "1d", _frame(14, freq="1d"), data_dir=tmp_path)
+    write_bars("BTC/USD", "1d", _frame(14, freq="1D"), data_dir=tmp_path)
     geschrieben = resample_store(["BTC/USD"], "1d", ["2d"], data_dir=tmp_path)
 
     assert geschrieben[("BTC/USD", "2d")] == 7
@@ -118,6 +119,119 @@ def test_resample_store_lehnt_krumme_vielfache_ab(tmp_path):
     # Aggregation ergaebe stillschweigend falsche Hochs und Tiefs.
     from qt.data.ingest import resample_store
 
-    write_bars("BTC/USD", "2d", _frame(10, freq="2d"), data_dir=tmp_path)
+    write_bars("BTC/USD", "2d", _frame(10, freq="2D"), data_dir=tmp_path)
     with pytest.raises(ValueError, match="Vielfaches"):
         resample_store(["BTC/USD"], "2d", ["3d"], data_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Abgeleitete Reihen: ersetzen statt vereinigen (ADR-053)
+# ---------------------------------------------------------------------------
+
+
+def _tagesreihe(tmp_path, n=40, symbol="X/USD"):
+    ts = pd.date_range("2020-01-01", periods=n, freq="D", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "ts": ts,
+            "open": np.arange(n, dtype=float) + 100.0,
+            "high": np.arange(n, dtype=float) + 101.0,
+            "low": np.arange(n, dtype=float) + 99.0,
+            "close": np.arange(n, dtype=float) + 100.5,
+            "volume": np.ones(n),
+        }
+    )
+    write_bars(symbol, "1d", df, data_dir=tmp_path)
+    return symbol
+
+
+def test_resample_store_ist_idempotent(tmp_path):
+    """Zweimal ableiten muss dasselbe ergeben wie einmal.
+
+    Frueher vereinigte `write_bars` auch abgeleitete Reihen. Verschob sich das
+    Bucket-Raster zwischen zwei Laeufen -- was real passiert ist --, entstanden
+    zwei ineinandergelegte Reihen unter einem Namen: aus 1.396 2d-Bars wurden
+    2.796 im Ein-Tages-Abstand.
+    """
+    symbol = _tagesreihe(tmp_path)
+    resample_store([symbol], "1d", ["2d"], data_dir=tmp_path)
+    einmal = read_bars(symbol, "2d", data_dir=tmp_path)
+    resample_store([symbol], "1d", ["2d"], data_dir=tmp_path)
+    zweimal = read_bars(symbol, "2d", data_dir=tmp_path)
+
+    pd.testing.assert_frame_equal(einmal, zweimal)
+
+
+def test_resample_store_raeumt_ein_altes_raster_weg(tmp_path):
+    """Der Befehl muss reparieren koennen, nicht nur anhaengen."""
+    symbol = _tagesreihe(tmp_path)
+    korrekt = resample(read_bars(symbol, "1d", data_dir=tmp_path), "2d")
+
+    # Ein um einen Tag verschobenes Raster, wie es real im Store lag.
+    verschoben = korrekt.copy()
+    verschoben["ts"] = verschoben["ts"] + pd.Timedelta(days=1)
+    write_bars(symbol, "2d", verschoben, data_dir=tmp_path)
+    assert len(read_bars(symbol, "2d", data_dir=tmp_path)) == len(korrekt)
+
+    resample_store([symbol], "1d", ["2d"], data_dir=tmp_path)
+    danach = read_bars(symbol, "2d", data_dir=tmp_path)
+
+    assert len(danach) == len(korrekt), (
+        "das alte Raster steht noch in der Datei -- vereinigt statt ersetzt"
+    )
+    assert set(danach["ts"]) == set(korrekt["ts"])
+
+
+def test_write_bars_vereinigt_weiterhin_wenn_nicht_ersetzt_wird(tmp_path):
+    """`replace` darf nur dort greifen, wo es ausdruecklich gesetzt ist.
+
+    Gezogene Bars sind ein Zuwachs, keine Funktion -- ein zweiter Pull mit
+    ueberlappendem Zeitraum muss unschaedlich bleiben.
+    """
+    symbol = _tagesreihe(tmp_path, n=10)
+    weitere = pd.DataFrame(
+        {
+            "ts": pd.date_range("2020-01-11", periods=5, freq="D", tz="UTC"),
+            "open": np.full(5, 1.0), "high": np.full(5, 2.0),
+            "low": np.full(5, 0.5), "close": np.full(5, 1.5),
+            "volume": np.ones(5),
+        }
+    )
+    write_bars(symbol, "1d", weitere, data_dir=tmp_path)
+    assert len(read_bars(symbol, "1d", data_dir=tmp_path)) == 15
+
+
+def test_integritaet_erkennt_bars_die_enger_stehen_als_ihr_timeframe(tmp_path):
+    """Die Luecke, die die Korruption unsichtbar gemacht hat.
+
+    `find_gaps` sucht nur nach Abstaenden, die zu **gross** sind. Eine
+    1d-Reihe unter dem Etikett `2d` bekam deshalb ein makelloses Zeugnis:
+    "ok, 100.00% Abdeckung, 0 Luecken".
+    """
+    symbol = _tagesreihe(tmp_path, n=20)
+    tages_reihe = read_bars(symbol, "1d", data_dir=tmp_path)
+
+    falsch = check(symbol, "2d", tages_reihe)
+    assert falsch.too_fine == 19
+    assert not falsch.ok
+    assert "enger als 2d" in falsch.summary()
+
+    richtig = check(symbol, "1d", tages_reihe)
+    assert richtig.too_fine == 0
+    assert richtig.ok, "die Gegenprobe muss sauber durchgehen"
+
+
+def test_duplikate_zaehlen_nicht_als_zu_feine_abstaende(tmp_path):
+    """Sie haben ihre eigene Kennzahl und ihre eigene Ursache."""
+    ts = pd.Timestamp("2020-01-01", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "ts": [ts, ts, ts + pd.Timedelta(days=1)],
+            "open": [1.0, 1.0, 1.0], "high": [1.0, 1.0, 1.0],
+            "low": [1.0, 1.0, 1.0], "close": [1.0, 1.0, 1.0],
+            "volume": [1.0, 1.0, 1.0],
+        }
+    )
+    report = check("X/USD", "1d", df)
+    assert report.duplicates == 1
+    assert report.too_fine == 0

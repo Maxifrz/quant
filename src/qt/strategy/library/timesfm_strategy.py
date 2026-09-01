@@ -300,7 +300,11 @@ class TimesFMStrategy(Strategy):
 
         state = self._state.setdefault(symbol, {"weight": 0.0, "since": None})
         since = state["since"]
-        if since is not None and since < self.params["forecast_every"]:
+        # `since + 1`, nicht `since`: nach einem Forecast steht `since` auf 0,
+        # der Bar danach ist also der erste gecachte. Ohne das Plus wurden bei
+        # `forecast_every=24` in Wahrheit 24 Bars gecacht und erst der 25.
+        # neu gerechnet (ADR-053).
+        if since is not None and since + 1 < self.params["forecast_every"]:
             state["since"] = since + 1
             self.telemetry.cached += 1
             return state["weight"]

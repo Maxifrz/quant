@@ -41,7 +41,8 @@ Begruendung der Reihenfolge:
 * **Vol-Targeting vor den Caps**, weil es als einziger Schritt Gewichte
   *vergroessern* kann. Danach gecappt zu werden ist der Sinn der Sache;
   liefe es hinterher, koennte es einen frisch gesetzten Cap wieder
-  durchbrechen.
+  durchbrechen. Es ist zugleich der einzige Schritt, der sich abschalten
+  laesst (`vol_targeting=False`) -- siehe `_vol_target` und ADR-053.
 * **Brutto-Exposure zuletzt**, weil jeder vorherige Schritt die Summe
   veraendert. Es ist die einzige Grenze fuer das Konto als Ganzes, also
   muss sie beim Verlassen der Funktion gelten. Sie skaliert nur nach unten
@@ -94,6 +95,13 @@ class RiskConfig(BaseModel):
         default=96,
         ge=2,
         description="Bars fuer die realisierte Vola (siehe realised_vol_map).",
+    )
+    vol_targeting: bool = Field(
+        default=True,
+        description="Ob Schritt 2 die Gewichte invers zur Vola skaliert. "
+        "Aus, wenn die Engine ein Ergebnis reproduzieren soll, das ohne sie "
+        "gemessen wurde -- ein zeitvariabler Faktor auf die Position ist "
+        "keine Groessenaenderung, sondern eine andere Strategie (ADR-053).",
     )
     max_weight_per_symbol: float = Field(
         default=0.25,
@@ -314,7 +322,17 @@ class RiskEngine(RiskLimits):
 
         Bei unbekannter Vola (`nan`, siehe `RiskState.realised_vol`) wird
         *nicht* hochskaliert: unbekannt ist kein Synonym fuer niedrig.
+
+        `vol_targeting=False` schaltet den Schritt ganz ab. Das ist keine
+        Bequemlichkeit, sondern die Voraussetzung dafuer, dass ein Konto ein
+        Ergebnis nachprueft, das ohne Vol-Targeting gemessen wurde: der
+        Faktor ist zeitvariabel, er skaliert die Kurve also nicht nur, er
+        formt sie um -- und der Sharpe, den er erzeugt, ist nicht der, gegen
+        den verglichen wird (ADR-053).
         """
+        if not self.cfg.vol_targeting:
+            return dict(weights)
+
         out: PortfolioWeights = {}
         for symbol, weight in weights.items():
             if weight == 0.0:

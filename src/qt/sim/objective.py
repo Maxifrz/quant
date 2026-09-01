@@ -496,6 +496,14 @@ def _exposed_outcomes(
     wuerde ein negativer Kontostand mit dem naechsten Verlust wieder
     *steigen* -- ein Vorzeichenfehler, der ausgerechnet die schlimmsten
     Pfade beschoenigt, also genau die, auf die es beim CVaR ankommt.
+
+    **Die Kosten sind genau ein Round-Trip ueber den ganzen Horizont**,
+    proportional zum Exposure. Das unterstellt Kaufen und Liegenlassen; eine
+    Strategie, die im Horizont mehrfach umschichtet, zahlt in Wirklichkeit ein
+    Vielfaches. Fuer die Frage dieser Zielfunktion -- wieviel Exposure haelt
+    die Verlustgrenze -- ist das vertretbar, aber es heisst auch: die Kosten
+    unterscheiden die Gitterpunkte kaum, und verschieden aktive Strategien
+    sind hier nicht vergleichbar abgebildet (ADR-053).
     """
     growth = np.maximum(1.0 + exposure * paths, 0.0)
     curves = np.cumprod(growth, axis=1)

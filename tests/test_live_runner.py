@@ -514,3 +514,201 @@ def test_kaltes_und_warmes_symbol_werden_getrennt_gezogen(tmp_path, monkeypatch)
 
     assert gezogen["BTC/USD"] < 10, "warmes Symbol nur auffrischen"
     assert gezogen["ETH/USD"] >= 52, "kaltes Symbol braucht die volle Historie"
+
+
+# --------------------------------------------------------------------------
+# Die Risk-Engine im Paper-Konto (ADR-053)
+# --------------------------------------------------------------------------
+
+
+def test_paper_default_handelt_dieselbe_groesse_wie_der_backtest():
+    """Der Fund, der die laufende Evidenz verdorben hat.
+
+    `qt backtest` und `qt wf` rufen **keine** Risk-Engine auf -- jede
+    gemessene macross-Zahl des Projekts stammt von einem Gewicht 1,0. Mit den
+    Portfolio-Defaults (Vol-Targeting, 25% je Symbol) handelte das Paper-Konto
+    rund ein Viertel davon und damit eine andere Strategie.
+
+    Geprueft wird hier die Konfiguration, die `qt paper run` setzt, nicht die
+    CLI selbst -- der Wert soll festliegen, egal wer ihn baut.
+    """
+    from datetime import datetime, timezone
+
+    from qt.portfolio.base import RiskState
+    from qt.portfolio.risk import RiskEngine
+
+    cfg = RiskConfig(max_drawdown=0.20, vol_targeting=False, max_weight_per_symbol=1.0)
+    state = RiskState(
+        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        equity=100_000.0,
+        peak_equity=100_000.0,
+        realised_vol={"BTC/USD": 0.44},  # gemessene BTC-Tagesvola
+    )
+    angepasst, gruende = RiskEngine(cfg).apply({"BTC/USD": 1.0}, state)
+
+    assert angepasst["BTC/USD"] == pytest.approx(1.0), (
+        "das Paper-Konto handelt nicht die Groesse, gegen die es verglichen wird"
+    )
+    assert not gruende, "kein Eingriff, also auch keine Begruendung"
+
+
+def test_der_kill_switch_bleibt_trotz_abgeschalteter_formung():
+    """Formung aus heisst nicht Sicherung aus.
+
+    Ohne diesen Test waere `vol_targeting=False` ein Weg, versehentlich auch
+    den Kill-Switch stillzulegen.
+    """
+    from datetime import datetime, timezone
+
+    from qt.portfolio.base import RiskState
+    from qt.portfolio.risk import RiskEngine
+
+    cfg = RiskConfig(max_drawdown=0.20, vol_targeting=False, max_weight_per_symbol=1.0)
+    state = RiskState(
+        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        equity=79_000.0,
+        peak_equity=100_000.0,
+        realised_vol={"BTC/USD": 0.44},
+    )
+    angepasst, gruende = RiskEngine(cfg).apply({"BTC/USD": 1.0}, state)
+
+    assert angepasst["BTC/USD"] == 0.0
+    assert any("Kill-Switch" in g for g in gruende)
+
+
+def test_das_brutto_limit_gilt_fuer_das_konto_und_nicht_je_symbol(tmp_path):
+    """A2: die Engine muss alle Symbole auf einmal sehen.
+
+    Der Tick hat die Engine frueher je Bar mit einem Ein-Symbol-Dict
+    gefuettert. `max_gross_exposure` ist aber eine Grenze fuer das Konto als
+    Ganzes -- so geprueft haetten drei Symbole in Summe das Dreifache
+    durchgelassen, ohne dass irgendetwas fehlschlaegt.
+    """
+    warmup, trend = _historie(trend_n=40)
+    for symbol in ("BTC/USD", "ETH/USD"):
+        _schreibe(tmp_path, symbol, warmup)
+
+    def factory():
+        return MovingAverageCross(["BTC/USD", "ETH/USD"], "1d", fast=5, slow=20)
+
+    risk_cfg = RiskConfig(
+        vol_targeting=False, max_weight_per_symbol=1.0, max_gross_exposure=1.0
+    )
+    run_paper_tick(
+        factory, ["BTC/USD", "ETH/USD"], "1d", data_dir=tmp_path,
+        state_dir=tmp_path, refresh=False, risk_cfg=risk_cfg,
+    )
+    for symbol in ("BTC/USD", "ETH/USD"):
+        _schreibe(tmp_path, symbol, trend)
+    run_paper_tick(
+        factory, ["BTC/USD", "ETH/USD"], "1d", data_dir=tmp_path,
+        state_dir=tmp_path, refresh=False, risk_cfg=risk_cfg,
+    )
+
+    state = PaperState.load(
+        state_path("macross", ["BTC/USD", "ETH/USD"], "1d", tmp_path)
+    )
+    brutto = sum(abs(w) for w in state.target.values())
+    assert brutto > 1.0, (
+        "Testaufbau kaputt: beide Strategien muessen long sein, sonst prueft "
+        "der Test die Grenze gar nicht"
+    )
+    positionswert = sum(
+        abs(p["qty"]) * p["avg_price"] for p in state.positions.values()
+    )
+    assert positionswert <= state.peak_equity * 1.05, (
+        f"Brutto-Exposure {positionswert:,.0f} ueber dem Konto "
+        f"{state.peak_equity:,.0f} -- die Grenze wurde je Symbol geprueft "
+        f"statt fuer das Konto"
+    )
+
+
+def test_routine_eingriffe_landen_nicht_in_den_halt_gruenden(tmp_path):
+    """C4: `halt_reasons` ist fuer Halts, nicht fuer den Alltag.
+
+    Ein greifender Symbol-Cap meldet sich in **jedem** Bar mit Position.
+    Landete er in `halt_reasons`, stuende beim naechsten echten Halt dort die
+    letzte Cap-Meldung -- und genau diese drei Zeilen zeigt der Tagesreport.
+    """
+    warmup, trend = _historie(trend_n=40)
+    _schreibe(tmp_path, "BTC/USD", warmup)
+    # Formung an, damit der Cap ueberhaupt greift.
+    risk_cfg = RiskConfig(max_weight_per_symbol=0.25, vol_targeting=True)
+    run_paper_tick(
+        _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path,
+        refresh=False, risk_cfg=risk_cfg,
+    )
+    _schreibe(tmp_path, "BTC/USD", trend)
+    report = run_paper_tick(
+        _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path,
+        refresh=False, risk_cfg=risk_cfg,
+    )
+
+    state = PaperState.load(state_path("macross", ["BTC/USD"], "1d", tmp_path))
+    assert not report.halted
+    assert state.risk_notes, (
+        "Testaufbau kaputt: der Cap muss greifen, sonst prueft der Test nichts"
+    )
+    assert any("begrenzt" in n for n in state.risk_notes)
+    assert state.halt_reasons == [], (
+        f"Routine-Meldung in den Halt-Gruenden: {state.halt_reasons}"
+    )
+
+
+def test_ein_alter_kontostand_ohne_neue_felder_laedt_weiter(tmp_path):
+    """Ein Konto laeuft ueber Wochen, der Code aendert sich dabei."""
+    import json
+
+    path = tmp_path / "alt.json"
+    path.write_text(json.dumps({"cash": 100_000.0, "peak_equity": 100_000.0}))
+    state = PaperState.load(path)
+    assert state.cash == 100_000.0
+    assert state.risk_notes == []
+
+    # Und umgekehrt: ein Feld, das diese Fassung nicht kennt, wirft nicht.
+    path.write_text(json.dumps({"cash": 1.0, "erfundenes_feld": 42}))
+    assert PaperState.load(path).cash == 1.0
+
+
+# --------------------------------------------------------------------------
+# Der Tagesreport bewertet mit Preisen, nicht mit dem Einstand (ADR-053)
+# --------------------------------------------------------------------------
+
+
+def _konto_mit_position() -> PaperState:
+    state = PaperState.fresh(100_000.0)
+    state.cash = 50_000.0
+    state.positions = {"BTC/USD": {"qty": 1.0, "avg_price": 50_000.0}}
+    state.peak_equity = 100_000.0
+    return state
+
+
+def test_der_report_bewertet_positionen_mit_dem_letzten_kurs():
+    """Frueher stand hier die Kostenbasis unter der Ueberschrift 'Preise'.
+
+    Eine verdoppelte Position bewegte die Zahl nicht -- und neben dem korrekt
+    gefuehrten Hoechststand sah das aus wie ein Drawdown, den es nicht gab.
+    """
+    text = render(
+        _konto_mit_position(), "macross", ["BTC/USD"], prices={"BTC/USD": 100_000.0}
+    )
+    assert "150,000.00" in text, (
+        "Position nicht zum Marktpreis bewertet -- der Report zeigt den Einstand"
+    )
+    assert "letzte Schlusskurse" in text
+
+
+def test_der_report_erfindet_kein_eigenkapital_ohne_preise():
+    """Lieber keine Zahl als eine, die etwas anderes misst als ihr Etikett."""
+    text = render(_konto_mit_position(), "macross", ["BTC/USD"], prices=None)
+    assert "nicht bewertbar" in text
+    assert "100,000.00" not in text.split("Hoechststand")[0], (
+        "ohne Preise darf kein Eigenkapital ausgewiesen werden"
+    )
+
+
+def test_ein_flaches_konto_braucht_keine_preise():
+    state = PaperState.fresh(100_000.0)
+    text = render(state, "macross", ["BTC/USD"], prices=None)
+    assert "Eigenkapital: 100,000.00" in text
+    assert "nicht bewertbar" not in text

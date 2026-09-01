@@ -62,8 +62,8 @@ if TYPE_CHECKING:
     # Nur fuer die Typpruefung: die Methoden importieren diese Namen zur
     # Laufzeit selbst, direkt vor Gebrauch. Ohne diesen Block waeren die
     # Annotationen in Anfuehrungszeichen fuer jeden Pruefer unaufloesbare
-    # Namen -- und ein `# noqa` daneben wuerde die Meldung verstecken statt
-    # den Namen bekannt zu machen.
+    # Namen -- und eine Linter-Ausnahme daneben wuerde die Meldung verstecken
+    # statt den Namen bekannt zu machen.
     #
     # Kein Ladezeit-Argument: `qt.llm.schemas` steht ohnehin oben im
     # Modulkopf, pydantic ist beim Import dieser Datei also bereits da.
@@ -434,9 +434,11 @@ verwirft den Kandidaten ungetestet:
 - Kein `eval`, `exec`, `open`, `getattr`, `setattr`, `globals`, `type`,
   `super`, `object`, `dir`, `vars`.
 - An eingebauten Funktionen gibt es nur: `len`, `abs`, `min`, `max`, `sum`,
-  `round`, `float`, `int`, `bool`, `sorted`, `enumerate`, `range`.
+  `round`, `float`, `int`, `bool`, `sorted`.
   Insbesondere gibt es **kein** `all` und **kein** `any` -- pruefe mehrere
-  Werte mit `and` statt mit `all(...)`.
+  Werte mit `and` statt mit `all(...)`. Es gibt auch **kein** `range` und
+  **kein** `enumerate`; ohne Schleifen braucht man sie nicht, und wer einen
+  Indexvektor will, nimmt `np.arange(n)`.
 
 Verfuegbare Indikatoren, alle aus `ta`:
 - `ta.sma(values, n)` -> float

@@ -22,7 +22,7 @@ den Zweck von Paper-Trading, naemlich vertrauenswuerdig beobachtbar zu sein.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -67,7 +67,13 @@ class PaperState:
     warmup_end: str | None = None
     peak_equity: float = 0.0
     halted: bool = False
+    # Nur Gruende eines **Halts**. Routine-Eingriffe der Risk-Engine (ein
+    # greifender Cap meldet sich in jedem Bar mit Position) gehoeren nach
+    # `risk_notes` -- sonst steht beim naechsten echten Halt die letzte
+    # Cap-Meldung hier und der Tagesreport zeigt sie als Halt-Grund an
+    # (ADR-053).
     halt_reasons: list[str] = field(default_factory=list)
+    risk_notes: list[str] = field(default_factory=list)
     last_processed_ts: str | None = None
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -133,10 +139,19 @@ class PaperState:
 
     @classmethod
     def load(cls, path: Path) -> "PaperState | None":
+        """Kontostand lesen, unbekannte Felder ueberspringen.
+
+        Ein Konto laeuft ueber Wochen, der Code aendert sich dabei. Ein
+        `cls(**raw)` ueber die rohen Schluessel wirft, sobald eine Fassung
+        ein Feld schreibt, das eine andere nicht kennt -- und das ausgerechnet
+        beim Laden des einzigen Zustands, der ueberleben muss. Unbekanntes
+        wird deshalb verworfen, Fehlendes bekommt seinen Default.
+        """
         if not path.exists():
             return None
         raw = json.loads(path.read_text())
-        return cls(**raw)
+        bekannt = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in raw.items() if k in bekannt})
 
 
 def _asdict(state: PaperState) -> dict:
@@ -153,6 +168,7 @@ def _asdict(state: PaperState) -> dict:
         "peak_equity": state.peak_equity,
         "halted": state.halted,
         "halt_reasons": state.halt_reasons,
+        "risk_notes": state.risk_notes,
         "last_processed_ts": state.last_processed_ts,
         "created_at": state.created_at,
         "updated_at": state.updated_at,

@@ -5,6 +5,175 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-053 — Ein vollständiger Audit: was zwischen den Tests durchfiel
+**Datum:** 2026-09-02
+
+806 Tests grün, ruff sauber — und trotzdem handelte das Paper-Konto eine
+andere Strategie als die, gegen die es verglichen wurde. Dieser ADR hält
+fest, was ein Zeile-für-Zeile-Durchgang durch `src/` (16.315 Zeilen, 39
+Module), die Tests und die drei Doku-Dateien gefunden hat, und was daraus
+folgt.
+
+**Die Klammer um alles:** kein einziger der schwerwiegenden Funde war ein
+Absturz. Alle waren Zahlen, die falsch waren, ohne dass irgendetwas
+fehlschlug — genau die Klasse, gegen die dieses Projekt seine ganze
+Teststrategie richtet, und sie kam trotzdem durch.
+
+---
+
+### 1. Das Paper-Konto handelte ein Viertel der gemessenen Größe
+
+`qt backtest` und `qt wf` — die Quelle **jeder** gemessenen Zahl des Projekts
+— rufen überhaupt keine Risk-Engine auf. `run_paper_tick` rief sie mit den
+Portfolio-Defaults auf. Gemessen bei BTCs Tagesvola von 0,44:
+
+```
+Strategie sagt 1.0  ->  Vol-Targeting 0,455  ->  Symbol-Cap  0,25
+```
+
+Das Vorwärtskonto prüfte also nicht die Strategie nach, deren OOS-Sharpe von
+0,31 den ganzen Aufbau begründet. Nebenwirkung: der Kill-Switch bei 20%
+Kontodrawdown hätte rund 80% Marktdrawdown gebraucht und konnte praktisch
+nicht auslösen.
+
+**Entscheidung: die Risk-Engine *sichert* immer, sie *formt* nur auf Ansage.**
+`RiskConfig.vol_targeting` ist neu und im Paper-Tick per Default aus, ebenso
+der Symbol-Cap; der Drawdown-Kill-Switch bleibt immer an. `qt paper run
+--shape-risk` schaltet die Formung dazu, wenn man den Portfolio-Pfad
+nachstellen will.
+
+Der Zeitpunkt war Glück: beide Konten standen flach und ohne einen einzigen
+Fill. Eine Woche später hätte die Korrektur eine Historie entwertet.
+
+### 2. Die Risk-Engine sah im Tick immer nur ein Symbol
+
+`risk.apply({bar.symbol: target}, ...)` — ein Symbol je Bar.
+`max_gross_exposure` ist aber eine Grenze für das Konto als Ganzes; so
+geprüft hätten *n* Symbole in Summe das *n*-fache durchgelassen. Heute
+harmlos (ein Symbol je Konto), aber `--symbols BTC/USD,ETH/USD` ist erlaubt.
+Der Tick übergibt jetzt alle Symbole auf einmal.
+
+### 3. `qt data resample` zerstörte, statt zu reparieren
+
+Die sechs abgeleiteten Dateien im Store (`2d`/`3d`/`1w` für BTC und ETH) lagen
+auf dem `start_day`-Raster (2019-01-01, 01-03, …); der Code schreibt
+`origin="epoch"` vor und erzeugt 2019-01-02, 01-04, … — **kein einziger
+gemeinsamer Zeitstempel.** Der Befehl, der das hätte richten sollen, machte es
+schlimmer, weil `write_bars` additiv vereinigt:
+
+```
+vorher  1.396 Bars (2d)
+nachher 2.796 Bars, Abstände: 2.791× ein Tag, 4× zwei Tage
+qt data report:  ok  BTC/USD 2d  Abdeckung 100.00%  Luecken 0
+```
+
+**Zwei Ursachen, und die zweite ist die interessantere.** `resample_store`
+vereinigte, wo es hätte ersetzen müssen — eine abgeleitete Reihe ist eine
+Funktion ihrer Quelle, kein Zuwachs. Und `qt.data.integrity` konnte es nicht
+sehen: `find_gaps` sucht ausschließlich nach Abständen, die zu **groß** sind.
+Ein Prüfer, der nur in eine Richtung schaut, übersieht die andere zuverlässig.
+
+Behoben: `write_bars(..., replace=True)` für abgeleitete Reihen, plus eine
+fünfte Fehlerklasse `too_fine`. Die sechs Dateien sind neu erzeugt; ADR-047 ist
+auf dem korrigierten Raster nachgerechnet und hält (Abweichung ≤ 0,03 Sharpe).
+
+### 4. Der Tagesreport zeigte die Kostenbasis und nannte sie „Preise"
+
+`equity = cash + sum(qty * avg_price)` unter der Überschrift „Eigenkapital
+(letzte bekannte Preise)". Eine verdoppelte Position bewegte die Zahl nicht —
+und neben dem korrekt geführten Höchststand sah das aus wie ein Drawdown, den
+es nicht gab. Das ist die eine Zahl, die ein Mensch täglich liest.
+
+`qt paper status` liest jetzt die letzten Schlusskurse aus dem Store. Fehlen
+sie, weist der Report **kein** Eigenkapital aus, sondern sagt warum. Lieber
+keine Zahl als eine, die etwas anderes misst als ihr Etikett.
+
+### 5. Der Broker vergab beim Short aus flach keinen Einstandspreis
+
+Mit `position.qty == 0` und `qty < 0` waren beide Vorzeichenvergleiche falsch,
+der Zweig griff nicht, `avg_price` blieb auf 0,0. Long war korrekt, Short
+nicht — und das Projekt handelt long-only, der Fehler konnte also beliebig
+lange leben. Sichtbar geworden wäre er im Tagesreport, in der Zustandsdatei
+und im Rückfallpfad von `equity()`.
+
+### 6. Der wichtigste Test deckte die wichtigsten Strategien nicht ab
+
+`test_future_data_cannot_change_the_past` lief über `["trend", "meanrev"]` —
+ausgerechnet die beiden Strategien, die das Projekt als unbrauchbar verworfen
+hat. `macross` (läuft live) und `elliott` (Grundlage von ADR-047) waren nicht
+dabei. Beide sind jetzt drin und beide sauber; der Wert war die Abdeckung,
+nicht ein gefangener Bug.
+
+### 7. Zwei stille Verschlechterungen
+
+**`hashribbon` hat in den letzten 400 Bars zu 19,5% keine Meinung.** Elf
+fehlende Tage in der Hashrate-Reihe, und jeder blendet ein ganzes
+`slow + LAG_BARS`-Fenster aus: 78 von 400 Bars. Die Reihe endet 2026-08-31,
+die Bars laufen bis 09-01 — auf dem neuesten Bar liefert die Strategie `nan`.
+Live würde sie ohne frisches `qt data onchain` nie ein Signal geben. Das
+Verhalten ist richtig (`nan` heißt „keine Meinung"), die Häufigkeit war
+ungemessen.
+
+**Der Order-Flow-Lückenwächter maß nur *innerhalb* eines Buckets.**
+`groupby("bucket")["ts"].diff()` gab dem ersten Trade eines Buckets `NaN`, das
+zu 0,0 wurde. Ein Bar mit einem einzigen Trade nach 58 Minuten Stille meldete
+`max_gap_s = 0.0` — perfekte Abdeckung, ausgerechnet für den Fall, den die
+Kennzahl fangen soll.
+
+### 8. Die Sandbox: ein Timeout, der nichts beendet
+
+`probe` startet einen Thread und wartet 5 Sekunden. Python-Threads lassen sich
+nicht töten — ein hängender Kandidat rechnet bis zum Prozessende weiter.
+Schleifen sind verboten, aber `sum(range(10**12))` lief trotzdem: unbegrenzt
+und ohne Speicherbedarf. `range` und `enumerate` sind ohne Schleifen ohnehin
+nutzlos und stehen jetzt nicht mehr in `SAFE_BUILTINS`; wer einen Indexvektor
+braucht, nimmt `np.arange` (neu in der Fassade), und eine `np.arange`-Bombe
+scheitert sofort an MemoryError statt zu spinnen.
+
+### 9. Was die Doku behauptete und der Code nicht tat
+
+| Behauptung | Wirklichkeit |
+|---|---|
+| Diagramm „eine Engine, drei Uhren" mit `PaperClock` | Existiert nicht. Es sind zwei Uhren, und der Paper-Tick benutzt `BacktestClock`. |
+| „`qt.features` — … Regime-Features" | Gibt es nicht. |
+| „Von `qt.live` fehlt nur der `CcxtBroker`" | `reconcile` fehlt auch — die ROADMAP sagte es richtig, ARCHITECTURE falsch. |
+| NIM-Latenz „90–155 s" / „40 bis 110 Sekunden" | Zwei Zahlen für dieselbe Messung. ADR-040 ist die Quelle: 90–155 s. |
+| „Der Tick ruft `risk.apply()` mit genau demselben Aufbau wie `portfolio_engine`" | Fund 1 und 2 in Prosa. |
+| Ergebnistabellen | Nicht falsch, **undatiert** — `macross` stand als Faktor 15,2, war beim Nachrechnen 16,0. |
+
+Der letzte Punkt ist der einzige strukturelle: jede Tabelle nennt jetzt ihren
+Datenstand. Dieselbe Lehre wie ADR-051 und ADR-052, eine Ebene tiefer.
+
+---
+
+### Was dieser Audit über die Teststrategie sagt
+
+**28 neue Tests, 14 davon fallen gegen den alten Code durch** — geprüft, indem
+`src/` zurückgesetzt und die Testsuite dagegen laufen gelassen wurde. Die
+übrigen 14 sind Abdeckung und gemessene Größen, kein gefangener Fehler; das ist
+hier ausdrücklich unterschieden, weil ein Test, der nie rot war, leicht für
+mehr gehalten wird, als er ist.
+
+Zwei Muster, die sich wiederholen und die man vorher benennen kann:
+
+1. **Ein Prüfer, der nur in eine Richtung schaut.** `find_gaps` suchte zu große
+   Abstände und übersah zu kleine. `_update_position` prüfte zwei Vorzeichen
+   und übersah die Kombination, in der beide falsch sind. Beides derselbe
+   Fehler in verschiedenen Kleidern.
+2. **Zwei Orte, die dasselbe festlegen.** Das Modell in `llm_allocator` neben
+   dem in `config`, die NIM-Latenz im Kommentar neben der im ADR, die
+   Risk-Konfiguration im Paper-Tick neben der im Backtest-Pfad. `qt.core.config`
+   warnt in einem Kommentar genau davor — und war selbst betroffen.
+
+**Was ausdrücklich offen bleibt:** der Probe-Timeout kann einen Thread weiterhin
+nur melden, nicht beenden (echte Isolation bräuchte einen Subprozess). Die
+Namensauflösung der Sandbox ist scope-frei — der Probelauf fängt das, ein
+zweiter Namensauflöser wäre mehr Angriffsfläche als Nutzen. Und `fetch_ohlcv`
+kann weiterhin die noch offene Kerze schreiben; der Paper-Pfad verwirft sie
+(ADR-038), der Backtest-Pfad sieht ohnehin nur längst geschlossene Bars.
+
+---
+
 ## ADR-052 — Zwei Paper-Konten sind 1,2 Konten, nicht 2 (und zwei eigene Fehler)
 **Datum:** 2026-09-02
 
@@ -434,6 +603,34 @@ jetzt im Store (`qt data resample`) und dürfen geprüft werden, aber ohne
 Erwartung. `meanrev` ist bei `1w` nicht testbar — 194 Bars Vorlauf passen nicht
 in ein 143-Bar-Trainfenster; die Prüfung hat das gefangen statt still Unsinn zu
 rechnen.
+
+### Nachtrag 2026-09-01: auf anderem Bucket-Raster nachgerechnet
+
+Der Audit in ADR-053 hat gefunden, dass die damals im Store liegenden
+`2d`/`3d`/`1w`-Dateien auf einem **anderen Raster** lagen, als der Code heute
+erzeugt (`start_day` statt `origin="epoch"` — kein einziger gemeinsamer
+Zeitstempel). Die Über-1d-Zeilen oben stammen also aus Dateien, die sich mit
+diesem Repo nicht reproduzieren lassen.
+
+Nach der Reparatur nachgerechnet, gleiche Fenstergeometrie, Datenstand
+2026-09-01:
+
+| Sharpe | 1d | 2d | 3d | 1w |
+|---|---|---|---|---|
+| macross BTC | 0,31 | 0,27 | 0,33 | **0,52** (dok. 0,49) |
+| macross ETH | 0,32 | 0,25 | 0,37 | **−0,25** (dok. −0,22) |
+| elliott BTC | 0,20 | **0,59** (dok. 0,57) | −0,44 (dok. −0,42) | 0,46 |
+| elliott ETH | 0,26 | −0,94 | −0,56 | −0,72 |
+
+**Die Aussage hält, und zwar deutlicher als vorher.** Über 1d kein Muster:
+`elliott` BTC springt weiterhin um rund 1,0 Sharpe zwischen benachbarten
+Timeframes (0,59 → −0,44 → 0,46), `macross` repliziert bei `1w` weiterhin
+nicht (0,52 gegen −0,25). Die verlockendste Zahl ist immer noch `elliott` BTC
+auf `2d`, jetzt mit +111% statt +105%.
+
+Dass ein um einen Tag verschobenes Raster die Zahlen um höchstens 0,03 Sharpe
+bewegt, ist selbst ein Befund: **die Schlussfolgerung hing nicht am Raster.**
+Sie hätte es können, und niemand hätte es gemerkt.
 
 ---
 

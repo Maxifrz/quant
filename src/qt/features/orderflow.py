@@ -91,7 +91,15 @@ def aggregate(trades: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     # `delta`, das nur die halbe Bar-Dauer gesehen hat, ist keine ungenaue
     # Messung, sondern eine erfundene. Beim ersten Jahresabzug lagen genau
     # solche Luecken an den ersten beiden Seitengrenzen (siehe ADR-034).
-    df["gap_s"] = df.groupby("bucket")["ts"].diff().dt.total_seconds()
+    # **Der Abstand wird ueber die ganze Reihe gerechnet, nicht je Bucket.**
+    # Mit `groupby("bucket")["ts"].diff()` bekam der erste Trade eines
+    # Buckets `NaN` -> `fillna(0)`, und genau der traegt die interessante
+    # Information: ein Bucket mit einem einzigen Trade nach 58 Minuten Stille
+    # meldete `max_gap_s = 0.0`, also perfekte Abdeckung. Das ist die Luecke,
+    # die der Waechter in `qt.strategy.library.orderflow` fangen soll --
+    # gemessen und nachgestellt in ADR-053.
+    df = df.sort_values("ts")
+    df["gap_s"] = df["ts"].diff().dt.total_seconds()
 
     grouped = df.groupby("bucket", sort=True)
     out = pd.DataFrame(

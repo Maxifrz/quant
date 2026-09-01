@@ -33,19 +33,32 @@ def parquet_path(symbol: str, timeframe: str, data_dir: Path | None = None) -> P
 
 
 def write_bars(
-    symbol: str, timeframe: str, df: pd.DataFrame, data_dir: Path | None = None
+    symbol: str,
+    timeframe: str,
+    df: pd.DataFrame,
+    data_dir: Path | None = None,
+    replace: bool = False,
 ) -> Path:
     """Bars schreiben und dabei mit vorhandenen zusammenfuehren.
 
     Bestehende Daten werden nicht ueberschrieben, sondern vereinigt und
     dedupliziert -- ein zweiter Pull mit ueberlappendem Zeitraum ist damit
     unschaedlich und idempotent.
+
+    **`replace=True` ersetzt stattdessen den ganzen Datensatz.** Das ist der
+    richtige Modus fuer *abgeleitete* Reihen (`qt data resample`): sie sind
+    eine Funktion ihrer Quelle, kein Zuwachs. Vereinigen ist dort nicht
+    idempotent, sondern zerstoerend -- verschiebt sich das Bucket-Raster
+    zwischen zwei Laeufen, entstehen zwei ineinandergelegte Reihen unter
+    einem Namen. Gemessen: ein zweiter `resample`-Lauf machte aus 1.396
+    2d-Bars 2.796 im Ein-Tages-Abstand, und `qt data report` nannte das
+    Ergebnis "ok, 100% Abdeckung, 0 Luecken" (ADR-053).
     """
     path = parquet_path(symbol, timeframe, data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     df = _normalise(df)
-    if path.exists():
+    if path.exists() and not replace:
         df = _normalise(pd.concat([pd.read_parquet(path), df], ignore_index=True))
 
     df.to_parquet(path, index=False)

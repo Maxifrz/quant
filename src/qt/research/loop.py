@@ -200,6 +200,13 @@ def run_research_loop(
             if error is not None:
                 telemetry.critic_errors += 1
                 telemetry.notes.append(f"Kritik {proposal.name}: {error}")
+                # **Sichtbar machen, dass hier nicht gefiltert wurde.**
+                # `critic_mod.critique` faellt bei jedem Fehler auf "proceed"
+                # zurueck -- ein nicht erreichbarer Kritiker winkt also jeden
+                # Kandidaten durch, und die DSR traegt dann allein. Das steht
+                # zwar in der Telemetrie-Tabelle am Ende, aber wer den Lauf
+                # mitliest, soll es an der Stelle sehen (ADR-053).
+                _say(echo, "      Kritik: nicht erreichbar -- ungeprueft weiter")
             registry.record_critique(
                 candidate_id,
                 recommendation=verdict.recommendation,

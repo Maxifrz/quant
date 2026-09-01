@@ -321,7 +321,7 @@ class Teuer(Strategy):
     warmup_bars = 5
 
     def on_bar(self, symbol, store):
-        basis = np.asarray(range(1500))
+        basis = np.arange(1500)
         gitter = basis[:, None] * basis
         summe = np.sum(np.exp(np.log(np.sqrt(np.abs(gitter) + 1.0))))
         summe = summe + np.sum(np.cumsum(np.sqrt(np.abs(gitter) + 2.0)))
@@ -504,3 +504,40 @@ def test_numpy_bleibt_unberuehrt() -> None:
     """Die Fassade darf das echte numpy nicht veraendert haben."""
     assert hasattr(np, "save")
     assert np.mean is sandbox.NP_FACADE.mean
+
+
+def test_range_und_enumerate_sind_nicht_verfuegbar() -> None:
+    """Schleifenhelfer ohne Schleifen -- und ein Weg zum Haenger.
+
+    `for`/`while`/Comprehensions sind verboten; `range` und `enumerate` sind
+    damit ohne Nutzen. Was blieb, war `sum(range(10**12))`: laeuft stundenlang,
+    belegt keinen Speicher, und der Probe-Timeout kann den Thread nur melden,
+    nicht beenden (ADR-053).
+    """
+    code = """
+class Haenger(Strategy):
+    name = "haenger"
+    warmup_bars = 5
+
+    def on_bar(self, symbol, store):
+        return clip_weight(float(sum(range(1000000000000))) * 0.0)
+"""
+    report = sandbox.check(code)
+    assert not report.ok
+    assert any("range" in r for r in report.reasons), report.reasons
+
+
+def test_np_arange_ersetzt_range_als_indexvektor() -> None:
+    """Die Gegenprobe: der legitime Anwendungsfall bleibt moeglich."""
+    code = """
+class Indiziert(Strategy):
+    name = "indiziert"
+    warmup_bars = 5
+
+    def on_bar(self, symbol, store):
+        gewichte = np.arange(3) + 1.0
+        return clip_weight(float(np.sum(gewichte)) * 0.0)
+"""
+    assert sandbox.check(code).ok, sandbox.check(code).reasons
+    cls = sandbox.load_strategy_class(code, "Indiziert")
+    assert sandbox.probe(cls, ["BTC/USD"], "1h", n_bars=40).ok

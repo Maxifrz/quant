@@ -18,6 +18,12 @@
 > handelt rund viermal im Jahr. Steht dort „ANGEHALTEN", hat der Kill-Switch
 > ausgelöst; das ist der einzige Fall, der eine Entscheidung braucht.
 >
+> **Seit ADR-053 handeln die Konten Gewicht 1,0 statt 0,25.** Vorher formte die
+> Risk-Engine mit den Portfolio-Defaults, und das Konto prüfte damit eine
+> andere Strategie nach als die gemessene. Der Kill-Switch bleibt an;
+> `--shape-risk` schaltet die Formung zurück, falls man den Portfolio-Pfad
+> nachstellen will.
+>
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
 > uv run qt data report         # Bestand und Lücken
@@ -30,6 +36,10 @@
 > Timeframe-Frage (ADR-047) und zwei BTC-Mechanismen, die vor der ersten
 > Codezeile fielen (ADR-048). Übrig ist `macross` auf 1d — und dessen
 > Ergebnis steht auf zwei von 33 Trades (ADR-049).
+>
+> Dazu ein vollständiger Code-Audit (ADR-053): neun Funde, davon fünf, die
+> Zahlen verfälscht haben, ohne dass ein Test rot wurde. Behoben, mit 28
+> neuen Tests — 14 davon fallen gegen den alten Code durch.
 >
 > ### Was als Nächstes Sinn ergibt
 >
@@ -64,6 +74,17 @@
 
 ---
 
+## Konvention für jede Zahl in diesem Dokument
+
+**Jede Ergebnistabelle nennt ihren Datenstand.** Ohne ihn driftet sie mit
+jedem `qt data pull` still weiter: der In-Sample-Faktor von `macross` stand
+hier als 15,2 und war beim Nachrechnen 16,0, Buy & Hold als 16,8 und war
+20,1 — nichts davon war je falsch, nur undatiert (ADR-053). Dieselbe Lehre
+wie bei ADR-051/052, eine Ebene tiefer: eine Behauptung ohne Schnitt veraltet,
+ohne dass es jemandem auffällt.
+
+---
+
 ## Die erste Strategie, die Geld verdient (ADR-035)
 
 ```bash
@@ -75,13 +96,16 @@ Zwei Hebel, die das Projekt nie gezogen hatte: **Tagesbasis statt 4h** (66 statt
 889 Trades — Frequenz ist Kosten) und **long/flach statt long/short** (die
 Gegenrichtung kämpft gegen die stärkste Drift im Datensatz).
 
-**Out-of-Sample, Fenster 2021-10 bis 2026-08:**
+**Out-of-Sample, Fenster 2021-10 bis 2026-08** *(Datenstand 2026-08-24)*:
 
 | | macross | Buy & Hold |
 |---|---|---|
 | Faktor | **1,25** | 1,03 |
 | Sharpe | **0,31** | 0,27 |
 | Max Drawdown | **−51,0%** | −76,7% |
+
+Nachgerechnet am 2026-09-01 (7 OOS-Fenster, 1000/250/20): Sharpe **0,31** auf
+BTC und **0,32** auf ETH — unverändert.
 
 20 von 25 Gitterpunkten verdienen Geld, und das Muster **repliziert auf ETH
 ohne Neuanpassung** (dort Faktor 1,00 gegen 0,49 bei Buy & Hold).
@@ -165,7 +189,10 @@ Man kann nach jeder Phase aufhören und hat etwas Funktionierendes.
 
 ### Ergebnisse des ersten echten Laufs (BTC/USD + ETH/USD, 2019–2026)
 
-Datenlage: 7,6 Jahre, 99,97% Abdeckung, keine kaputten Bars.
+*Datenstand 2026-08-24. Datenlage: 7,6 Jahre, 99,97% Abdeckung, keine
+kaputten Bars.* Alle Zahlen sind **In-Sample** und wandern mit dem Datenstand
+— `macross` steht am 2026-09-01 bei Faktor 16,0 / Sharpe 1,04, Buy & Hold bei
+20,1 / 0,94. Die belastbaren Zahlen stehen weiter oben, out-of-sample.
 
 | Lauf | Ergebnis | Buy & Hold |
 |---|---|---|

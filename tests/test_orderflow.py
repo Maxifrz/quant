@@ -556,3 +556,56 @@ def test_eine_kleine_luecke_stoert_die_strategie_nicht():
 
     gewichte, _ = _lauf(closes, tabelle, lookback=30, entry_z=1.0, persistence=2)
     assert gewichte[-1] == 1.0
+
+
+def test_die_luecke_zaehlt_ueber_die_bucket_grenze(tmp_path=None):
+    """Der Waechter muss die Stille *vor* dem ersten Trade eines Bars sehen.
+
+    Frueher wurde der Abstand je Bucket gerechnet: der erste Trade eines
+    Buckets bekam `NaN`, das zu 0.0 wurde. Ein Bar mit einem einzigen Trade
+    nach knapp einer Stunde Stille meldete damit `max_gap_s = 0.0` -- also
+    perfekte Abdeckung, ausgerechnet fuer den Fall, den die Kennzahl fangen
+    soll (ADR-053).
+    """
+    rows = [(i * 60, 100.0, 1.0, "buy") for i in range(60)]
+    rows.append((3600 + 3500, 100.0, 1.0, "buy"))
+    flow = of.aggregate(_trades(rows), "1h")
+
+    duenn = flow.iloc[1]
+    assert duenn["n_trades"] == 1
+    assert duenn["max_gap_s"] == pytest.approx(3560.0), (
+        "die Stille vor dem einzigen Trade des Bars wird nicht gemessen"
+    )
+
+
+def test_der_allererste_trade_hat_keine_luecke():
+    """Vor dem ersten Trade ist nichts bekannt -- 0.0 statt nan."""
+    flow = of.aggregate(_trades([(0, 100.0, 1.0, "buy")]), "1h")
+    assert flow.iloc[0]["max_gap_s"] == 0.0
+
+
+def test_der_luecken_waechter_der_strategie_greift_jetzt():
+    """Ende zu Ende: eine Luecke ueber der Grenze ergibt keine Meinung.
+
+    Ohne den Fix oben war dieser Pfad praktisch tot -- `max_gap_s` war fuer
+    duenn gehandelte Bars immer 0.0 und die Schwelle damit unerreichbar,
+    ausgerechnet dort, wo sie gebraucht wird.
+    """
+    closes = np.full(40, 100.0)
+    bars = make_bars(40, "BTC/USD", "4h", prices=closes)
+    # Streuende Deltas: mit konstantem Fluss ist der z-Score nicht definiert
+    # und die Gegenprobe unten wuerde aus dem falschen Grund `nan` sehen.
+    deltas = np.random.default_rng(3).normal(1.0, 2.0, 40)
+    tabelle = _tabelle(bars, deltas)
+    # Der juengste Bar hat halb so lange Stille wie der Bar dauert --
+    # deutlich ueber max_gap_frac=0.25.
+    letzte = bars[-1].ts
+    tabelle[letzte] = {**tabelle[letzte], "max_gap_s": 0.5 * 4 * 3600}
+
+    gewichte, _ = _lauf(closes, tabelle, lookback=10, persistence=1)
+    assert math.isnan(gewichte[-1]), (
+        "eine Luecke ueber der Grenze muss zu 'keine Meinung' fuehren"
+    )
+    assert not math.isnan(gewichte[-2]), (
+        "Gegenprobe: der Bar davor hat keine Luecke und muss eine Meinung haben"
+    )

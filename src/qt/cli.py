@@ -801,10 +801,6 @@ def list_strategies() -> None:
         typer.echo(f"  {name:<12} {doc}")
 
 
-if __name__ == "__main__":
-    app()
-
-
 @app.command("research")
 def research(
     generate: Annotated[int, typer.Option(help="Wie viele Kandidaten erzeugen")] = 5,
@@ -1154,6 +1150,15 @@ def paper_run(
     max_drawdown: Annotated[
         float, typer.Option(help="Kill-Switch-Schwelle, Bruchteil des Hoechststands")
     ] = 0.20,
+    shape_risk: Annotated[
+        bool,
+        typer.Option(
+            "--shape-risk",
+            help="Vol-Targeting und Symbol-Cap der Risk-Engine einschalten. "
+            "Aus by default, damit das Konto dieselbe Groesse handelt wie der "
+            "Backtest, gegen den es verglichen wird (ADR-053).",
+        ),
+    ] = False,
     no_refresh: Annotated[
         bool, typer.Option("--no-refresh", help="Keine frischen Bars von der Exchange holen")
     ] = False,
@@ -1164,6 +1169,16 @@ def paper_run(
     Ein frisches Konto startet **flach**, nicht rueckwirkend: die erste
     Ausfuehrung legt nur den Startpunkt fest, gehandelt wird erst ab dem
     naechsten Bar, der danach schliesst.
+
+    **Die Risk-Engine formt hier per Default nicht.** Ein Paper-Konto soll ein
+    gemessenes Ergebnis nachpruefen, und gemessen wurde ohne sie: `qt backtest`
+    und `qt wf` rufen gar keine Risk-Engine auf. Mit den Portfolio-Defaults
+    (Vol-Targeting, 25% je Symbol) handelte das Konto rund ein Viertel der
+    Groesse und damit eine andere Strategie -- der Kill-Switch bei 20%
+    Kontodrawdown braeuchte dann rund 80% Marktdrawdown und koennte praktisch
+    nie ausloesen (ADR-053). Der **Kill-Switch bleibt** in jedem Fall an; er
+    ist die Sicherung, nicht die Formung. `--shape-risk` schaltet die Formung
+    dazu, wenn man den Portfolio-Pfad nachstellen will.
     """
     from qt.backtest.costs import round_trip_bps
     from qt.core.config import BacktestConfig
@@ -1174,11 +1189,17 @@ def paper_run(
     load_library()
     symbol_list = _split(symbols)
     cfg = BacktestConfig(initial_cash=cash)
-    risk_cfg = RiskConfig(max_drawdown=max_drawdown)
+    risk_cfg = RiskConfig(
+        max_drawdown=max_drawdown,
+        vol_targeting=shape_risk,
+        max_weight_per_symbol=RiskConfig().max_weight_per_symbol if shape_risk else 1.0,
+    )
 
+    formung = "an" if shape_risk else "aus (Konto handelt wie der Backtest)"
     typer.echo(
         f"Kosten je Round-Trip: {round_trip_bps(cfg.costs):.0f}bps  |  "
-        f"Kill-Switch bei {max_drawdown:.0%} Drawdown vom Hoechststand\n"
+        f"Kill-Switch bei {max_drawdown:.0%} Drawdown vom Hoechststand  |  "
+        f"Risiko-Formung {formung}\n"
     )
 
     try:
@@ -1215,6 +1236,7 @@ def paper_status(
     tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
 ) -> None:
     """Kontostand anzeigen, ohne etwas zu veraendern."""
+    from qt.data.store import read_bars
     from qt.live.state import PaperState, state_path
     from qt.report.daily import render
 
@@ -1224,7 +1246,20 @@ def paper_status(
     if state is None:
         typer.echo(f"Kein Paper-Konto unter {path}. Erst `qt paper run` laufen lassen.")
         raise typer.Exit(code=1)
-    typer.echo(render(state, strategy, symbol_list))
+
+    # Letzte bekannte Schlusskurse aus dem Store. Ohne sie kann der Report
+    # offene Positionen nicht bewerten und sagt das auch -- statt wie frueher
+    # den Einstand als "letzte bekannte Preise" auszugeben (ADR-053).
+    prices: dict[str, float] = {}
+    for sym in symbol_list:
+        try:
+            df = read_bars(sym, tf)
+        except FileNotFoundError:
+            continue
+        if not df.empty:
+            prices[sym] = float(df["close"].iloc[-1])
+
+    typer.echo(render(state, strategy, symbol_list, prices=prices))
 
 
 @paper_app.command("reset-killswitch")
@@ -1248,3 +1283,15 @@ def paper_reset(
         typer.echo(str(exc))
         raise typer.Exit(code=1) from None
     typer.echo(f"Kill-Switch zurueckgesetzt. halted={state.halted}")
+
+
+# **Ganz am Ende, und das ist keine Formsache.** Der Block stand lange in der
+# Mitte der Datei -- vor `research`, `data trades` und allen drei
+# `paper`-Befehlen. Ueber das Konsolenskript (`qt = qt.cli:app`) faellt das
+# nicht auf, weil das Modul erst vollstaendig importiert und dann `app()`
+# gerufen wird. `python src/qt/cli.py` dagegen fuehrt die Datei von oben nach
+# unten aus und startet die CLI, bevor die spaeteren Dekoratoren gelaufen
+# sind: die Haelfte der Befehle existierte dort schlicht nicht, ohne
+# Fehlermeldung (ADR-053).
+if __name__ == "__main__":
+    app()

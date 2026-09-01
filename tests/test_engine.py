@@ -125,3 +125,100 @@ def test_multi_symbol_run_produces_weights_for_each():
     assert set(result.symbols) == {"BTC/USD", "ETH/USD"}
     for symbol in bars:
         assert f"weight_{symbol}" in result.equity.columns
+
+
+# ---------------------------------------------------------------------------
+# Buchhaltung des Brokers: der Einstandspreis
+# ---------------------------------------------------------------------------
+#
+# `avg_price` taucht in keiner Kennzahl auf, deshalb faellt ein falscher Wert
+# in keinem Backtest auf. Er steht aber im Tagesreport, in der
+# Zustandsdatei des Paper-Kontos und im Rueckfallpfad von `SimBroker.equity`,
+# wenn ein Preis fehlt -- also genau an den drei Stellen, an denen ein Mensch
+# hinsieht, wenn etwas schiefgegangen ist (ADR-053).
+
+
+def _broker():
+    from qt.backtest.broker_sim import SimBroker
+
+    return SimBroker(BacktestConfig(costs=FREE))
+
+
+@pytest.mark.parametrize("richtung", [1.0, -1.0])
+def test_eine_neue_position_traegt_den_fill_preis_als_einstand(richtung):
+    """Auch beim Short aus flach -- das war der Fehler.
+
+    Mit `position.qty == 0` und `qty < 0` waren frueher beide Vorzeichen-
+    vergleiche falsch, der Zweig griff nicht, und `avg_price` blieb auf 0.0
+    stehen. Long war korrekt, Short nicht, und das Projekt handelt long-only
+    -- der Fehler konnte deshalb beliebig lange unentdeckt bleiben.
+    """
+    from qt.core.types import Order
+
+    broker = _broker()
+    broker.submit(Order(symbol="BTC/USD", qty=5.0 * richtung))
+    broker.execute_pending("BTC/USD", 100.0, make_bars(1)[0].ts)
+
+    position = broker.positions["BTC/USD"]
+    assert position.qty == pytest.approx(5.0 * richtung)
+    assert position.avg_price == pytest.approx(100.0), (
+        "eine frisch eroeffnete Position ohne Einstandspreis"
+    )
+
+
+def test_aufstocken_mischt_den_einstand_mengengewichtet():
+    from qt.core.types import Order
+
+    broker = _broker()
+    ts = make_bars(1)[0].ts
+    broker.submit(Order(symbol="BTC/USD", qty=10.0))
+    broker.execute_pending("BTC/USD", 100.0, ts)
+    broker.submit(Order(symbol="BTC/USD", qty=5.0))
+    broker.execute_pending("BTC/USD", 130.0, ts)
+
+    # (100*10 + 130*5) / 15
+    assert broker.positions["BTC/USD"].avg_price == pytest.approx(110.0)
+
+
+def test_reduzieren_laesst_den_einstand_stehen():
+    """Ein neu gemischter Einstand beschriebe eine Position, die es nie gab."""
+    from qt.core.types import Order
+
+    broker = _broker()
+    ts = make_bars(1)[0].ts
+    broker.submit(Order(symbol="BTC/USD", qty=10.0))
+    broker.execute_pending("BTC/USD", 100.0, ts)
+    broker.submit(Order(symbol="BTC/USD", qty=-4.0))
+    broker.execute_pending("BTC/USD", 130.0, ts)
+
+    assert broker.positions["BTC/USD"].qty == pytest.approx(6.0)
+    assert broker.positions["BTC/USD"].avg_price == pytest.approx(100.0)
+
+
+def test_drehen_startet_den_einstand_neu():
+    from qt.core.types import Order
+
+    broker = _broker()
+    ts = make_bars(1)[0].ts
+    broker.submit(Order(symbol="BTC/USD", qty=10.0))
+    broker.execute_pending("BTC/USD", 100.0, ts)
+    broker.submit(Order(symbol="BTC/USD", qty=-15.0))
+    broker.execute_pending("BTC/USD", 130.0, ts)
+
+    assert broker.positions["BTC/USD"].qty == pytest.approx(-5.0)
+    assert broker.positions["BTC/USD"].avg_price == pytest.approx(130.0)
+
+
+def test_glattstellen_setzt_den_einstand_zurueck():
+    from qt.core.types import Order
+
+    broker = _broker()
+    ts = make_bars(1)[0].ts
+    broker.submit(Order(symbol="BTC/USD", qty=10.0))
+    broker.execute_pending("BTC/USD", 100.0, ts)
+    broker.submit(Order(symbol="BTC/USD", qty=-10.0))
+    broker.execute_pending("BTC/USD", 130.0, ts)
+
+    position = broker.positions["BTC/USD"]
+    assert position.qty == 0.0
+    assert position.avg_price == 0.0

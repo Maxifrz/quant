@@ -329,8 +329,13 @@ class NimProvider:
     MAX_RETRIES = 4
 
     # Der Default des SDK ist 600 Sekunden Lesezeit. Gemessen dauert ein
-    # Aufruf 40 bis 110 Sekunden; ein haengender wuerde einen Lauf zehn
-    # Minuten blockieren, bevor irgendjemand etwas merkt.
+    # Aufruf 90 bis 155 Sekunden (vier Messungen, ADR-040); ein haengender
+    # wuerde einen Lauf zehn Minuten blockieren, bevor irgendjemand etwas
+    # merkt. 300 s laesst der langsamsten gemessenen Antwort das Doppelte.
+    #
+    # Hier stand "40 bis 110 Sekunden" -- eine zweite, engere Zahl fuer
+    # dieselbe Messung, die niemand mehr zuordnen konnte (ADR-053). ADR-040
+    # ist die Quelle, dieser Kommentar zitiert sie.
     TIMEOUT_S = 300.0
 
     def __init__(

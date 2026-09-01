@@ -281,6 +281,11 @@ def summary_table(trades: list[RoundTrip]) -> str:
             lambda x: f"{x:.2%}",
         ),
         zeile(
+            # Der obere der beiden mittleren Werte bei gerader Anzahl, nicht
+            # ihr Mittel. Bei 33 Round-Trips ist das folgenlos, bei kleinen
+            # Gruppen (die Gewinner-/Verlierer-Spalten koennen zwei Zeilen
+            # haben) verschiebt es den Wert nach oben -- gutmuetig genau in
+            # die falsche Richtung (ADR-053).
             "Median-Rendite",
             lambda g: sorted(t.return_pct for t in g)[len(g) // 2],
             lambda x: f"{x:.2%}",

@@ -53,6 +53,11 @@ REFRESH_BARS = 5
 # genau am Warmup entlangschrammt, laeuft dann nicht an.
 COLD_START_BUFFER = 60
 
+# Wieviele Routine-Meldungen der Risk-Engine im Zustand aufgehoben werden.
+# Sie entstehen bei jedem Bar mit Position; ungebremst waere die
+# Zustandsdatei nach einem Jahr groesser als der Rest des Kontos.
+_MAX_RISK_NOTES = 5
+
 
 @dataclass(slots=True)
 class TickReport:
@@ -203,8 +208,21 @@ def run_paper_tick(
             equity_now = broker.equity(last_price)
             peak_equity = max(peak_equity, equity_now)
 
-            window = store.window(bar.symbol, bar.timeframe)
-            vol_map = realised_vol_map({bar.symbol: window.closes()}, timeframe, risk.cfg)
+            # **Ueber alle Symbole des Kontos, nicht nur ueber das gerade
+            # geschlossene.** `max_gross_exposure` ist eine Grenze fuer das
+            # Konto als Ganzes; wird die Engine je Bar mit einem
+            # Ein-Symbol-Dict gefuettert, prueft sie diese Grenze n-mal
+            # gegen je ein Symbol und laesst in Summe das n-fache durch
+            # (ADR-053). Dass die Konten heute ein Symbol halten, macht das
+            # zu einem stillen Fehler statt zu keinem.
+            vol_map = realised_vol_map(
+                {
+                    sym: store.window(sym, timeframe).closes()
+                    for sym in bars_by_symbol
+                },
+                timeframe,
+                risk.cfg,
+            )
             risk_state = RiskState(
                 ts=event.ts,
                 equity=equity_now,
@@ -212,9 +230,18 @@ def run_paper_tick(
                 realised_vol=vol_map,
                 halted=risk.halted,
             )
-            adjusted, reasons = risk.apply({bar.symbol: target.get(bar.symbol, 0.0)}, risk_state)
+            adjusted, reasons = risk.apply(
+                {sym: target.get(sym, 0.0) for sym in bars_by_symbol}, risk_state
+            )
             state.halted = risk.halted or risk_state.halted
+            # **Halt-Gruende und Routine-Meldungen getrennt halten.** Ein
+            # greifender Cap meldet sich in *jedem* Bar mit Position. Landete
+            # er in `halt_reasons`, stuende beim naechsten echten Halt dort
+            # die letzte Cap-Meldung statt des Halt-Grundes -- und der
+            # Tagesreport zeigt genau diese drei Zeilen (ADR-053).
             if reasons:
+                state.risk_notes = reasons[-_MAX_RISK_NOTES:]
+            if state.halted and reasons:
                 state.halt_reasons = reasons
 
             order = rebalance_order(

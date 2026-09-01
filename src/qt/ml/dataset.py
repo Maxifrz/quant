@@ -109,6 +109,14 @@ def build_dataset(
     `t0` und `t1` bleiben als **Zeitstempel** erhalten, nicht nur als Index:
     die Kreuzvalidierung muss ueber Maerkte hinweg purgen, und dafuer braucht
     sie eine gemeinsame Zeitachse statt 14 getrennter Zaehlungen.
+
+    **Vorbehalt, der beim Lesen der Folds zaehlt:** die Maerkte haben sehr
+    verschiedene Spannen. XRP/USD endet im Januar 2021 (694 Bars), AVAX
+    beginnt Ende 2021, BTC laeuft durch. Aufgenommen wird ab `SLOW + 260`
+    Bars -- die spaeten Folds enthalten deshalb *andere* und teils weniger
+    Maerkte als die fruehen. Ein Fold-zu-Fold-Vergleich ist damit kein
+    Vergleich gleicher Dinge, und ein Leistungsabfall ueber die Zeit kann
+    schlicht heissen, dass die Zusammensetzung sich geaendert hat (ADR-053).
     """
     zeilen: list[pd.DataFrame] = []
 
