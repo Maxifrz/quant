@@ -1,0 +1,22 @@
+{
+ "key": "95a5de71f59a4e8c499a8c3ba29e8e089038d93d13797c908df28a3a50558d67",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (0.39-7.03) vs persistently negative Sharpe for STRAT_B (-2.41 to -13.44).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative risk-adjusted returns over 384 bars (Sharpe -2.41) with deep drawdown (-26.2%) warrant zero allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A delivers positive Sharpe in every window (384-bar: 0.387) with modest 1.2% drawdown. STRAT_B shows negative Sharpe across all windows (384-bar: -2.41), -26.2% drawdown, and 369 bars since peak. The -0.735 correlation would normally favor diversification, but STRAT_B's persistent negative edge means combining it reduces portfolio Sharpe. Equal-weight baseline (0.5/0.5) is inferior because STRAT_B destroys risk-adjusted value. Zero weight on STRAT_B avoids turnover costs from future rebalancing if it recovers, while full allocation to STRAT_A captures its consistent positive expectancy.",
+  "regime": "STRAT_A showing stable positive edge; STRAT_B in prolonged drawdown with no risk-adjusted merit."
+ }
+}
