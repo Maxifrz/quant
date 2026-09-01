@@ -5,6 +5,84 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-045 — Das Gate ist gelaufen: der LLM-Allokator ist durchgefallen
+**Datum:** 2026-09-01
+
+Der erste echte Gate-Lauf (ADR-004) gegen NVIDIA NIM: 145 Aufrufe, 3:47 Stunden,
+29 Out-of-Sample-Fenster über `trend` und `meanrev` auf BTC/USD und ETH/USD, 4h.
+
+| Allokator | Sharpe | Rendite | MaxDD | Umsatz | Trades |
+|---|---|---|---|---|---|
+| **llm** | −1,18 | −74,3% | −80,2% | 23,86 Mio | 1.271 |
+| equal_weight | −2,54 | −70,5% | −71,0% | 20,64 Mio | 1.261 |
+| vol_parity(168) | −2,12 | −68,7% | −70,2% | 21,98 Mio | 1.400 |
+| best_single(720) | −0,98 | −62,2% | −69,2% | 14,43 Mio | 635 |
+
+**Durchgefallen**, an zwei Punkten: der Sharpe ist nicht positiv, und
+`best_single` wird weder im Gesamtwert (−1,18 gegen −0,98) noch in der Mehrheit
+der Fenster (13 von 29) geschlagen.
+
+**Was das Modell kann:** es schlägt `equal_weight` in 23 von 29 Fenstern und
+`vol_parity` in 22 von 29. Das ist kein Rauschen, das ist ein Muster — und der
+Sharpe-Abstand −1,18 gegen −2,54 ist mehr als eine Halbierung des Schadens.
+Trotzdem geht es nicht weiter. Ein Allokator, der zwei von drei Baselines
+schlägt, ist ein Teilerfolg, und das Gate ist genau dafür gebaut, sich von
+Teilerfolgen nicht kaufen zu lassen.
+
+**Die Telemetriezeile ist wichtiger als die Tabelle:** *Aufrufe 145, aus Cache
+0, Rückfälle auf Gleichgewichtung 0 (0,0%), bewusste Ausstiege 3, halluzinierte
+Labels 0.* Das Modell hat 145-mal wirklich geantwortet, jede Antwort war
+brauchbar, keine wurde still zu Equal-Weight. Ohne ADR-043 hätte diese Zeile
+5 von 145 Aufrufen beschrieben; ohne ADR-044 wäre jede kaputte JSON-Antwort als
+Rückfall durchgeschlagen. Beide Korrekturen entstanden am selben Tag, Stunden
+vor dem Lauf — ohne sie wäre das Ergebnis nicht interpretierbar gewesen.
+
+Drei **bewusste Ausstiege**: das Modell ist dreimal absichtlich flach gegangen,
+statt zu allokieren. Die Option, nichts zu tun, wird genutzt.
+
+### Der Umsatz-Befund, und eine Korrektur
+
+Naheliegend war die These, der Allokator handle zu teuer: 23,9 Mio gegen 14,4
+Mio bei `best_single` sind +65%. **Das ist ein Vergleich mit dem falschen
+Gegner.** `best_single` hält per Konstruktion nur eine Strategie; seine Hälfte
+an Trades (635 gegen 1.271) kommt aus Konzentration, nicht aus Sparsamkeit.
+
+Gegen den strukturgleichen Gegner `equal_weight` — ebenfalls voll investiert,
+ebenfalls beide Strategien — sind es **+15,6% Umsatz bei 10 Trades
+Unterschied**, und dafür Sharpe −1,18 statt −2,54. Das ist ein guter Tausch.
+Ein Trägheitsterm gegen Umschichtungskosten löst also ein Problem, das die
+Zahlen nicht hergeben.
+
+### Was die 145 zwischengespeicherten Vorschläge zeigen
+
+Ohne einen einzigen neuen Aufruf, direkt aus `.llm_cache`:
+
+* Bruttoexposure **immer exakt 1,00** — nie Hebel, nie teilinvestiert.
+* Änderung je Allokation: **Median 0,80** bei 1,00 Brutto. Im Median werden
+  40% des Buches umgeschichtet.
+* **28 von 144 Schritten sind Vollumkehrungen** (|Δw| = 2,0), 37 ändern nichts.
+* Bei zwei Labels ist der Allokator faktisch ein **Schalter, kein Mischer**.
+
+**Daraus die eigentliche Hypothese:** nicht "zu teuer", sondern **zu schnell
+geschaltet für die Persistenz des Signals**. Der Gewinner demonstriert es:
+`best_single` mit Lookback **720** hat gewonnen, während der Allokator alle 96
+Bars auf Basis eines 384-Bar-Sharpe neu entscheidet.
+
+### Einschränkung, die das Ergebnis begrenzt
+
+Alle vier Allokatoren verlieren dreistellig Prozent. Gemessen wurde `trend` und
+`meanrev` auf 4h — die Baseline-Strategien, die laut Plan ausdrücklich **nicht**
+profitabel sein sollen. Das Gate vergleicht also, wer eine schlechte
+Strategiemenge am wenigsten schlecht verteilt. Über einen LLM-Allokator auf
+einer tragfähigen Menge (etwa `macross`, ADR-035) sagt dieser Lauf nichts.
+
+**Konsequenz:** Der LLM-Allokator geht nicht in den Kreislauf. Der Cache des
+Laufs ist versioniert (163 Einträge), damit die Zahlen in jedem künftigen
+Container in Minuten statt vier Stunden reproduzierbar sind — er ist
+zeitstempelfrei und liefert bitgleiche Dateien.
+
+---
+
 ## ADR-044 — Ungeführtes JSON braucht eine korrigierende Nachfrage
 **Datum:** 2026-09-01
 

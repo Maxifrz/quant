@@ -2,53 +2,52 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0–6 sind gebaut.** `macross` läuft als Paper-Konto gegen echte
-> Coinbase-Daten.
+> **Phase 0–6 sind gebaut, und Phase 3 und 5 sind jetzt auch gemessen.**
 >
-> Erster Handgriff, alle paar Stunden von Hand oder per Routine:
-> ```bash
-> uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
-> uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
-> ```
-> Ziel: mehrere Wochen laufen lassen und Live-vs-Backtest-Divergenz messen.
-> Weicht die Paper-Kurve systematisch vom Walk-Forward-Ergebnis (ADR-035) ab,
-> ist das ein Befund über die Backtest-Annahmen, kein Grund, die Zahlen zu
-> ignorieren.
+> Der Gate-Lauf ist durch (ADR-045): **der LLM-Allokator ist durchgefallen.**
+> Sharpe −1,18 gegen −0,98 bei `best_single`, und nur 13 von 29 Fenstern
+> gewonnen. Er schlägt `equal_weight` in 23 von 29 und `vol_parity` in 22 von
+> 29 — ein Teilerfolg, der nicht reicht. Rückfallquote 0,0%, also ist das
+> Ergebnis belastbar und nicht das Artefakt eines stillen Ausfalls.
 >
-> **Zwei weitere Schritte offen, unabhängig von Phase 6:**
+> **Drei Schritte, in dieser Reihenfolge:**
 >
-> 1. Ein echter LLM-Lauf für Phase 3 (Allokator) und Phase 5 (Research-Loop) —
->    beide nur gegen Stubs geprüft, kostet zusammen unter 20 Dollar:
+> 1. **Langsamer schalten.** Der schärfste Befund aus den 145
+>    zwischengespeicherten Vorschlägen: der Allokator schichtet im Median 40%
+>    des Buches je Schritt um und kehrt 28-mal komplett. Gewonnen hat
+>    `best_single` mit Lookback **720** — der langsamste Gegner im Feld.
+>    Zu testen ist die Umschalt-Frequenz, nicht die Kosten:
 >    ```bash
->    ANTHROPIC_API_KEY=... uv run qt alloc --compare-baselines \
->        --allocate-every 96 --effort low --model claude-sonnet-5
->    ANTHROPIC_API_KEY=... uv run qt research --generate 10 --screen
->    ```
->    Alternativ über NVIDIA NIM (ADR-039/040, `uv sync --extra nim` einmalig).
->    Der Aufrufweg ist gegen den echten Endpunkt geprüft — aber **rechne mit
->    4–6 Stunden** für das Gate: gemessene 90–155 Sekunden pro Aufruf mal 145.
->    Also starten und liegen lassen, nicht nebenbei ausprobieren.
->    ```bash
->    # Erst der Pflichttest: zwei Aufrufe, ~5 Minuten, findet eine kaputte
->    # Verdrahtung bevor der lange Lauf sie teuer findet.
->    NVIDIA_API_KEY=nvapi-... uv run pytest tests/test_nim_live.py -m slow -v
->
 >    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
->        --allocate-every 96 --effort low --provider nim
->    NVIDIA_API_KEY=nvapi-... uv run qt research --generate 10 --screen \
->        --provider nim
+>        --allocate-every 384 --effort low --provider nim
 >    ```
->    Beim ersten NIM-Lauf sind zwei Zahlen wichtiger als das Ergebnis: die
->    Quote **„Sandbox verworfen"** im Research-Trichter (ein hoher Wert heißt,
->    der für Claude geschriebene Generator-Prompt passt nicht zu Nemotron —
->    ADR-030 gegen ADR-039) und die **Rückfallquote** im Gate (über 0% heißt,
->    der Allokator war streckenweise heimlich Equal-Weight, ADR-018).
-> 2. Ein Jahr Order-Flow-Historie für einen echten Walk-Forward auf
->    `orderflow` — dreimal an Container-Neustarts gestorben (ADR-034), zuletzt
->    bei 2,4 Mio. Trades. Fortsetzbar über `qt data trades --days 365`
->    (`resume_point` setzt am zusammenhängenden Block fort, nicht am jüngsten
->    Trade).
+>    Achtung: ein anderer Takt heißt andere Briefings, also **andere
+>    Cache-Keys** — das kostet wieder ~4 Stunden und 145 Aufrufe. Der Cache
+>    des 96er-Laufs bleibt gültig und ist committet.
 >
+> 2. **Das Gate auf einer tragfähigen Strategiemenge wiederholen.** Alle vier
+>    Allokatoren verlieren hier dreistellig, weil `trend` und `meanrev`
+>    absichtlich keine Kante haben. Solange das so ist, misst das Gate nur,
+>    wer schlecht am wenigsten schlecht verteilt. Mit `macross` (ADR-035)
+>    stünde zum ersten Mal etwas Verdienendes im Korb.
+>
+> 3. **Paper-Trading gehört nicht in diesen Container.** `data/paper/` ist
+>    leer: die frühere Behauptung, `macross` laufe als Paper-Konto, gilt
+>    nicht mehr — der Container wurde neu gebaut, `/data/` ist gitignored.
+>    Ein Paper-Konto braucht Persistenz und eine Uhr; beides hat eine
+>    flüchtige Session nicht. Es gehört auf eine Maschine, die überlebt.
+>
+> **Offen, unabhängig davon:**
+>
+> * Ein Jahr Order-Flow für `orderflow`. Der Bestand täuscht: 2,4 Mio Trades
+>   über 361 Tage Spanne, aber mit einem **301-Tage-Loch** in der Mitte.
+>   Real sind zwei Blöcke — 2025-08-28 bis 2025-09-30 (33 d) und 2026-07-28
+>   bis 2026-08-24 (26 d). 59 Tage tragen kein Train/Test/Embargo-Fenster.
+>   Fortsetzbar über `qt data trades --days 365`.
+> * Der Research-Loop lief echt (ADR-042): 10 Kandidaten, 8 gescreent, 0
+>   bestanden, Versuchszähler steht auf 8. Jeder weitere Lauf verschärft die
+>   DSR-Schwelle dauerhaft — das Budget ist nicht gratis.
+
 ---
 
 ## Die erste Strategie, die Geld verdient (ADR-035)

@@ -8,6 +8,12 @@ __pycache__/
 # Fuehrender Slash ist wichtig: 'data/' wuerde sonst auch src/qt/data/ treffen.
 /data/
 /reports/
+# Der LLM-Cache ist ausgenommen, sobald ein teurer Lauf drinsteckt: der
+# Gate-Lauf kostet 145 Aufrufe und knapp vier Stunden, und der Cache macht ihn
+# in jedem Container in Minuten reproduzierbar. Er ist zeitstempelfrei gebaut,
+# liefert also bitgleiche Dateien, und enthaelt keine Geheimnisse -- die Keys
+# sind Hashes, die Briefings sind blind (ADR-003). Aufgenommen wird er per
+# `git add -f`, damit Zwischenstaende nicht versehentlich mitwandern.
 /.llm_cache/
 
 .env
