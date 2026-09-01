@@ -405,7 +405,10 @@ def test_antwort_ohne_json_wird_benannt():
 
 
 def test_json_das_nicht_zum_schema_passt_wird_benannt():
-    provider, _ = _nim([_antwort(json.dumps({"recommendation": "vielleicht"}))])
+    # Dreimal dieselbe falsche Antwort: der Provider fragt zweimal
+    # korrigierend nach (siehe unten) und meldet erst dann den Fehler.
+    falsch = _antwort(json.dumps({"recommendation": "vielleicht"}))
+    provider, _ = _nim([falsch] * (NimProvider.MALFORMED_RETRIES + 1))
 
     with pytest.raises(LLMUnavailable) as fehler:
         _parse(provider)
@@ -649,3 +652,74 @@ def test_ohne_schluessel_nennt_die_meldung_die_variablen():
 
     for name in NIM_KEY_VARS:
         assert name in str(fehler.value)
+
+
+# ---------------------------------------------------------------------------
+# Kaputtes JSON: korrigierend nachfragen statt still zurueckfallen
+# ---------------------------------------------------------------------------
+
+# Ein nicht maskiertes Anfuehrungszeichen mitten im Begruendungstext -- genau
+# die Form, an der ein echter Kritiker-Aufruf im Vorlauf zum Gate-Lauf
+# gescheitert ist.
+KAPUTT = (
+    '{"recommendation": "reject", "overfitting_risk": 0.9, '
+    '"reasoning": "die Zeile "close > 42000" bindet an ein Kursniveau"}'
+)
+
+
+def test_kaputtes_json_wird_korrigierend_nachgefragt():
+    """Ein unmaskiertes Anfuehrungszeichen darf den Lauf nicht kippen.
+
+    Ohne Nachfrage wird daraus im Allokator ein Rueckfall auf
+    Gleichgewichtung (ADR-018) -- der Lauf misst dann streckenweise eine
+    Baseline gegen sich selbst. Ueber 145 Aufrufe ist ein sporadischer
+    Fehler kein Restrisiko, sondern eine Gewissheit.
+    """
+    provider, fake = _nim([_antwort(KAPUTT), _antwort(json.dumps(VERDIKT))])
+    ergebnis = _parse(provider)
+
+    assert ergebnis.recommendation == "proceed"
+    assert provider.malformed_retries == 1
+    assert len(fake.calls) == 2, "es muss ein zweiter Aufruf stattgefunden haben"
+
+
+def test_die_nachfrage_nennt_den_fehler_und_die_ursache():
+    # Eine Nachfrage ohne Diagnose ist derselbe Aufruf noch einmal -- und
+    # liefert dieselbe kaputte Antwort.
+    provider, fake = _nim([_antwort(KAPUTT), _antwort(json.dumps(VERDIKT))])
+    _parse(provider)
+
+    zweiter = fake.calls[1]["messages"][-1]["content"]
+    assert "Kandidat XY" in zweiter, "der urspruengliche Auftrag muss erhalten bleiben"
+    assert "kein gueltiges JSON" in zweiter
+    assert "maskiert" in zweiter
+
+
+def test_nach_zwei_vergeblichen_nachfragen_wird_aufgegeben():
+    # Ein Modell, das dreimal kaputtes JSON liefert, liefert auch beim
+    # vierten Mal kaputtes -- und jeder Versuch kostet 40-155 Sekunden.
+    provider, fake = _nim([_antwort(KAPUTT)] * 3)
+
+    with pytest.raises(LLMUnavailable, match="kein gueltiges JSON"):
+        _parse(provider)
+
+    assert len(fake.calls) == 3, "genau MALFORMED_RETRIES + 1 Versuche"
+    assert provider.malformed_retries == 3
+
+
+def test_eine_gueltige_antwort_fragt_nicht_nach():
+    provider, fake = _nim([_antwort(json.dumps(VERDIKT))])
+    _parse(provider)
+    assert len(fake.calls) == 1
+    assert provider.malformed_retries == 0
+
+
+def test_auch_ein_schema_verstoss_wird_nachgefragt():
+    # Gueltiges JSON, falsche Felder: derselbe Umgang. Das Modell kann den
+    # Fehler korrigieren, wenn man ihm sagt, welcher es war.
+    falsch = json.dumps({"recommendation": "vielleicht"})
+    provider, fake = _nim([_antwort(falsch), _antwort(json.dumps(VERDIKT))])
+    ergebnis = _parse(provider)
+
+    assert ergebnis.recommendation == "proceed"
+    assert len(fake.calls) == 2

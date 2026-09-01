@@ -5,6 +5,47 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-044 — Ungeführtes JSON braucht eine korrigierende Nachfrage
+**Datum:** 2026-09-01
+
+Der Pflicht-Vorlauf vor dem Gate-Lauf (`tests/test_nim_live.py`) schlug fehl:
+einer von drei Kritiker-Aufrufen lieferte JSON mit einem **nicht maskierten
+Anführungszeichen** mitten in der Begründung — das Modell zitierte die
+beanstandete Codezeile wörtlich. Ein zweiter, identischer Aufruf lief danach
+sauber durch: der Fehler ist sporadisch, nicht systematisch.
+
+Das ist die direkte Kehrseite von ADR-041. Geführte Dekodierung garantierte
+gültiges JSON, fraß dafür Zeilenumbrüche; ungeführt kommen die Umbrüche
+zurück, dafür schreibt das Modell die Syntax selbst — und gelegentlich falsch.
+Es gibt hier keine Option ohne Preis, nur die Wahl, welchen man zahlt.
+
+**Warum sporadisch schlimmer ist als systematisch:** ein Fehler, der immer
+auftritt, fällt beim ersten Test auf. Einer, der in 1 von 3 Fällen auftritt,
+kommt über die 145 Aufrufe eines Gate-Laufs mit Sicherheit vor — und wird dort
+zu einer `LLMUnavailable`, die der Allokator als Rückfall auf Gleichgewichtung
+behandelt (ADR-018). Der Lauf hätte also streckenweise eine Baseline gegen
+sich selbst gemessen. Zusammen mit ADR-043, wo dieselbe Quote 29-fach zu
+niedrig gemeldet wurde, wäre das unbemerkt geblieben.
+
+**Konsequenz:** `LLMMalformed` trennt "Antwort kam an, war unbrauchbar" von
+"kein Zugang" — abgeleitet von `LLMUnavailable`, damit kein Aufrufer sich
+ändern muss. `NimProvider.parse` fragt bei einer unbrauchbaren Antwort bis zu
+zweimal korrigierend nach und nennt dabei den Parser-Fehler und die
+wahrscheinliche Ursache. Eine Nachfrage ohne Diagnose wäre derselbe Aufruf
+noch einmal. Zwei Versuche, nicht mehr: wer zweimal kaputtes JSON liefert,
+liefert es auch beim dritten Mal, und jeder Versuch kostet 40–155 Sekunden.
+`malformed_retries` zählt mit — eine still weggeputzte Fehlerquote ist nach
+ADR-043 genau die Art Zahl, die niemandem auffällt.
+
+Ein bestehender Test brach dadurch und wurde angepasst statt umgangen: er
+lieferte eine einzige falsche Antwort und erwartete sofortiges Aufgeben.
+
+**Der eigentliche Ertrag ist der Vorlauf selbst.** Fünf Minuten und zwei
+Aufrufe haben einen Fehler gefunden, der sechs Stunden später als
+unerklärliche Rückfallquote aufgetaucht wäre — wenn überhaupt.
+
+---
+
 ## ADR-043 — Die Rückfallquote beschrieb 5 von 145 Aufrufen
 **Datum:** 2026-09-01
 

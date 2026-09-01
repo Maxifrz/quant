@@ -57,6 +57,16 @@ class LLMUnavailable(RuntimeError):
     """
 
 
+class LLMMalformed(LLMUnavailable):
+    """Die Antwort kam an, war aber kein gueltiges JSON oder passte nicht.
+
+    Absichtlich von `LLMUnavailable` abgeleitet: jeder bestehende Aufrufer
+    behandelt sie weiter wie "Modell steht nicht zur Verfuegung". Der
+    Unterschied zaehlt nur eine Ebene tiefer -- eine kaputte Antwort kann man
+    sinnvoll noch einmal anfordern, einen falschen Schluessel nicht.
+    """
+
+
 class LLMProvider(Protocol):
     """Was ein Anbieter koennen muss. Mehr braucht kein Client von ihm."""
 
@@ -228,6 +238,15 @@ keine Erklaerung ausserhalb des JSON.
 
 {schema}"""
 
+_REPAIR_HINT = """
+
+Deine vorige Antwort war unbrauchbar: {fehler}
+
+Der haeufigste Grund ist ein doppeltes Anfuehrungszeichen **innerhalb** eines
+Strings, das nicht als \\" maskiert wurde -- etwa beim Zitieren von Code.
+Zitiere Code mit einfachen Anfuehrungszeichen oder gar nicht. Gib jetzt
+ausschliesslich das korrigierte JSON-Objekt aus."""
+
 # Reasoning-Modelle geben ihren Gedankengang je nach Bereitstellung entweder in
 # einem eigenen Feld zurueck oder inline im Text. Der Inline-Fall muss weg,
 # bevor irgendetwas nach JSON sucht.
@@ -295,6 +314,11 @@ class NimProvider:
     # Faktor auf `max_tokens`, weil der Gedankengang mitzaehlt (Punkt 2 oben).
     TOKEN_FACTOR = {"low": 1, "medium": 3, "high": 4, "xhigh": 6, "max": 8}
 
+    # Korrigierende Nachfragen bei unbrauchbarer Antwort. Zwei, nicht mehr:
+    # ein Modell, das zweimal hintereinander kaputtes JSON liefert, liefert es
+    # auch beim dritten Mal, und jeder Versuch kostet 40-155 Sekunden.
+    MALFORMED_RETRIES = 2
+
     # Wiederholungen bei 429 und 5xx. Hoeher als die zwei des SDK, und
     # ausdruecklich gesetzt statt geerbt: der gehostete Endpunkt hat im ersten
     # echten Testlauf ein "Service temporarily overloaded" (HTTP 503)
@@ -334,6 +358,10 @@ class NimProvider:
         # abgelehnt hat. Ein Lauf macht hunderte Aufrufe; ohne dieses Merken
         # zahlte er den Fehlschlag jedes Mal erneut.
         self._schema_refused = False
+        # Wie oft eine Antwort unbrauchbar war und nachgefragt werden musste.
+        # Sichtbar, weil eine still weggeputzte Fehlerquote nach ADR-043 genau
+        # die Art Zahl ist, die niemandem auffaellt.
+        self.malformed_retries = 0
 
     @property
     def cache_tag(self) -> str:
@@ -365,16 +393,39 @@ class NimProvider:
         )
         budget = max_tokens * self.TOKEN_FACTOR.get(effort, 1)
 
-        text = self._complete(
-            system=system_text,
-            prompt=prompt,
-            schema=schema,
-            json_schema=json_schema,
-            model=model,
-            max_tokens=budget,
-            effort=effort,
-        )
-        return _validate(text, schema)
+        # Ohne erzwungene Form (Punkt 1 im Klassen-Docstring) schreibt das
+        # Modell das JSON selbst -- und gelegentlich falsch. Gemessen im
+        # Vorlauf zum Gate-Lauf: ein Kritiker-Aufruf von dreien scheiterte an
+        # einem nicht maskierten Anfuehrungszeichen im Begruendungstext.
+        #
+        # Ohne Wiederholung wird daraus im Allokator ein Rueckfall auf
+        # Gleichgewichtung (ADR-018): der Lauf misst dann streckenweise eine
+        # Baseline gegen sich selbst, ohne dass es jemand sieht. Ueber die 145
+        # Aufrufe eines Gate-Laufs ist ein sporadischer Fehler kein Restrisiko,
+        # sondern eine Gewissheit -- deshalb wird hier korrigierend
+        # nachgefragt, statt aufzugeben.
+        letzter: LLMMalformed | None = None
+        for _ in range(self.MALFORMED_RETRIES + 1):
+            nachfrage = (
+                "" if letzter is None else _REPAIR_HINT.format(fehler=letzter)
+            )
+            text = self._complete(
+                system=system_text,
+                prompt=prompt + nachfrage,
+                schema=schema,
+                json_schema=json_schema,
+                model=model,
+                max_tokens=budget,
+                effort=effort,
+            )
+            try:
+                return _validate(text, schema)
+            except LLMMalformed as exc:
+                letzter = exc
+                self.malformed_retries += 1
+
+        assert letzter is not None
+        raise letzter
 
     def _complete(
         self,
@@ -590,13 +641,13 @@ def _validate(text: str, schema: type[BaseModel]) -> BaseModel:
     try:
         payload = json.loads(blob)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise LLMUnavailable(
+        raise LLMMalformed(
             f"NIM-Antwort war kein gueltiges JSON ({exc}). Anfang: {blob[:200]!r}"
         ) from exc
     try:
         return schema.model_validate(payload)
     except ValidationError as exc:
-        raise LLMUnavailable(
+        raise LLMMalformed(
             f"NIM-Antwort passte nicht auf {schema.__name__}: {exc}"
         ) from exc
 
