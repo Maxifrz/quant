@@ -5,6 +5,93 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-048 — Miner-Kapitulation: BTC-spezifisch, aber nicht von Zufall zu unterscheiden
+**Datum:** 2026-09-01
+
+Auftrag war eine Strategie, die auf BTCs Unterschiede zu anderen Kryptos
+zugeschnitten ist. **Zwei Begründungen wurden vorher gemessen und beide
+widerlegt — vor der ersten Zeile Code:**
+
+1. **„BTC ist berechenbarer."** 23 gepaarte Walk-Forwards (gleiche Strategie,
+   gleicher Timeframe, nur Markt getauscht): BTC gewinnt 11 von 23, mittlere
+   Differenz **−0,04** Sharpe. Kein Vorteil.
+2. **„BTC ist der Zufluchtsort bei Krypto-Risk-off."** Der BTC/ETH-Dominanz-
+   Filter trennt BTCs 20-Tage-Vorwärtsrendite um **+4,29** Prozentpunkte —
+   ETHs aber um **+5,52**. Wäre der Mechanismus BTC-spezifisch, dürfte er ETH
+   nicht helfen. Er hilft mehr.
+3. **„Die Beta-Asymmetrie ist handelbar."** Long BTC / short ETH: Sharpe
+   −0,47 gesamt, +0,16 im Hoch-Vola-Drittel (unter dem Standardfehler von
+   ±0,47), Vorzeichenwechsel in vier von sieben Jahren.
+
+Die Halving-These wurde gar nicht erst getestet: mit **zwei** Halvings im
+Datensatz (2020-05, 2024-04) ist sie unfalsifizierbar, und keine der
+Strategien hat ohnehin einen Eingang, der einen Zyklus sehen könnte.
+
+**Was übrig blieb, war kein besseres Argument, sondern ein struktureller
+Unterschied.** Ethereum ist seit 2022 Proof-of-Stake — es gibt keine
+ETH-Miner, keine Hashrate, keine Kapitulation. Ein Signal aus der Hashrate ist
+BTC-spezifisch per Konstruktion statt per Erzählung.
+
+### Die Strategie
+
+`hashribbon`: flach, solange das 30-Tage-Mittel der Hashrate unter dem
+60-Tage-Mittel liegt, sonst long. **Zwei Parameter**, wie `macross`; `elliott`
+hat sechs und streut über BTCs höhere Timeframes um 0,99 Sharpe (ADR-047).
+Long/flach ohne Short, wie ADR-035. Die handelbare Behauptung ist eine
+Unterlassung, keine Prognose: BTC nicht halten, solange die Miner kapitulieren.
+
+Neu: `qt data onchain` zieht blockchain.info **jahrweise** — `timespan=8years`
+liefert gemessen nur ein 2-Tages-Raster, erst `timespan=1year&start=…` gibt
+Tagesauflösung. 2790 Punkte ab 2019-01, 99,6% Abdeckung, zwei Lücken (4 und 8
+Tage), die die Prüfung benennt statt glättet.
+
+### Das Ergebnis: durchgefallen
+
+| | Sharpe | Rendite | MaxDD | Fenster+ |
+|---|---|---|---|---|
+| hashribbon BTC | **+0,16** | −13,8% | −68,7% | 3/7 |
+| macross BTC (Messlatte) | +0,31 | +25,2% | −51,0% | 5/7 |
+| hashribbon ETH (Placebo) | −0,16 | −73,4% | −79,5% | 3/7 |
+
+Vorab festgelegt war: positiver Sharpe **und** besser als `macross`. Das
+erste hält knapp, das zweite nicht. Damit ist die Spur beendet — dokumentiert,
+nicht nachjustiert.
+
+### Die zwei Kontrollen sagen mehr als die Tabelle
+
+**Der Placebo hält.** BTC +0,16 gegen ETH −0,16: das Signal wirkt auf BTC und
+nicht auf ETH, Abstand 0,32 Sharpe. Die BTC-Spezifität ist damit **belegt** —
+anders als bei den zwei widerlegten Erzählungen oben. Es gibt nur keine Kante,
+auf die sie sich beziehen könnte.
+
+**Die Negativkontrolle ist vernichtend.** Dieselbe Regel auf zeitlich
+permutierter Hashrate, fünf Ziehungen: −0,24, −0,78, −0,71, **+0,32**, −0,55.
+Im Mittel −0,39, aber **eine von fünf zufälligen Permutationen schlägt die
+echte Reihe** (+0,32 gegen +0,16). Wenn gewürfelte Daten in 20% der Fälle
+besser abschneiden als die richtigen, ist das Ergebnis von Zufall nicht zu
+unterscheiden. Ohne diese Kontrolle wäre +0,16 als „schwach, aber positiv"
+durchgegangen.
+
+### Was das über die Methode sagt
+
+Drei Hypothesen, drei Widerlegungen, und die teuerste kostete eine Strategie
+statt 56 Walk-Forwards. Bei `elliott` kam derselbe Placebo-Test **nach** der
+Messung und musste eine bereits gebaute Zahl entwerten; hier stand er vorher
+fest und hat zweimal Arbeit erspart, die nichts gebracht hätte.
+
+Der Point-in-Time-Test dieser Strategie hat dieselbe Lektion noch einmal
+geliefert: die erste Fassung war grün und **wertlos** — sie prüfte gegen eine
+steigende Hashrate, bei der die Strategie ohnehin long ist, sodass ein
+manipulierter Wert nichts änderte. Erst gegen eine *fallende* Reihe schlägt er
+fehl, wenn man den Ein-Tages-Versatz entfernt. Gegengeprüft mit `LAG_BARS = 0`.
+
+**Konsequenz:** `hashribbon` bleibt im Repo als geprüfter Negativbefund, nicht
+als Kandidat. Der Ingest bleibt, weil die Reihe für künftige Fragen taugt. Der
+Versuchszähler ist um einen Eintrag gewachsen — bewusst genau eine
+Parametrisierung, kein Gitter.
+
+---
+
 ## ADR-047 — Unter 1d entscheidet die Frequenz, über 1d entscheidet nichts mehr
 **Datum:** 2026-09-01
 

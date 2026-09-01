@@ -2,6 +2,14 @@
 
 > ## ▶ HIER WEITER
 >
+> **Neu (ADR-048): `hashribbon` ist gebaut, geprüft und durchgefallen.**
+> Sharpe +0,16 gegen die Messlatte 0,31 von `macross`. Der Placebo hält (ETH
+> −0,16, das Signal ist wirklich BTC-spezifisch), aber die Negativkontrolle
+> kippt es: **eine von fünf zufällig permutierten Hashrate-Reihen schlägt die
+> echte** (+0,32 gegen +0,16). Von Zufall nicht zu unterscheiden. Die
+> Strategie bleibt als geprüfter Negativbefund im Repo, nicht als Kandidat.
+> Neu nutzbar: `qt data onchain` (blockchain.info, jahrweise geblättert).
+>
 > **Der LLM-Allokator ist zweimal durchgefallen, und die naheliegende
 > Reparatur ist widerlegt.** Takt 96: Sharpe −1,18. Takt 384: −2,19, während
 > jede regelbasierte Baseline besser wurde (ADR-046). Weniger Umsatz,

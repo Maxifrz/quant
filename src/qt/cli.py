@@ -164,6 +164,36 @@ def data_resample(
         typer.echo(f"  {symbol:>10} {timeframe:>3}  {n:>7,} Bars")
 
 
+@data_app.command("onchain")
+def data_onchain(
+    series: Annotated[str, typer.Option(help="Reihen, kommagetrennt")] = "hash-rate",
+    since: Annotated[str, typer.Option(help="Startdatum YYYY-MM-DD")] = "2019-01-01",
+) -> None:
+    """On-Chain-Reihen von blockchain.info ziehen.
+
+    Die einzige Datenquelle im Projekt, die etwas liefert, das nur Bitcoin
+    haben kann: Miner-Oekonomie. Ethereum ist Proof-of-Stake, dort gibt es
+    keine Hashrate (ADR-048).
+    """
+    from qt.data.onchain import SERIES, describe, pull
+
+    start = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+    for name in _split(series):
+        if name not in SERIES:
+            raise typer.BadParameter(
+                f"Unbekannte Reihe {name!r}. Bekannt: {', '.join(sorted(SERIES))}"
+            )
+
+    for name in _split(series):
+        typer.echo(f"Ziehe {name} ab {since} ...")
+        n = pull(name, start)
+        typer.echo(f"  {n:,} Punkte gespeichert")
+
+    typer.echo("")
+    for name in _split(series):
+        typer.echo(describe(name))
+
+
 @data_app.command("report")
 def data_report() -> None:
     """Bestand und Integritaet aller gespeicherten Daten anzeigen."""
