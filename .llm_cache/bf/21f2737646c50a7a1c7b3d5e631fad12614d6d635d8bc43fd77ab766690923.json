@@ -1,0 +1,22 @@
+{
+ "key": "bf21f2737646c50a7a1c7b3d5e631fad12614d6d635d8bc43fd77ab766690923",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Persistent negative Sharpe across all windows (-2.3 to -4.4); inverted adds positive edge.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Positive Sharpe in 96/384 bars (0.93/3.87); low drawdown (-5.4%) and negative correlation to A improves diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B shows consistent positive risk-adjusted returns (Sharpe 3.87 over 384 bars, 0.93 over 96) with modest drawdown. STRAT_A is persistently negative (Sharpe -4.43 over 384 bars, -24% drawdown). Correlation of -0.80 means inverted STRAT_A (+0.5) and STRAT_B (+0.5) construct a market-neutral portfolio with reduced variance. Gross exposure = 1.0. Shift from current (0.2/0.8) is justified by multi-window evidence.",
+  "regime": "STRAT_B positive edge, STRAT_A negative edge; strong negative correlation enables efficient long/short."
+ }
+}

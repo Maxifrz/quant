@@ -1,0 +1,22 @@
+{
+ "key": "2a5e0d1b7ac6ec2318f6808f4245a8413b476fefca1bcf3d5dc90531587fc7e0",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Konsistenter positiver Sharpe ueber alle Fenster (2.1/2.2/4.0) und geringe Drawdown (1.9%).",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Erwartung ueber langes Fenster (Sharpe 1.55, Hit-Rate 45%) rechtfertigt Inversion; negative Korrelation (-0.42) zu STRAT_A verbessert Diversifikation.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "Beibehaltung der aktuellen Allokation. STRAT_A liefert ueber 24/96/384 Bars durchgehend positive risikoadjustierte Renditen. STRAT_B ist ueber das lange Fenster (384) schwach (Return 0.116, Sharpe 1.55, Hit-Rate 44.9%) und befindet sich in einem laengeren Drawdown (5.1%, 349 Bars seit Peak). Die Inversion wandelt die negative Kante in positive um. Die negative Korrelation (-0.42) zwischen beiden Strategien verringert das Portfolio-Risiko. Kein Grund fuer Umschichtung, da Kennzahlen die aktuelle Gewichtung tragen.",
+  "regime": "STRAT_A zeigt stabile Trendfolge, STRAT_B liegt in laengerer Underperformance (349 Bars seit Peak)."
+ }
+}
