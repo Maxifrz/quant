@@ -1,0 +1,22 @@
+{
+ "key": "8af84fcb88d4707e7d68acc0629a6b6d1cd1b29ccd0cd5766ad9e98eeddc14ff",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 96-bar Sharpe (1.23) und kleinerer Drawdown (-5%) sprechen für höhere Gewichtung.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.55
+   },
+   {
+    "reason": "Negative 96-bar Sharpe (-7.24) und hoher Drawdown (-17,6%) rechtfertigen reduzierte Allokation trotz starker negativer Korrelation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.45
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "STRAT_A liefert im 96-Bar-Fenster einen positiven Sharpe von 1.23 bei nur -5% Drawdown, während STRAT_B mit -7.24 Sharpe und -17,6% Drawdown stark unterperformt. Die -0.86 Korrelation bietet Diversifikation, rechtfertigt aber keine Erhöhung von STRAT_B bei derart schlechten Kennzahlen. Leichte Übergewichtung von STRAT_A (55/45) statt 50/50, um Rebalancing-Kosten gering zu halten.",
+  "regime": "STRAT_A zeigt Stabilität, STRAT_B schwächelt im mittelfristigen Fenster"
+ }
+}

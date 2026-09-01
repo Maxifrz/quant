@@ -1,0 +1,22 @@
+{
+ "key": "b2c8bb68cf775109077a85ad6114899a9b8d983ac6327aad025f0be7fa57c84b",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe (0.586) and return (1.9%) over the 384-bar window, the only reliable horizon; negative correlation with STRAT_B does not justify adding a strategy with -1.7 Sharpe over the same window.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Sharpe (-1.701) and return (-5.2%) over 384 bars indicate no persistent edge; short-window Sharpe of 6.38 is noisy and insufficient to overcome long-window evidence.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Allocation remains fully in STRAT_A because it is the only strategy with a positive risk-adjusted return over the longest, most stable window (384 bars). STRAT_B shows consistently negative performance on that horizon (Sharpe -1.7, return -5.2%), and its briefly positive 24-bar Sharpe (6.38) is typical noise. The -0.645 correlation would only be valuable if STRAT_B contributed positive expectancy, which it does not. Rebalancing costs and lack of evidence for STRAT_B improvement support holding the current allocation.",
+  "regime": "STRAT_A in mild drawdown (2.2%), STRAT_B in deeper drawdown (10.4%) with no recent recovery."
+ }
+}

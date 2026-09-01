@@ -1,0 +1,22 @@
+{
+ "key": "e916e8e1e2ed66925c709d06cec0aa8f62e0b949b8246c5dc17f3b53c58c250d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative correlation (-0.78) with STRAT_B provides diversification; 96-bar Sharpe 1.00 and hit rate 53% suggest recent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Positive 384-bar return (0.043) and Sharpe 0.77 show long-term profitability; negative correlation hedges STRAT_A.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "Equal-weight exploits strong negative correlation (-0.784) between strategies. STRAT_A shows strong 96-bar metrics (Sharpe 1.001, hit rate 52.9%) indicating recent momentum. STRAT_B demonstrates consistent longer-term profitability (384-bar return 4.3%, Sharpe 0.767). Both have similar drawdowns (~14-20%) and low time-in-market. Moving from 100% STRAT_B to 50/50 captures diversification benefit while maintaining exposure to both edges. Short 24-bar window is uninformative (zero time-in-market). Confidence moderate due to limited history (512 bars) and recent drawdowns for both strategies.",
+  "regime": "Mixed regime: STRAT_B leads long-term, STRAT_A recent strength; negative correlation enables portfolio benefit."
+ }
+}

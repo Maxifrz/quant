@@ -1,0 +1,22 @@
+{
+ "key": "1b397334e4a63156eba3de7a2f0c60687dc5fa305e57abd3b226535bab5ca71c",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-term Sharpe 0.23, strong negative correlation with STRAT_B (-0.92).",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Long-term Sharpe 0.78, strong negative correlation with STRAT_A (-0.92).",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Both strategies show poor long-term Sharpe ratios (384-bar window): STRAT_A 0.23, STRAT_B 0.78. Their near-perfect negative correlation (-0.92) offers significant diversification benefit. Equal weighting balances exposure given neither has a decisively superior long-term edge. Current allocation (100% STRAT_A) ignores STRAT_B's better long-term risk-adjusted return and the correlation hedge. No window provides strong evidence for directional bets or inversion.",
+  "regime": "Two negatively correlated strategies with weak long-term profiles."
+ }
+}

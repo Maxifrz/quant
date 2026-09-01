@@ -1,0 +1,22 @@
+{
+ "key": "cf059f78471a6cf1d014f9fe94d32af1e6a94d701391c69f133d4a087a7114d5",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "STRAT_A liefert im langfristigen Fenster (384 Bars) einen positiven Return von 0.163 bei Sharpe 4.309, STRAT_B zeigt dort Return -0.117 und Sharpe -4.225.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "STRAT_B hat ueber alle relevanten Fenster negative Returns und negative Sharpes, in den letzten 24 Bars gar keine Aktivitaet.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.95,
+  "reasoning": "Die einzige statistisch tragende Kennzahl ist das 384-Bar-Fenster. STRAT_A erzielt dort Sharpe 4.309 und positiven Return, STRAT_B das Gegenteil. Die starke negative Korrelation (-0.805) waere nur nutzbar, wenn beide Strategien eine positive Edge haetten; das ist nicht der Fall. Ein negatives Gewicht fuer STRAT_B waere ein Directional-Bet auf Fortsetzung der Unterperformance, was die Regeln verbieten. Umschichtung von 50/50 auf 100/0 ist gerechtfertigt, da die aktuelle Allokation Kapital in eine dauerhaft verlustbringende Strategie bindet.",
+  "regime": "STRAT_A befindet sich in moderatem Drawdown (-5.8%) mit starker langfristiger Edge; STRAT_B ist fundamental defizitaer."
+ }
+}
