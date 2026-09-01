@@ -1,0 +1,22 @@
+{
+ "key": "f2da020aa1c99872b686ed0cfc297bb83c93e37ebe0aa8be8f2d42f833057938",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (13.6/2.6/3.2) vs STRAT_B negative Sharpe (-10.1/-5.5/-2.3); STRAT_A at peak while STRAT_B in -28% drawdown.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Persistently negative edge (negative Sharpe in all windows) and deep drawdown; negative correlation with STRAT_A does not compensate for structural underperformance.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A demonstrates robust positive risk-adjusted returns across all timeframes (384-bar Sharpe 3.21, hit rate 57.4%) with zero current drawdown. STRAT_B shows consistent negative edge across all windows (384-bar Sharpe -2.34, hit rate 42.7%) and a 28% drawdown from peak 341 bars ago. The -0.74 correlation would normally suggest diversification value, but STRAT_B's negative expectancy means it destroys capital rather than providing hedge benefit. Short 24-bar window is noisy but aligns with longer windows. Equal-weight allocation would allocate 50% to a strategy with negative expectancy, which is suboptimal. Full allocation to STRAT_A maximizes portfolio Sharpe while avoiding capital destruction from STRAT_B.",
+  "regime": "STRAT_A in uptrend regime; STRAT_B in sustained drawdown regime"
+ }
+}

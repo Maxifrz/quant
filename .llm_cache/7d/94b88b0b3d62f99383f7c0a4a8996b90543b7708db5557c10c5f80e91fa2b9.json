@@ -1,0 +1,22 @@
+{
+ "key": "7d94b88b0b3d62f99383f7c0a4a8996b90543b7708db5557c10c5f80e91fa2b9",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive long-term return (0.125) and Sharpe (2.308) over 384 bars with strong diversification benefit (correlation -0.718) to STRAT_B.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.75
+   },
+   {
+    "reason": "Strong negative long-term return (-0.14) and Sharpe (-2.962) over 384 bars; small allocation retained solely for negative correlation hedge.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.25
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Allocation based primarily on 384-bar window as most statistically robust. STRAT_A shows positive long-term return (0.125) and Sharpe (2.308). STRAT_B shows negative long-term return (-0.14) and Sharpe (-2.962), indicating negative edge. The strong negative correlation (-0.718) provides diversification value, justifying a small 0.25 weight to STRAT_B as hedge. STRAT_B's strong 24/96-bar Sharpe is short-term noise per rules. Current 100% STRAT_A allocation adjusted to 75/25 to capture correlation benefit while respecting STRAT_A's superior long-term edge. Sum of absolute weights = 1.0.",
+  "regime": "STRAT_A in moderate drawdown but long-term edge intact; STRAT_B long-term negative edge."
+ }
+}

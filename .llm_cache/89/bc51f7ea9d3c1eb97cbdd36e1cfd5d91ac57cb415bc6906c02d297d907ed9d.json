@@ -1,0 +1,22 @@
+{
+ "key": "89bc51f7ea9d3c1eb97cbdd36e1cfd5d91ac57cb415bc6906c02d297d907ed9d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe -1.70 and -15% return over 384 bars show no persistent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong 384-bar Sharpe 2.54 but 96-bar Sharpe -7.09 and 0% hit rate indicate edge has broken down.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Both strategies fail the persistence test. STRAT_A has negative 384-bar Sharpe (-1.70) and significant drawdown (-23.8%), indicating no long-term edge. STRAT_B shows strong 384-bar performance (Sharpe 2.54, +18.3% return) but the 96-bar window reveals severe deterioration (Sharpe -7.09, 0% hit rate, -4.3% return, only 3.1% time in market), suggesting the strategy has stopped working. The strong negative correlation (-0.84) would normally favor diversification, but only if both strategies have positive expectancy. Since neither demonstrates a reliable current edge, the prudent allocation is zero to both. Revisit when STRAT_B shows recovery in the 96-bar window or STRAT_A demonstrates positive long-term Sharpe.",
+  "regime": "Unclear; neither strategy shows consistent positive edge across windows"
+ }
+}
