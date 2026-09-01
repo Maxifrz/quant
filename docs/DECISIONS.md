@@ -5,6 +5,90 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-050 — ML auf Marktdaten: gebaut, geprüft, an der eigenen Kontrolle gescheitert
+**Datum:** 2026-09-01
+
+Der Plan aus `docs/ML-PLAN.md` ist umgesetzt: Labeling, Merkmale, gepurgte
+Validierung, Modell, Kontrollen. Auf die Frage „warum baust du nicht einfach
+das Modell?" gibt es eine ehrliche Antwort — meine Begründung war halb
+Zeremonie. Die Reihenfolge schützt nicht vor Selbsttäuschung; **vorab
+festgelegte Bewertungskriterien** tun es. Die standen im Plan, also ist es
+gleich, ob das Modell vor oder nach der Zählung entsteht.
+
+### M0: das Datenbudget, und warum es der richtige Anfang war
+
+14 Märkte gezogen (BTC, ETH, LTC, BCH, ETC, XLM, LINK, ALGO ab 2019; ADA,
+DOGE, DOT, SOL, AVAX ab 2021; XRP bis zur Coinbase-Delistung nach der
+SEC-Klage). **XRP bleibt bewusst im Panel** — es rauszunehmen wäre Selektion
+auf Überleben, und genau die macht Krypto-Backtests systematisch zu optimistisch.
+
+```
+32.122 Bars -> 5.304 Labels -> effektiv 2.506
+mittlere Einzigartigkeit 0,472
+```
+
+Die Bar-Zahl ist die falsche Größe: bei 20 Bars Horizont überlappen sich
+benachbarte Labels zu über der Hälfte. **2.506 statt 32.122 ist der
+Unterschied zwischen „viel Daten" und „genug Daten"** — und der Grund, warum
+so viele Modelle im Backtest funktionieren und sonst nirgends: 5.304 Zeilen
+sehen in jeder Bibliothek wie 5.304 unabhängige Beobachtungen aus.
+
+Das Abbruchkriterium (~500) ist mit Faktor fünf bestanden.
+
+### Die Basisrate, die das Modell schlagen musste
+
+`macross`-Einstiege an CUSUM-Ereignissen, Ziel 2×ATR, Stop 1×ATR, 20 Bars:
+
+* Trefferquote **35,8%**, Gewinner i.M. +12,67%, Verlierer −8,09%
+* Gewinnschwelle daraus: **38,9%** → die Basis verliert 0,66% je Ereignis
+
+**Die Aufgabe war damit exakt beziffert: 3,1 Prozentpunkte Trefferquote**,
+zu holen durch Aussortieren. Bescheiden genug, um plausibel zu sein.
+
+### Das Ergebnis: durchgefallen
+
+Logistische Regression, fünf Merkmale, `C=0,1`, Uniqueness als
+Stichprobengewicht, gepurgte Vorwärts-Folds mit 20 Tagen Embargo:
+
+| | Folds über der Basis | Summe |
+|---|---|---|
+| **Modell** | **2 von 5** | −1078% |
+| vertauschte Labels, Seed 0 | 2/5 | −2448% |
+| **vertauschte Labels, Seed 1** | **4/5** | **−321%** |
+| vertauschte Labels, Seed 2 | 3/5 | −974% |
+
+**Zufällige Labels schlagen die echten.** Seed 1 liegt in 4 von 5 Folds über
+der Basis, das echte Modell nur in 2 — und erzielt dabei die bessere Summe.
+Dieselbe Kontrolle, die `hashribbon` gekippt hat (ADR-048), kippt auch das
+Modell. Ohne sie wäre „Summe −1078% gegen Basis −2310%" als Halbierung des
+Verlusts durchgegangen.
+
+Zwei Anmerkungen zur Ehrlichkeit der Zahlen: die Summen zählen überlappende
+Ereignisse mehrfach und sind **keine Portfoliorendite** — vergleichbar sind
+sie nur untereinander. Und ich könnte jetzt Schwelle, `C` und Barrieren
+variieren, bis etwas hält; genau das verbietet die Vorab-Registrierung. Jede
+weitere Konfiguration wäre ein Versuch im DSR-Nenner.
+
+### Was bleibt
+
+Die Infrastruktur, und die ist der eigentliche Ertrag: Triple-Barrier-Labeling
+mit Kostenschwelle, CUSUM-Ereignisse, Uniqueness-Gewichte, gepurgte
+Vorwärts-Folds über eine gemeinsame Zeitachse mehrerer Märkte. Sie ist
+wiederverwendbar, sobald es bessere Merkmale oder mehr Daten gibt.
+
+**Der teuerste Kompromiss ist benannt:** `qt.ml.dataset` rechnet vektorisiert
+statt über den `FeatureStore`. Damit kommt die Point-in-Time-Zusage **nur noch
+aus einem Test** — künftige Bars verändern, Matrix muss bitidentisch bleiben.
+Dazu eine Gegenprobe, die beweist, dass der Test einen echten Lookahead
+(zentriertes Mittel) auch fängt. Wer den Test löscht, verliert die Zusage,
+ohne dass etwas rot wird.
+
+Fünf geprüfte Hypothesen in diesem Projekt, fünf gescheitert. Das ist kein
+gutes Ergebnis, aber ein ehrliches — und jedes Mal hat eine Kontrolle
+gesprochen, nicht ein Bauchgefühl.
+
+---
+
 ## ADR-049 — Das Trade-Journal dokumentiert, es schlussfolgert nicht
 **Datum:** 2026-09-01
 

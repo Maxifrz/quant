@@ -2,7 +2,19 @@
 
 > ## ▶ HIER WEITER
 >
-> **Neu (ADR-048): `hashribbon` ist gebaut, geprüft und durchgefallen.**
+> **Neu (ADR-050): echtes ML ist gebaut, geprüft und durchgefallen.**
+> 14 Märkte, 32.122 Bars → 5.304 Labels → **effektiv 2.506** (mittlere
+> Einzigartigkeit 0,47). Meta-Labeling auf `macross`, Triple-Barrier mit
+> Kostenschwelle, gepurgte Vorwärts-Folds. Das Modell schlägt die Basis in
+> **2 von 5 Folds** — vertauschte Labels schaffen bei einem Seed **4 von 5**.
+> Die Infrastruktur (`qt.ml`) bleibt und ist wiederverwendbar; die
+> Point-in-Time-Zusage der Merkmale hängt dort **allein an einem Test**.
+>
+> Ebenfalls neu: `qt trades` zeigt Round-Trips (ADR-049). Erster Befund bei
+> `macross`: Verlierer zahlen 52,8% ihres Bruttoergebnisses an Gebühren,
+> Gewinner 9,1% — und der größte Einzelgewinn trägt 63% des Ergebnisses.
+>
+> **`hashribbon` ist gebaut, geprüft und durchgefallen (ADR-048).**
 > Sharpe +0,16 gegen die Messlatte 0,31 von `macross`. Der Placebo hält (ETH
 > −0,16, das Signal ist wirklich BTC-spezifisch), aber die Negativkontrolle
 > kippt es: **eine von fünf zufällig permutierten Hashrate-Reihen schlägt die
