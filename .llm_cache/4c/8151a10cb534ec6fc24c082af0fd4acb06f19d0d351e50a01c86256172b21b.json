@@ -1,0 +1,22 @@
+{
+ "key": "4c8151a10cb534ec6fc24c082af0fd4acb06f19d0d351e50a01c86256172b21b",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe in all windows (worst -1.698 at 384), 452 bars in drawdown, negative return across horizons.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Negative Sharpe in all active windows (worst -2.09 at 384), 413 bars in drawdown, negative return; recent 24-bar window shows zero activity.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Neither strategy shows a positive edge. STRAT_A Sharpe ranges -9.9 to -1.7; STRAT_B -7.4 to -2.1. Both have negative cumulative returns over 384 bars (-16.7% and -13.8%) and extended drawdowns (>400 bars). Correlation (-0.71) is irrelevant when both lose. Best action: allocate zero to both, preserving capital until a strategy demonstrates a positive Sharpe over a meaningful window (>=96 bars).",
+  "regime": "Both strategies in deep drawdown with persistently negative risk-adjusted returns."
+ }
+}

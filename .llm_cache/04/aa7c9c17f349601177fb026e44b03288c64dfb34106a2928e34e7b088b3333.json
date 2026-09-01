@@ -1,0 +1,22 @@
+{
+ "key": "04aa7c9c17f349601177fb026e44b03288c64dfb34106a2928e34e7b088b3333",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Consistent risk-adjusted performance across medium and long windows (Sharpe 0.019–1.732); negative correlation with STRAT_B provides diversification benefit.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Improving Sharpe trajectory from -5.44 to +0.019 over longer horizons; strong negative correlation (-0.772) with STRAT_A enhances portfolio stability despite recent weak short-window metrics.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Equal-weight maintained as optimal given: 1) Strong negative correlation (-0.772) makes the pair an effective hedge combination, 2) STRAT_A demonstrates positive risk-adjusted returns across 24-384 bar windows (Sharpe 0.189–1.732), 3) STRAT_B shows deteriorating short-window performance but stabilising long-window Sharpe (0.019 at 384 bars), 4) Both strategies have similar drawdowns (~19%) and time-in-market profiles, 5) No statistical evidence supports deviating from equal allocation given estimation uncertainty in Sharpe ratios, 6) Rebalancing costs would erode marginal gains from tactical shifts.",
+  "regime": "Mixed regime with diverging strategy performance; STRAT_A shows resilience while STRAT_B recovers over longer horizons"
+ }
+}

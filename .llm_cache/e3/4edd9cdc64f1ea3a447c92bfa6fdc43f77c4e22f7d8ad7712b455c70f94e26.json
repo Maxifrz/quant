@@ -1,0 +1,14 @@
+{
+ "key": "e34edd9cdc64f1ea3a447c92bfa6fdc43f77c4e22f7d8ad7712b455c70f94e26",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.15,
+  "rationale_code_mismatch": false,
+  "reasoning": "Die Strategie nutzt adaptive Bollinger Bänder (SMA ± 2·σ) ohne feste Preis-Schwellen – keine Magic-Price-Constants. Nur zwei Parameter (LOOKBACK=20, BAND_MULT=2.0) bei ~1000 OOS-Bars → keine Excess Degrees of Freedom. Mean-Reversion-Logik stimmt mit der Begründung überein (Rationale-Code-Mismatch: false). Turnover hängt von Marktphasen ab; bei 90 bp Kosten ist ein Backtest nötig, um die Netto-Rentabilität zu prüfen – nicht a priori ablehnbar. Overfitting-Risk niedrig (0.15), da Standard-Einstellungen ohne Curve-Fitting verwendet werden. Empfehlung: proceed.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

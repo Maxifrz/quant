@@ -1,0 +1,22 @@
+{
+ "key": "6a52275060aa0e9df0d4b13cacc7991a8090ced965caa367ea040f4e2967e473",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe 2.018 and positive return 0.039 in the 96-bar window; negative correlation with STRAT_B provides diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Sharpe -2.018 in the 96-bar window, but -0.877 correlation with STRAT_A makes it an effective hedge; equal weight balances the pair.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "STRAT_A has a strong recent Sharpe (2.018) and positive return over 96 bars, while STRAT_B has a symmetric negative Sharpe (-2.018) and negative return. The -0.877 correlation means they move oppositely, so combining them reduces portfolio volatility. Equal 0.5/0.5 weighting exploits this hedge relationship without overcommitting to either strategy's short-term signal, and keeps gross allocation at 1.0. The 384-bar window shows both strategies negative, but the 96-bar window is more relevant for current regime. No inversion is used because STRAT_B's negative edge is not persistent across all windows and its primary value is correlation-based diversification.",
+  "regime": "High negative correlation regime where STRAT_A shows recent positive edge and STRAT_B acts as a diversifying hedge."
+ }
+}

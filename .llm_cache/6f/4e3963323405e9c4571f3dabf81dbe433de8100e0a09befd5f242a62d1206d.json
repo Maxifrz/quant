@@ -1,0 +1,14 @@
+{
+ "key": "6f4e3963323405e9c4571f3dabf81dbe433de8100e0a09befd5f242a62d1206d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.15,
+  "rationale_code_mismatch": false,
+  "reasoning": "Kein harter Befund gegen einen Walk-Forward-Lauf. Der Code nutzt ausschliesslich statistische Groessen (z-Score auf log-Returns), keine absoluten Preislevel -- damit entfaellt 'magic_price_constants'. Zwei Parameter (LOOKBACK=30, THRESHOLD=1.5) bei ~1000 OOS-Bars geben ein verhaeltnismaessig geringes Ueberanpassungsrisiko (overfitting_risk=0.15). Die Strategie wechselt nur bei |z|>1.5 die Position, was bei typischen Return-Verteilungen nicht uebermaessig haeufig vorkommt; bei 90 bp Round-Trip ist der Turnover nicht offensichtlich toedlich. Warmup (35) deckt Lookback (30) plus Puffer ab. Rationale und Code stimmen ueberein: Momentum-Signal durch statistische Extremeness, nicht durch Preislevel. Ein schwacher, aber testwuerdiger Kandidat -- der Backtest soll entscheiden.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

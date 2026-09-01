@@ -1,0 +1,22 @@
+{
+ "key": "354fe584c6b8e8d1fa8ea17f315f2b214bcfa5fd3ab415770054f907dc092820",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer 384-Bar-Sharpe (-6.164) und -48% Return zeigen dauerhafte negative Kante; 24-Bar-Sharpe ist kurzfristiges Rauschen.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positiver 384-Bar-Sharpe (6.339) und +77% Return belegen langfristige Kante; stark negative Korrelation (-0.92) zu STRAT_A macht Full-Allokation diversifikationstechnisch optimal.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B zeigt ueber das laengste Fenster (384 Bars) eine starke positive Kante (Sharpe 6.34, Return +77%), waehrend STRAT_A ueber denselben Horizont massiv negativ ist (Sharpe -6.16, Return -48%). Die 24-Bar-Fenster sind zu kurz fuer belastbare Rueckschluesse. Die nahezu perfekte negative Korrelation (-0.92) bedeutet, dass STRAT_B die Verluste von STRAT_A systematisch ausgleicht -- eine Allokation auf STRAT_B allein nutzt diesen Hedge-Effekt optimal aus, waehrend eine Beimischung von STRAT_A nur die Portfolio-Sharpe senken wuerde. Aktuelle Allokation (50/50) wird vollstaendig auf STRAT_B verlagert, da die Datenlage eindeutig ist.",
+  "regime": "STRAT_B dominiert langfristig; STRAT_A in Extended Drawdown"
+ }
+}

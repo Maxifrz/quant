@@ -1,0 +1,22 @@
+{
+ "key": "12d7b654852adf637f53e64bdd13d829996e949da96c5d09991504f3775ea847",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (384-bar: -1.087), negative 384-bar return (-0.177), and -0.879 correlation with STRAT_B makes shorting additive.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Positive 96-bar Sharpe (0.572) and return (0.007); least negative 384-bar Sharpe (-1.291) of the pair; benefits from negative correlation when STRAT_A is shorted.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Over the longest window (384 bars) both strategies lose money, but STRAT_A has worse risk-adjusted returns (Sharpe -1.087 vs -1.291) and a negative 384-bar return (-0.177 vs -0.169). The 96-bar window shows STRAT_B with positive Sharpe (0.572) and return (0.007) while STRAT_A remains negative (-3.219 Sharpe, -0.08 return). The -0.879 correlation means shorting STRAT_A and going long STRAT_B creates a diversifying spread rather than doubling a single bet. Current allocation is 0.5/0.5 long; flipping STRAT_A to -0.5 exploits the persistent negative edge and the hedge benefit. Gross exposure stays at 1.0.",
+  "regime": "STRAT_A persistently negative edge; STRAT_B flat-to-slightly-positive; strong negative correlation between them"
+ }
+}

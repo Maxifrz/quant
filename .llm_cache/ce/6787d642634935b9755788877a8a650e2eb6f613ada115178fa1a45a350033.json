@@ -1,0 +1,14 @@
+{
+ "key": "ce6787d642634935b9755788877a8a650e2eb6f613ada115178fa1a45a350033",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.25,
+  "rationale_code_mismatch": false,
+  "reasoning": "Keine magischen Preiskonstanten: VWAP und Schwelle 0.015 sind relativ zum Preis, nicht absolut. Zwei Parameter (LOOKBACK=48, THRESHOLD=0.015) bei ~1000 OOS-Bars sind keine übermässigen Freiheitsgrade. Overfitting-Risiko niedrig–mittel: feste Lookback- und Threshold-Werte ohne Optimierungsspuren, aber keine Walk-Forward-Validierung der Parameter. Turnover nicht aus dem Code ableitbar; bei 1,5%-Band und 48-Bar-Fenster sind extrem häufige Signale unwahrscheinlich. Code und Begründung stimmen überein (VWAP-Mean-Reversion).",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

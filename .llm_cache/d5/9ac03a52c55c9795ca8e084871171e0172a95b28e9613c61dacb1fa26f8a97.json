@@ -1,0 +1,22 @@
+{
+ "key": "d59ac03a52c55c9795ca8e084871171e0172a95b28e9613c61dacb1fa26f8a97",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar Sharpe -1.33 indicates negative edge; reducing exposure but keeping diversification benefit from -0.87 correlation.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "384-bar Sharpe -0.62 also negative but less severe; equal weight balances two uncorrelated negative-edge strategies to minimise portfolio drag.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.55,
+  "reasoning": "STRAT_A 384-bar Sharpe -1.328 and return -15.4%; STRAT_B 384-bar Sharpe -0.621 and return -7.4%. Both have negative edge over the longest reliable window. The -0.874 correlation means they hedge each other, so holding both reduces variance versus either alone. Current allocation is 100% STRAT_B; moving to 50/50 cuts concentration risk without increasing expected loss. No strategy merits a negative weight because neither shows a persistently positive edge when inverted. Equal weight is the simplest diversification that respects the correlation structure and long-window evidence.",
+  "regime": "Both strategies show negative long-window Sharpe; correlation -0.87 suggests offsetting drawdowns."
+ }
+}

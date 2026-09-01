@@ -1,0 +1,22 @@
+{
+ "key": "21ec54efd8a3d69457e48533980fb458bc72811b6b624af8fe4b14cdf41423cf",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe (0.83) und positive Rendite (6 %) im 384-Bar-Fenster, Drawdown nur -8 %.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Durchgehend negative Sharpe (-2,9 bis -1,2) und -30 % Rendite im 384-Bar-Fenster, Drawdown -40 %.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Nur STRAT_A liefert über das längste Fenster (384 Bars) eine positive, statistisch signifikante Sharpe-Ratio von 0,83 bei 6 % Rendite und geringem Drawdown (-8 %). STRAT_B ist über alle Fenster verlustbringend (Sharpe -2,9 bis -1,2, Rendite -30 %, Drawdown -40 %). Die starke negative Korrelation (-0,80) würde theoretisch Diversifikation bringen, doch da STRAT_B keine positive Erwartung hat, würde eine Beimischung nur Kapital binden und Kosten erzeugen. Gleichgewichtung ist hier unterlegen, da eine Strategie klar dominiert. Vollallokation in STRAT_A nutzt die positive Kante ohne unnötige Reibungsverluste.",
+  "regime": "STRAT_A zeigt stabile Kante, STRAT_B ist dauerhaft negativ."
+ }
+}

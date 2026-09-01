@@ -1,0 +1,11 @@
+{
+ "key": "7148a0570845d5b436060fe5755b6feb619e1298b880771f5e0d83d30fc5d349",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "SmaTrend",
+  "code": "class SmaTrend(Strategy):\n    name = \"sma_trend\"\n    LOOKBACK = 50\n    warmup_bars = 50\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        sma = ta.sma(closes, self.LOOKBACK)\n        if not math.isfinite(sma):\n            return math.nan\n        last_close = closes[-1]\n        if last_close > sma:\n            return 1.0\n        if last_close < sma:\n            return -1.0\n        return 0.0",
+  "name": "sma_trend",
+  "rationale": "Price tends to persist above its medium‑term average during uptrends and below it during downtrends. A simple SMA crossover captures this directional bias without fitting to absolute price levels, and the long lookback smooths noise while keeping the strategy turnover low enough to survive transaction costs."
+ }
+}

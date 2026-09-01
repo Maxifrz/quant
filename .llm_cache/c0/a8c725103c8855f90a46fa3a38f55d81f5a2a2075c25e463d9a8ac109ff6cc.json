@@ -1,0 +1,22 @@
+{
+ "key": "c0a8c725103c8855f90a46fa3a38f55d81f5a2a2075c25e463d9a8ac109ff6cc",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (384: 2.61, 24: 4.30); negative correlation with STRAT_B provides diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Sharpe in 384 (-1.59) and 24 (-2.02) windows indicates no persistent edge; only 96-bar window shows positive Sharpe (1.46).",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A delivers positive annualized returns and Sharpe ratios across the 384-bar (0.196 return, 2.61 Sharpe), 96-bar (-0.011 return, -0.27 Sharpe), and 24-bar (0.038 return, 4.30 Sharpe) windows, with the longest window confirming a persistent edge. STRAT_B shows negative Sharpe in the 384-bar (-1.59) and 24-bar (-2.02) windows, with only the intermediate 96-bar window positive (1.46 Sharpe, 0.025 return), suggesting no durable advantage. The -0.904 correlation means they hedge each other, but allocating to a negative-edge strategy reduces portfolio expectancy. Current allocation (100% STRAT_B) contradicts the evidence. Full allocation to STRAT_A maximizes expected risk-adjusted return.",
+  "regime": "STRAT_A exhibits consistent positive risk-adjusted returns; STRAT_B shows persistent negative edge."
+ }
+}

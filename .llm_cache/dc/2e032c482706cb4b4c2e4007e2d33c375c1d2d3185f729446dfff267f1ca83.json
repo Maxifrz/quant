@@ -1,0 +1,14 @@
+{
+ "key": "dc2e032c482706cb4b4c2e4007e2d33c375c1d2d3185f729446dfff267f1ca83",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.25,
+  "rationale_code_mismatch": false,
+  "reasoning": "Keine Befunde, die einen Walk-Forward-Test verbieten. Der Code nutzt nur relative Positionen im Donchian-Kanal (UPPER=0.8, LOWER=0.2, LOOKBACK=20) -- keine absoluten Preisniveaus. Drei Parameter bei ~1000 Out-of-Sample-Bars sind verhaeltnismaessig gering. Turnover haengt von Marktdynamik ab, nicht von harter Frequenz im Code. Begruendung (Mean-Reversion an Kanalraendern) und Implementierung stimmen ueberein. Das Risiko fuer Ueberanpassung ist vorhanden (diskrete Schwellen 0.8/0.2), aber nicht so stark, dass ein Test verweigert werden muesste.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

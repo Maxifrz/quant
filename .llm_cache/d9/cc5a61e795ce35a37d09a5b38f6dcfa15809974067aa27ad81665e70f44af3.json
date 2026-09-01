@@ -1,0 +1,14 @@
+{
+ "key": "d9cc5a61e795ce35a37d09a5b38f6dcfa15809974067aa27ad81665e70f44af3",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.15,
+  "rationale_code_mismatch": false,
+  "reasoning": "Der Code ist sauber und parametrisiert. Keine Magic-Price-Konstanten (alle Schwellen sind relativ: Volumen-Verhältnis, Donchian-Breite). Drei Freiheitsgrade (LOOKBACK=20, ATR_LOOKBACK=14, VOL_THRESHOLD=0.01) sind bei 1000 OOS-Bars vertretbar. Der Code macht genau das, was die Begründung beschreibt: Volatilitätsfilter vor Breakout-Handel. Turnover ist implizit durch den Volatilitätsfilter begrenzt (kein Trade bei niedrigem ATR). Kein offensichtlicher Überanpassungsverdacht.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

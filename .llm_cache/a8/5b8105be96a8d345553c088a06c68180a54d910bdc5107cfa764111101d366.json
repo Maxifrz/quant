@@ -1,0 +1,22 @@
+{
+ "key": "a85b8105be96a8d345553c088a06c68180a54d910bdc5107cfa764111101d366",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-term Sharpe 0.36 shows positive edge over 384 bars, negative correlation with STRAT_B provides diversification benefit.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.3
+   },
+   {
+    "reason": "Strong long-term Sharpe 1.55 over 384 bars with low drawdown -3.8%, negative correlation -0.65 with STRAT_A justifies overweight.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.7
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B shows consistent positive edge across all windows (Sharpe 20.5/5.46/1.55) with minimal drawdown (-3.8%). STRAT_A has positive long-term Sharpe (0.36) but negative intermediate returns. The strong negative correlation (-0.65) means combining them reduces portfolio volatility significantly. Current 100% STRAT_A allocation ignores STRAT_B's superior risk-adjusted performance. Moving to 70/30 captures STRAT_B's edge while retaining STRAT_A's diversification benefit. Short 24-bar window discounted as noisy.",
+  "regime": "STRAT_B dominant with STRAT_A as diversifier"
+ }
+}

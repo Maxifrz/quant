@@ -1,0 +1,11 @@
+{
+ "key": "6b5e009c3604b22be0238cfaea0aac86e8968afa6d142cfb0c9a67a06385644e",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "BollingerReversion",
+  "code": "class BollingerReversion(Strategy):\n    name = \"bollinger_reversion\"\n    LOOKBACK = 20\n    BAND_MULT = 2.0\n    warmup_bars = 30\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        sma = ta.sma(closes, self.LOOKBACK)\n        stdev = ta.stdev(closes, self.LOOKBACK)\n        if not math.isfinite(sma) or not math.isfinite(stdev):\n            return math.nan\n        close = closes[-1]\n        upper = sma + self.BAND_MULT * stdev\n        lower = sma - self.BAND_MULT * stdev\n        if close > upper:\n            return -1.0\n        if close < lower:\n            return 1.0\n        return 0.0",
+  "name": "bollinger_reversion",
+  "rationale": "Bollinger Bands capture volatility‑adjusted price extremes. When the price pierces the upper band it is statistically stretched to the upside and tends to revert, while a breach of the lower band signals an oversold condition. Because the bands adapt to recent volatility, the strategy avoids fixed price thresholds and can remain effective across differing market regimes. The mean‑reversion edge persists as long as markets exhibit short‑term over‑extension followed by correction, a behavior documented in many liquid crypto spot markets."
+ }
+}

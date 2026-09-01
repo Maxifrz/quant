@@ -1,0 +1,22 @@
+{
+ "key": "35294cefd72c415fb8b711d705419af9637f70ca44b09a2c1f87e159aec8e871",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative long-term Sharpe (-2.38 over 384 bars) and large drawdown (-28%) argue against increasing weight; keeping at 0.5 limits exposure to a losing strategy.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Best long-term Sharpe (3.01 over 384 bars) and lower drawdown (-20%); maintaining 0.5 preserves the portfolio's only positive edge while the -0.92 correlation provides diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "The 384-bar window dominates the assessment. STRAT_B has a Sharpe of 3.01 and positive return (0.333) versus STRAT_A's -2.38 Sharpe and -0.264 return. The -0.916 correlation means the pair diversifies well, so equal weight (0.5/0.5) captures STRAT_B's edge while hedging via STRAT_A's inverse behavior. No window justifies deviating from the current allocation; short windows (24, 96) are noisy and conflicting. Gross allocated stays at 1.0.",
+  "regime": "STRAT_B shows persistent positive edge; STRAT_A remains in drawdown with negative long-term expectancy."
+ }
+}

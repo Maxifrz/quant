@@ -1,0 +1,22 @@
+{
+ "key": "e9a26a01608f1821f1d6a6b44380a640201e7418bc1528b5e1de155da6839ec1",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe (-3.47) over 384 bars and 61% drawdown show no edge; negative correlation would only help if STRAT_A contributed positive expectancy.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strong 384-bar Sharpe (2.45) with positive return (0.47) and only 34% drawdown; negative correlation to STRAT_A adds diversification but STRAT_A has no merit to harvest.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_B is the only strategy with a verified positive edge on the longest window (384 bars: Sharpe 2.45, return 0.47, max drawdown 34%). STRAT_A shows a -3.47 Sharpe and -61% drawdown on the same window, confirming a persistent negative edge. The -0.94 correlation would normally favor combining them, but allocating to a strategy with negative expectancy reduces portfolio return and increases tail risk. Current allocation (0/1) is optimal; rebalancing toward STRAT_A would degrade performance. No regime change detected for STRAT_B (only 46 bars since peak, moderate drawdown).",
+  "regime": "STRAT_B dominant; STRAT_A in deep drawdown with negative edge"
+ }
+}

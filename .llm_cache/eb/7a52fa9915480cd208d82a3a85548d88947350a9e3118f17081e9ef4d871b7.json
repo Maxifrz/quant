@@ -1,0 +1,22 @@
+{
+ "key": "eb7a52fa9915480cd208d82a3a85548d88947350a9e3118f17081e9ef4d871b7",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe 1.053 over 96 bars; negative correlation -0.699 offsets STRAT_B losses.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Sharpe across windows but negative correlation provides diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_A shows positive 96-bar Sharpe (1.053) vs STRAT_B negative Sharpe (-3.033). Both have deep drawdowns (~40%). Strong negative correlation (-0.699) means they hedge each other. Equal weight 0.5/0.5 maximizes diversification benefit while staying within gross limit 1.0. Current allocation -0.5/0.5 inverts STRAT_A unnecessarily given its positive medium-term edge.",
+  "regime": "High negative correlation regime favors equal-weight diversified allocation."
+ }
+}

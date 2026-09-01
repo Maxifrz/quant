@@ -1,0 +1,22 @@
+{
+ "key": "53aeb77f08068840ecb8bc9cc2e450f3b97c445d1c232e27bcb3740e21023ad7",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong long-term performance (384-bar Sharpe 3.6, return 37.9%) with moderate drawdown.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.85
+   },
+   {
+    "reason": "Negative long-term edge (384-bar Sharpe -0.25, return -4.4%) justifies minimal diversifier allocation given -0.55 correlation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.15
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A shows robust performance across all windows, especially 384-bar (Sharpe 3.635, return 0.379, DD only -2.2%). STRAT_B has attractive short-term Sharpe (8.4 at 24-bar) but negative long-term edge (384-bar Sharpe -0.252, return -0.044, DD -15.3%). The -0.55 correlation provides diversification benefit, but STRAT_B's negative expectancy limits allocation. Current 100% STRAT_A is reasonable; small STRAT_B allocation captures correlation benefit without materially degrading portfolio expectancy. Gross allocation 1.0 respects limit.",
+  "regime": "STRAT_A dominates with consistent edge; STRAT_B weak long-term but negative correlation offers hedge value."
+ }
+}
