@@ -5,6 +5,105 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-047 — Unter 1d entscheidet die Frequenz, über 1d entscheidet nichts mehr
+**Datum:** 2026-09-01
+
+56 Walk-Forwards über vier Strategien, zwei Symbole und sechs Timeframes von
+`1h` bis `1w`, alle über dieselben 7,6 Jahre mit **kalender-gleichen** Fenstern
+(1d: 1000/250/20 Bars, entsprechend skaliert). Bar-gleiche Fenster hätten `1h`
+über zehn Monate und `1d` über sieben Jahre getestet — das wäre ein Vergleich
+zwischen Zeiträumen gewesen, nicht zwischen Timeframes.
+
+**Unter 1d: 8 von 8 Zellen monoton fallend, ohne Ausnahme.**
+
+| Sharpe | 1d | 4h | 1h |
+|---|---|---|---|
+| trend BTC / ETH | +0,25 / +0,41 | −0,64 / −0,34 | −3,77 / −2,58 |
+| meanrev BTC / ETH | −0,34 / −0,85 | −1,60 / −1,28 | −4,25 / −3,58 |
+| macross BTC / ETH | +0,31 / +0,32 | −0,65 / −0,44 | −2,97 / −2,42 |
+| elliott BTC / ETH | +0,20 / +0,26 | −1,26 / −0,40 | −2,04 / −0,91 |
+
+Der Mechanismus steht in der Gebührenspalte: ~25k bei `1d`, ~135k bei `4h`,
+~390k bei `1h` — gegen 100.000 Startkapital. Bei `1h` zahlt jede Strategie ein
+Vielfaches ihres Kapitals an Gebühren; daher die Renditen um −99%.
+
+**Über 1d: kein Muster mehr.** `macross` BTC steigt monoton bis 0,49 bei `1w`,
+`trend` ETH fällt von 0,41 auf −0,58, `elliott` BTC springt zwischen
+benachbarten Timeframes um 1,0 Sharpe (0,57 → −0,42 → 0,46). Plausibel: bei
+`1d` sind die Gebühren bereits auf ~25k gefallen, von `1d` auf `1w` spart man
+nur noch 20k — verliert aber sieben Achtel der Stichprobe. Der Gewinn ist
+ausgereizt, das Rauschen übernimmt.
+
+**Die verlockendste Zahl ist die gefährlichste.** `elliott` BTC auf `2d` liefert
++105% Rendite — der beste Wert von 56 getesteten Konfigurationen, und genau so
+entsteht Overfitting (ADR-005). Das Kriterium ist nicht die höchste Zahl,
+sondern die, die **repliziert**: bei `1d` liefert `macross` 0,31 auf BTC und
+0,32 auf ETH ohne Neuanpassung; bei `1w` sind es 0,49 und −0,22.
+
+**Zur Aussagekraft, vorab und nicht nachträglich:** der Standardfehler eines
+annualisierten Sharpe hängt an der **Kalenderspanne**, nicht an der
+Bar-Frequenz. Bei 4,8 Jahren OOS liegt er bei ±0,47 — für `1h` genauso wie für
+`1w`. Feiner abzutasten schärft die Schätzung nicht. Belastbar ist deshalb nur
+das Muster über acht Zellen, nie eine einzelne Zeile.
+
+**Konsequenz:** `1d` bleibt der Arbeits-Timeframe. `2d`/`3d`/`1w` existieren
+jetzt im Store (`qt data resample`) und dürfen geprüft werden, aber ohne
+Erwartung. `meanrev` ist bei `1w` nicht testbar — 194 Bars Vorlauf passen nicht
+in ein 143-Bar-Trainfenster; die Prüfung hat das gefangen statt still Unsinn zu
+rechnen.
+
+---
+
+## ADR-046 — Der Allokator schaltet nicht zu schnell: er wird langsamer schlechter
+**Datum:** 2026-09-01
+
+ADR-045 schloss aus den 145 zwischengespeicherten Vorschlägen, der Allokator
+schalte **zu schnell für die Persistenz des Signals** — 40% des Buches je
+Schritt, 28 Vollumkehrungen, und gewonnen hatte `best_single` mit dem längsten
+Lookback. Der Test dieser Hypothese kostete 29 Aufrufe und 45 Minuten. **Sie
+ist falsch.**
+
+| Sharpe | Takt 96 | Takt 384 |
+|---|---|---|
+| **llm** | −1,18 | **−2,19** |
+| equal_weight | −2,54 | −2,54 |
+| vol_parity(168) | −2,12 | −1,80 |
+| best_single(720) | −0,98 | **−0,35** |
+| llm gewinnt gg. equal_weight | 23/29 | **14/29** |
+
+Langsamer schalten hilft **jedem regelbasierten** Allokator und **schadet dem
+Modell**. `best_single` verdreifacht seinen Sharpe fast, der Allokator halbiert
+seinen — und verliert seinen einzigen belastbaren Vorsprung: von 23 gewonnenen
+Fenstern gegen `equal_weight` bleiben 14, also keine Mehrheit mehr.
+
+**Damit ist auch die Kostenthese endgültig erledigt.** Der Umsatz fiel von 23,9
+auf 21,2 Mio: weniger gehandelt, weniger Gebühren, schlechteres Ergebnis. Zwei
+unabhängige Messungen zeigen jetzt in dieselbe Richtung — die Umsatzdifferenz
+war nie die Ursache.
+
+**Die plausibelste Deutung:** der Vorsprung des Modells kam aus
+*Reaktionsfähigkeit*, nicht aus Urteilskraft. Bei Takt 384 trifft es 29
+Entscheidungen statt 145, jede wird viermal so lange gehalten, und eine falsche
+kostet entsprechend mehr. Seine Trefferquote je Entscheidung reicht nicht, um
+Festlegung zu überleben. Ein Allokator, der nur solange gut aussieht, wie er
+oft nachjustieren darf, hat keine Kante, sondern eine kurze Halbwertszeit.
+
+Das Peeking-Risiko war vorher benannt: der Takt 384 wurde ausgewählt, nachdem
+drei Werte auf denselben OOS-Daten verglichen worden waren. Es hat sich hier
+nicht ausgewirkt, weil die Wahl **gegen** den Kandidaten arbeitete — der
+stärkste Gegner profitierte am meisten.
+
+5 der 29 Aufrufe kamen aus dem Cache. Das bestätigt die Pfadabhängigkeit des
+Briefings: nur dort, wo `current_allocation` zufällig übereinstimmte, war die
+Anfrage identisch.
+
+**Konsequenz:** Die Takt-Spur ist zu Ende. Der nächste sinnvolle Test ist nicht
+ein weiterer Parameter am Allokator, sondern ein Korb, in dem überhaupt etwas
+Verdienendes liegt (ADR-047: `macross` auf `1d`). Ein Allokator kann nicht
+verteilen, was nicht da ist.
+
+---
+
 ## ADR-045 — Das Gate ist gelaufen: der LLM-Allokator ist durchgefallen
 **Datum:** 2026-09-01
 

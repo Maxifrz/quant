@@ -2,51 +2,47 @@
 
 > ## ▶ HIER WEITER
 >
-> **Phase 0–6 sind gebaut, und Phase 3 und 5 sind jetzt auch gemessen.**
+> **Der LLM-Allokator ist zweimal durchgefallen, und die naheliegende
+> Reparatur ist widerlegt.** Takt 96: Sharpe −1,18. Takt 384: −2,19, während
+> jede regelbasierte Baseline besser wurde (ADR-046). Weniger Umsatz,
+> schlechteres Ergebnis — die Kostenthese ist zweimal unabhängig tot.
 >
-> Der Gate-Lauf ist durch (ADR-045): **der LLM-Allokator ist durchgefallen.**
-> Sharpe −1,18 gegen −0,98 bei `best_single`, und nur 13 von 29 Fenstern
-> gewonnen. Er schlägt `equal_weight` in 23 von 29 und `vol_parity` in 22 von
-> 29 — ein Teilerfolg, der nicht reicht. Rückfallquote 0,0%, also ist das
-> Ergebnis belastbar und nicht das Artefakt eines stillen Ausfalls.
+> Parallel dazu: `1d` schlägt `4h` und `1h` in **8 von 8** Strategie/Symbol-
+> Kombinationen, und oberhalb von `1d` hört jedes Muster auf (ADR-047).
 >
-> **Drei Schritte, in dieser Reihenfolge:**
+> **Der nächste Schritt ist deshalb nicht ein weiterer Parameter am
+> Allokator, sondern ein Korb, in dem etwas Verdienendes liegt.** Alle
+> bisherigen Gate-Läufe verteilten `trend` und `meanrev` auf `4h` — beide
+> verlieren dort dreistellig. Ein Allokator kann nicht verteilen, was nicht
+> da ist.
 >
-> 1. **Langsamer schalten.** Der schärfste Befund aus den 145
->    zwischengespeicherten Vorschlägen: der Allokator schichtet im Median 40%
->    des Buches je Schritt um und kehrt 28-mal komplett. Gewonnen hat
->    `best_single` mit Lookback **720** — der langsamste Gegner im Feld.
->    Zu testen ist die Umschalt-Frequenz, nicht die Kosten:
->    ```bash
->    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
->        --allocate-every 384 --effort low --provider nim
->    ```
->    Achtung: ein anderer Takt heißt andere Briefings, also **andere
->    Cache-Keys** — das kostet wieder ~4 Stunden und 145 Aufrufe. Der Cache
->    des 96er-Laufs bleibt gültig und ist committet.
+> ```bash
+> NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
+>     --strategies macross,trend,meanrev --tf 1d \
+>     --allocate-every 24 --effort low --provider nim
+> ```
+> Vorher prüfen, wie viele Aufrufe das ergibt (`--stub` und die
+> Telemetriezeile lesen) — bei `1d` sind die Testfenster in Bars kürzer,
+> der Lauf also billiger als die 145 des 4h-Laufs.
 >
-> 2. **Das Gate auf einer tragfähigen Strategiemenge wiederholen.** Alle vier
->    Allokatoren verlieren hier dreistellig, weil `trend` und `meanrev`
->    absichtlich keine Kante haben. Solange das so ist, misst das Gate nur,
->    wer schlecht am wenigsten schlecht verteilt. Mit `macross` (ADR-035)
->    stünde zum ersten Mal etwas Verdienendes im Korb.
+> **Danach offen, nach Wert sortiert:**
 >
-> 3. **Paper-Trading gehört nicht in diesen Container.** `data/paper/` ist
->    leer: die frühere Behauptung, `macross` laufe als Paper-Konto, gilt
->    nicht mehr — der Container wurde neu gebaut, `/data/` ist gitignored.
->    Ein Paper-Konto braucht Persistenz und eine Uhr; beides hat eine
->    flüchtige Session nicht. Es gehört auf eine Maschine, die überlebt.
+> 1. **Paper-Trading auf einer Maschine, die überlebt.** `data/paper/` ist
+>    leer; `/data/` ist gitignored und der Container wird neu gebaut. Ein
+>    Paper-Konto braucht Persistenz und eine Uhr — beides hat eine flüchtige
+>    Session nicht. Das ist der einzige offene Punkt, der mit Wartezeit statt
+>    mit Rechenzeit bezahlt wird, also der, der am längsten braucht.
+> 2. **Ein Jahr Order-Flow für `orderflow`.** Der Bestand täuscht: 2,4 Mio
+>    Trades über 361 Tage Spanne, aber mit einem **301-Tage-Loch**. Real sind
+>    zwei Blöcke, 33 und 26 Tage. Fortsetzbar über `qt data trades --days 365`.
+> 3. **Research-Loop erneut laufen lassen** — aber der Versuchszähler steht
+>    auf 8, und jeder Lauf verschärft die DSR-Schwelle dauerhaft für alle
+>    künftigen Kandidaten (ADR-032). Das Budget ist nicht gratis.
 >
-> **Offen, unabhängig davon:**
->
-> * Ein Jahr Order-Flow für `orderflow`. Der Bestand täuscht: 2,4 Mio Trades
->   über 361 Tage Spanne, aber mit einem **301-Tage-Loch** in der Mitte.
->   Real sind zwei Blöcke — 2025-08-28 bis 2025-09-30 (33 d) und 2026-07-28
->   bis 2026-08-24 (26 d). 59 Tage tragen kein Train/Test/Embargo-Fenster.
->   Fortsetzbar über `qt data trades --days 365`.
-> * Der Research-Loop lief echt (ADR-042): 10 Kandidaten, 8 gescreent, 0
->   bestanden, Versuchszähler steht auf 8. Jeder weitere Lauf verschärft die
->   DSR-Schwelle dauerhaft — das Budget ist nicht gratis.
+> **Was gemessen und erledigt ist:** Phase 3 (Gate, zweimal, ADR-045/046),
+> Phase 5 (Research-Loop, ADR-042), die Timeframe-Frage (ADR-047). Der
+> LLM-Cache des 4h-Laufs ist versioniert — diese Zahlen sind in jedem
+> Container in Minuten reproduzierbar statt in vier Stunden.
 
 ---
 
