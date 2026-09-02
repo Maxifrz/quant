@@ -28,8 +28,11 @@ class SimBroker:
     def __init__(self, cfg: BacktestConfig, fill_model: FillModel | None = None) -> None:
         self.cfg = cfg
         # Ohne explizites Modell das Verhalten aus Phase 1: konstanter
-        # Aufschlag, unabhaengig von der Ordergroesse.
-        self.fill_model = fill_model or FlatFillModel(cfg.costs)
+        # Aufschlag, unabhaengig von der Ordergroesse -- aber mit den
+        # symbolspezifischen Saetzen aus der Config, falls gesetzt.
+        self.fill_model = fill_model or FlatFillModel(
+            cfg.costs, by_symbol=cfg.costs_by_symbol
+        )
         self.cash = cfg.initial_cash
         self.positions: dict[str, Position] = {}
         self.fills: list[Fill] = []
@@ -101,7 +104,9 @@ class SimBroker:
             return None
 
         cost = self.fill_model.fill(
-            reference_price, order.qty, FillContext(bar_volume=bar_volume)
+            reference_price,
+            order.qty,
+            FillContext(bar_volume=bar_volume, symbol=order.symbol),
         )
 
         self.cash -= order.qty * cost.fill_price + cost.fee

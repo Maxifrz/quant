@@ -45,9 +45,26 @@ class CostConfig(BaseModel):
     )
 
 
+# Kostensaetze je Anlageklasse. Bewusst hier und nicht als Heuristik auf dem
+# Symbolnamen: eine Regel wie "enthaelt einen Slash, also Krypto" waere genau
+# die stille Annahme, die dieses Projekt sonst herausrechnet (ADR-055).
+#
+# Die Zahlen sind **Annahmen und als solche zu pruefen**, bevor auf ihnen ein
+# Ergebnis steht -- ADR-009 hat gemessen, dass dieselbe Strategie bei 16 statt
+# 90 Basispunkten aus Faktor 0,46 ein Faktor 4,04 wird. Das Kostenniveau
+# leistet mehr als jede Strategieentscheidung.
+US_ETF_COSTS = CostConfig(taker_fee_bps=0.0, half_spread_bps=1.0, slippage_bps=1.5)
+
+
 class BacktestConfig(BaseModel):
     initial_cash: float = Field(default=100_000.0, gt=0)
     costs: CostConfig = Field(default_factory=CostConfig)
+    costs_by_symbol: dict[str, CostConfig] = Field(
+        default_factory=dict,
+        description="Kostensatz je Symbol; alles Uebrige faellt auf `costs` "
+        "zurueck. Noetig, seit im Store mehr als eine Anlageklasse liegt: ein "
+        "US-ETF kostet wenige Basispunkte je Ausfuehrung, ein Krypto-Taker 45.",
+    )
     max_gross_exposure: float = Field(
         default=1.0,
         gt=0,

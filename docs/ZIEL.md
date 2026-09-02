@@ -49,7 +49,8 @@ Bei 7,7 Jahren Historie:
 | unabhängige Märkte | beweisbarer Sharpe (t ≥ 2) | Lage |
 |---|---|---|
 | 1,0 | 0,84 | ein einzelner Markt |
-| **1,4** | **0,67** | **heute: 13 Krypto-Märkte, ρ = 0,67** |
+| **1,4** | **0,67** | 13 Krypto-Märkte, ρ = 0,67 |
+| **3,4** | **0,41** | **heute: + 13 ETFs, ρ = 0,26 (ADR-055)** |
 | 3,0 | 0,44 | + Aktien |
 | 5,0 | 0,33 | + Aktien, FX, Rohstoffe |
 | 8,0 | 0,26 | vier echte Anlageklassen |
@@ -158,10 +159,24 @@ Ziel: **n_eff von 1,4 auf mindestens 4.**
 3. **Abnahme:** `qt placebo cross` über den erweiterten Store meldet
    n_eff ≥ 4 statt 1,4. Das ist eine Zahl, kein Eindruck.
 
-*Fallstrick, vorab benannt:* Nicht-Krypto handelt nicht 24/7. `bars_per_year`,
-`expected_bar_count` und `find_gaps` unterstellen durchgehend Krypto — eine
-Aktienreihe würde als lückenhaft gemeldet und falsch annualisiert. Das gehört
-vor dem ersten Backtest korrigiert, nicht danach.
+> **Durchgeführt am 2026-09-02 — verfehlt (ADR-055).** 13 US-ETFs gezogen, die
+> mittlere Korrelation fällt von 0,67 auf 0,26, n_eff steigt von 1,4 auf
+> **3,4**. Die Schwelle war 4. Die drei Fallen unten sind beseitigt.
+>
+> Der Versuch, das über einen anderen Schätzer doch noch zu bestehen, ist im
+> ADR dokumentiert und **fehlgeschlagen**: `n/(1+(n−1)·ρ̄)` ist nicht die
+> Näherung, für die ich sie hielt, sondern exakt `n²/(1ᵀC1)` — Differenz 4e-16.
+>
+> Konsequenz für Gate 1: **Mindest-Sharpe 0,41** statt der erhofften 0,33.
+> Um auf 4 zu kommen, fehlt eine Anlageklasse, die mit keiner vorhandenen
+> läuft — Volatilität, Zinsdifferenzen, Einzelwerte außerhalb der Indizes.
+
+*Fallstrick, vorab benannt und inzwischen beseitigt:* Nicht-Krypto handelt
+nicht 24/7. `bars_per_year` und `find_gaps` unterstellten durchgehend Krypto —
+eine Aktienreihe wäre um Faktor 1,20 zu hoch annualisiert und als lückenhaft
+gemeldet worden. Dazu kam eine dritte, die hier noch nicht stand: das
+Kostenmodell kannte keine Symbole, ein gemischter Lauf war damit gar nicht
+ehrlich möglich. Alle drei sind erledigt (ADR-055).
 
 ### Phase B — Kostenregime klären *(1 Arbeitsblock)*
 

@@ -41,6 +41,8 @@ class IntegrityReport:
     ohlc_violations: int = 0
     non_positive: int = 0
     too_fine: int = 0
+    # "24-7" (Krypto) oder "sessions" (Boerse mit Handelskalender).
+    calendar: str = "24-7"
 
     @property
     def missing_bars(self) -> int:
@@ -48,7 +50,17 @@ class IntegrityReport:
 
     @property
     def coverage(self) -> float:
-        """Anteil vorhandener Bars am erwarteten Zeitraum."""
+        """Anteil vorhandener Bars am erwarteten Zeitraum.
+
+        **Nur im 24/7-Modus definiert.** Wieviele Bars eine Boersenreihe haben
+        *muesste*, weiss nur ein echter Handelskalender: Feiertage sind je
+        Boerse verschieden, verschieben sich jaehrlich, und halbe Handelstage
+        gibt es auch noch. Ohne diesen Kalender waere jede Abdeckungszahl
+        geraten -- und eine geratene Zahl in einer Integritaetspruefung ist
+        schlimmer als keine (ADR-055). Deshalb `nan` statt einer Erfindung.
+        """
+        if self.calendar != "24-7":
+            return float("nan")
         total = self.n_bars + self.missing_bars
         return self.n_bars / total if total else 0.0
 
@@ -74,11 +86,14 @@ class IntegrityReport:
         if self.n_bars == 0:
             return f"{self.symbol:>10} {self.timeframe:>3}  LEER"
         flag = "ok " if self.ok else "!! "
+        abdeckung = (
+            f"{self.coverage:6.2%}" if self.calendar == "24-7" else "     --"
+        )
         zeile = (
             f"{flag}{self.symbol:>10} {self.timeframe:>3}  "
             f"{self.n_bars:>7,} Bars  "
             f"{self.start:%Y-%m-%d} .. {self.end:%Y-%m-%d}  "
-            f"Abdeckung {self.coverage:6.2%}  "
+            f"Abdeckung {abdeckung}  "
             f"Luecken {len(self.gaps):>3} ({self.missing_bars:,} Bars)"
         )
         if self.too_fine:
@@ -86,7 +101,9 @@ class IntegrityReport:
         return zeile
 
 
-def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
+def check(
+    symbol: str, timeframe: str, df: pd.DataFrame, calendar: str = "24-7"
+) -> IntegrityReport:
     """Einen Datensatz auf die fuenf Fehlerklassen pruefen, die real vorkommen.
 
     Die fuenfte -- `too_fine`, Bars enger als ihr Timeframe -- kam spaet dazu
@@ -98,7 +115,7 @@ def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
     schaut, uebersieht die andere zuverlaessig.
     """
     if df.empty:
-        return IntegrityReport(symbol, timeframe, 0, None, None)
+        return IntegrityReport(symbol, timeframe, 0, None, None, calendar=calendar)
 
     ts = df["ts"]
     report = IntegrityReport(
@@ -109,6 +126,7 @@ def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
         end=ts.iloc[-1],
         duplicates=int(ts.duplicated().sum()),
         non_monotonic=int((ts.diff().dropna() <= pd.Timedelta(0)).sum()),
+        calendar=calendar,
     )
 
     # OHLC-Plausibilitaet: High muss alles dominieren, Low alles unterschreiten.
@@ -123,7 +141,7 @@ def check(symbol: str, timeframe: str, df: pd.DataFrame) -> IntegrityReport:
         ((df[price_cols] <= 0).any(axis=1) | (df["volume"] < 0)).sum()
     )
 
-    report.gaps = find_gaps(ts, timeframe)
+    report.gaps = find_gaps(ts, timeframe, calendar=calendar)
     report.too_fine = count_too_fine(ts, timeframe)
     return report
 
@@ -139,13 +157,30 @@ def count_too_fine(ts: pd.Series, timeframe: str) -> int:
     return int(((deltas > pd.Timedelta(0)) & (deltas < step)).sum())
 
 
-def find_gaps(ts: pd.Series, timeframe: str) -> list[Gap]:
+# Groesster Abstand, der in einer Boersenreihe noch normal ist, in
+# Timeframe-Schritten. Ein langes Wochenende sind drei Tage, ein Feiertag
+# davor oder danach macht vier. Bewusst eine **Heuristik und als solche
+# benannt**: der exakte Wert braeuchte einen echten Handelskalender je Boerse,
+# und den hat dieses Projekt nicht. Sie faengt, was sie fangen soll -- ein
+# mehrtaegiges Loch im Abzug -- und laesst Wochenenden durch (ADR-055).
+SESSION_GAP_FACTOR = 4
+
+
+def find_gaps(ts: pd.Series, timeframe: str, calendar: str = "24-7") -> list[Gap]:
     """Fehlende Bars finden.
 
-    Krypto handelt 24/7 -- jeder Abstand groesser als ein Timeframe ist eine
-    echte Luecke und keine Handelspause.
+    Krypto handelt 24/7 -- dort ist jeder Abstand groesser als ein Timeframe
+    eine echte Luecke und keine Handelspause.
+
+    Bei `calendar="sessions"` gilt das nicht: eine Aktienreihe hat an jedem
+    Wochenende zwangslaeufig einen Abstand von drei Tagen. Ohne diese
+    Unterscheidung meldete `qt data report` fuer jeden ETF rund 400 "Luecken"
+    im Jahr, und die Meldung waere damit wertlos -- man ueberliest sie, und
+    genau dann faellt das echte Loch nicht mehr auf.
     """
     step = pd.Timedelta(seconds=timeframe_seconds(timeframe))
+    if calendar != "24-7":
+        step = step * SESSION_GAP_FACTOR
     deltas = ts.diff()
     gaps: list[Gap] = []
     for idx in deltas.index[deltas > step]:

@@ -5,6 +5,133 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-055 — Vier Anlageklassen: Kriterium verfehlt, und die Ausrede war falsch
+**Datum:** 2026-09-02
+
+Phase A aus `docs/ZIEL.md`: die Datenbasis von 13 Krypto-Paaren auf vier
+Anlageklassen erweitern, damit schwächere Effekte überhaupt beweisbar werden.
+Abnahme war **vorab** festgelegt: `qt placebo cross` meldet n_eff ≥ 4.
+
+### Das Ergebnis: 3,4. Kriterium verfehlt.
+
+13 US-ETFs von Tiingo, je 1.927 Bars über dieselben 7,7 Jahre — SPY QQQ EFA
+EEM, TLT IEF, GLD SLV DBC USO, UUP FXE FXY. Die mittlere paarweise Korrelation
+über alle 26 Märkte fällt von 0,67 auf **0,26**, n_eff steigt von 1,4 auf
+**3,4**. Die Schwelle war 4.
+
+### Was ich dann getan habe, und warum es der eigentliche Eintrag ist
+
+Nach dem Fehlschlag habe ich die Struktur aufgeschlüsselt und einen Verdacht
+gefasst:
+
+| | mittlere Korrelation |
+|---|---|
+| innerhalb Krypto (13) | 0,700 |
+| innerhalb ETFs (13) | 0,160 |
+| Krypto gegen ETFs | 0,143 |
+
+Zwei Blöcke mit 0,70 und 0,16 sind offensichtlich keine Gleichkorrelation. Die
+Formel `n_eff = n / (1 + (n−1)·ρ̄)` sieht nach einer Näherung *für* gleich
+korrelierte Reihen aus — also müsste sie hier falsch liegen. Der
+Eigenwert-Schätzer sagte 4,8, und 4,8 ≥ 4.
+
+**Die Vermutung war falsch, und ich hatte sie nur, weil die Zahl das Kriterium
+verfehlte.** Nachgerechnet:
+
+```
+n/(1+(n-1)·rho)   3.2412
+n² / 1'C1         3.2412      Differenz 4.4e-16
+```
+
+Die Formel ist keine Näherung. Sie **ist** `n²/(1ᵀC1)` — die Varianz eines
+gleichgewichteten Mittels ist `(1/n²)·1ᵀC1`, und mit `1ᵀC1 = n + n(n−1)·ρ̄`
+fällt sie unmittelbar heraus. Sie gilt exakt, für jede Korrelationsstruktur,
+auch für Blöcke.
+
+Die Teilnahmequote der Eigenwerte misst etwas anderes: wieviele unabhängige
+**Richtungen** die Märkte aufspannen, nicht wieviele unabhängige
+**Beobachtungen** ein Mittel über sie wert ist. Für die Frage „wieviel Evidenz
+habe ich" ist die zweite Größe die richtige.
+
+Damit war der Schritt, den ich beinahe gegangen wäre — Kriterium verfehlt,
+Schätzer getauscht, Kriterium erfüllt — keine Methodenkorrektur, sondern eine
+Zielverschiebung mit besserer Begründung. Genau die Bewegung, gegen die
+ADR-005, ADR-032 und ADR-048 gebaut sind, und sie kam von innen.
+
+**Phase A ist verfehlt. Punkt.** Für Gate 1 gilt:
+
+> Mindest-Sharpe: **0,41** (aus n_eff 3,4, 7,7 Jahre, t ≥ 2).
+
+Der Eigenwert-Schätzer bleibt im Code, aber unter dem Namen
+`unabhaengige_richtungen`, ausdrücklich als Beschreibung der Struktur und
+ausdrücklich **nicht** als Messlatte. Wer ihn dort künftig sucht, sucht
+vermutlich aus demselben Grund wie ich.
+
+### Was der Befund trotzdem wert ist
+
+Die Richtung ist eindeutig und groß: von 1,4 auf 3,4 unabhängige Märkte senkt
+die beweisbare Schwelle von **0,67 auf 0,41**. Der Abstand zu `macross` (0,31)
+schrumpft von Faktor 2,2 auf 1,3. Das Ziel aus `ZIEL.md` ist damit erstmals in
+Reichweite — erreicht ist es nicht.
+
+Um von 3,4 auf 4 zu kommen, fehlt eine Anlageklasse, die mit keiner der
+vorhandenen läuft: Volatilität, Zinsdifferenzen, Einzelaktien außerhalb der
+Indizes. Oder mehr Kalenderzeit, die niemand beschleunigen kann.
+
+Nebenbefund, ungeprüft und deshalb nur notiert: `macross` liefert auf SLV
+(1,11), QQQ (1,04) und SPY (0,93) OOS-Sharpes weit über allem, was Krypto je
+gezeigt hat. Das ist **kein Ergebnis** — drei von 26 Zellen, ohne
+Negativkontrolle, ohne DSR, mit drei OOS-Fenstern statt sieben. Es ist der
+erste Kandidat für Phase C, nicht mehr. Wer daraus jetzt eine Strategie macht,
+hat die Lehre dieses Eintrags nicht gelesen.
+
+### Drei Fallen, vor dem ersten Backtest beseitigt
+
+Alle drei von derselben Art wie ADR-053: falsch, ohne dass etwas fehlschlägt.
+
+**1 — Die Annualisierung war eine Konstante.** `bars_per_year(tf)` unterstellt
+24/7. Ein Aktien-ETF handelt an rund 252 statt 365 Tagen; jeder annualisierte
+Sharpe wäre um Faktor **1,20** zu hoch gewesen. Behoben, indem `metrics` die
+Bar-Dichte aus der **Zeitachse der Reihe misst** statt sie aus dem Timeframe zu
+schließen. Für Krypto ändert das nichts (BTC 1d: 365,2 gegen angenommene
+365,25), für gelückte Reihen ist es sogar richtiger.
+
+**2 — Wochenenden waren Lücken.** `find_gaps` hätte für jeden ETF rund 400
+Lücken im Jahr gemeldet; eine Warnung, die man überliest, ist keine. Neu ist
+ein `calendar`-Modus je Reihe. Die **Abdeckung** wird im Börsenmodus gar nicht
+mehr ausgewiesen: ohne echten Handelskalender wäre jede Prozentzahl geraten,
+und eine geratene Zahl in einer Integritätsprüfung ist schlimmer als keine.
+
+**3 — Das Kostenmodell kannte keine Symbole.** Ein `CostConfig` je Lauf, kein
+Symbolargument in `FillModel.fill`. Neu: `BacktestConfig.costs_by_symbol`,
+Default unverändert. Gemessen: BTC/USD 90 bps, SPY 5 bps im selben Lauf.
+
+### Adjustierung ist retroaktiv, und das bricht eine Zusage
+
+Übernommen werden `adjOpen/adjHigh/adjLow/adjClose` — nicht nur `adjClose`:
+`trend` rechnet Donchian auf Hochs und Tiefs, `elliott` setzt Pivots darauf.
+Eine Reihe mit adjustiertem Schluss und rohen Extremen wäre für die halbe
+Bibliothek unbrauchbar, und der Fehler verschiebt nur Signale statt
+aufzufallen.
+
+Jede Dividende schreibt die Vergangenheit der Reihe neu. Eine heute gezogene
+Reihe ist damit eine *andere* als dieselbe vor einem Jahr — ein Backtest darauf
+ist nicht reproduzierbar, ohne dass etwas fehlschlägt. Deshalb liegt neben
+jeder Reihe eine Meta-Datei mit Quelle, Abrufdatum und Adjustierungsflag, und
+deshalb schreibt der Abzug mit `replace=True`: eine adjustierte Reihe ist eine
+Funktion, kein Zuwachs.
+
+### Quelle und ihre Bedingungen
+
+Tiingo, freier Tarif: 1.000 Aufrufe am Tag, 500 Symbole im Monat, adjustierte
+OHLC über 30+ Jahre. **Ausdrücklich auf private Nutzung beschränkt.** Für ein
+Repo mit gitignorierten Daten passt das; wer davon etwas veröffentlicht,
+braucht den kommerziellen Tarif. `yfinance` wurde als Primärquelle verworfen:
+ein gescrapter, inoffizieller Endpunkt, der ohne Vorwarnung bricht, ist für
+ein Projekt, dessen Wert Reproduzierbarkeit ist, das falsche Fundament.
+
+---
+
 ## ADR-054 — `macross` ist von seiner eigenen Wuerfelfassung nicht zu unterscheiden
 **Datum:** 2026-09-02
 

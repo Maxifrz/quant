@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 
 from qt.backtest.walkforward import InsufficientDataError, walk_forward
 from qt.core.clock import BacktestClock
@@ -66,6 +67,7 @@ __all__ = [
     "MarketRun",
     "PermutationResult",
     "PlaybackStrategy",
+    "correlation_matrix",
     "cross_market_control",
     "permutation_control",
     "shuffle_episodes",
@@ -364,6 +366,7 @@ class CrossMarketResult:
 
     laeufe: list[MarketRun] = field(default_factory=list)
     mittlere_korrelation: float = float("nan")
+    korrelationsmatrix: np.ndarray | None = None
 
     @property
     def getestet(self) -> list[MarketRun]:
@@ -381,11 +384,19 @@ class CrossMarketResult:
 
     @property
     def effektive_maerkte(self) -> float:
-        """Wieviele *unabhaengige* Maerkte das sind, nach ADR-052.
+        """Effektive Stichprobengroesse ueber die Maerkte (ADR-052).
 
-        n_eff = n / (1 + (n-1) * rho). Bei 13 Krypto-Maerkten mit mittlerer
-        Korrelation um 0,7 sind das keine 13 Tests, sondern gut zwei -- und
-        wer das nicht mitrechnet, haelt Wiederholung fuer Bestaetigung.
+        `n / (1 + (n-1) * rho)` sieht nach einer Naeherung fuer gleich
+        korrelierte Reihen aus. Sie ist aber **exakt**, und zwar fuer jede
+        Korrelationsstruktur: die Varianz eines gleichgewichteten Mittels ist
+        `(1/n^2) * 1'C1`, und mit `1'C1 = n + n(n-1)*rho_quer` faellt die
+        Formel unmittelbar heraus. Nachgerechnet an den echten 26 Maerkten:
+        3,2412 gegen 3,2412, Differenz 4e-16 (ADR-055).
+
+        Das ist festgehalten, weil ich das Gegenteil vermutet habe, nachdem
+        diese Zahl ein vorab registriertes Kriterium verfehlte -- und die
+        Vermutung war falsch. Wer hier eine "bessere" Formel sucht, sucht
+        vermutlich aus demselben Grund.
         """
         n = len(self.getestet)
         rho = self.mittlere_korrelation
@@ -393,6 +404,26 @@ class CrossMarketResult:
             return float(n)
         nenner = 1.0 + (n - 1) * max(rho, 0.0)
         return float(n / nenner) if nenner > 0 else float(n)
+
+    @property
+    def unabhaengige_richtungen(self) -> float:
+        """Zahl der unabhaengigen *Richtungen* in den Daten -- nicht n_eff.
+
+        Teilnahmequote der Eigenwerte, `(Summe lambda)^2 / Summe lambda^2`.
+        Sie beantwortet eine andere Frage als `effektive_maerkte`: wieviele
+        voneinander unabhaengige Faktoren die Maerkte aufspannen, nicht
+        wieviele unabhaengige Beobachtungen ein Mittel ueber sie wert ist.
+
+        **Kein Ersatz und keine Grundlage fuer Kriterien.** Sie liegt fuer die
+        26 Maerkte bei 4,8 gegen 3,2 -- und genau dieser Abstand macht sie
+        verlockend, sobald 3,2 eine Schwelle verfehlt. Sie steht hier als
+        Beschreibung der Struktur, nicht als Messlatte (ADR-055).
+        """
+        if self.korrelationsmatrix is None or len(self.korrelationsmatrix) < 2:
+            return float(len(self.getestet))
+        ew = np.linalg.eigvalsh(self.korrelationsmatrix)
+        nenner = float((ew ** 2).sum())
+        return float(ew.sum() ** 2 / nenner) if nenner > 0 else float(len(ew))
 
     def table(self) -> str:
         zeilen = [
@@ -418,6 +449,8 @@ class CrossMarketResult:
             f"{self.mittlere_korrelation:.2f}",
             f"  -> effektiv {self.effektive_maerkte:.1f} unabhaengige Maerkte "
             f"(ADR-052), nicht {len(self.getestet)}",
+            f"     nachrichtlich: {self.unabhaengige_richtungen:.1f} "
+            f"unabhaengige Richtungen -- eine andere Frage, keine Messlatte",
         ]
         return "\n".join(zeilen)
 
@@ -465,12 +498,39 @@ def cross_market_control(
         if on_market is not None:
             on_market(lauf)
 
+    getestete = {lauf.symbol: markets[lauf.symbol] for lauf in laeufe if lauf.testbar}
     return CrossMarketResult(
         laeufe=laeufe,
-        mittlere_korrelation=mean_pairwise_correlation(
-            {lauf.symbol: markets[lauf.symbol] for lauf in laeufe if lauf.testbar}
-        ),
+        mittlere_korrelation=mean_pairwise_correlation(getestete),
+        korrelationsmatrix=correlation_matrix(getestete),
     )
+
+
+def correlation_matrix(markets: dict[str, list[Bar]]) -> np.ndarray | None:
+    """Korrelationsmatrix der Bar-Renditen im **gemeinsamen** Fenster.
+
+    Gemeinsam und nicht paarweise: die Eigenwerte einer Matrix, deren Zellen
+    aus verschiedenen Zeitraeumen stammen, sind keine Eigenwerte einer
+    Korrelationsmatrix -- sie kann sogar negative haben und damit eine
+    effektive Marktzahl jenseits von n liefern.
+    """
+    if len(markets) < 2:
+        return None
+    reihen: dict[str, pd.Series] = {}
+    for symbol, bars in markets.items():
+        if len(bars) < 2:
+            continue
+        s = pd.Series(
+            [bar.close for bar in bars],
+            index=pd.to_datetime([bar.ts for bar in bars], utc=True),
+        )
+        reihen[symbol] = s.pct_change().dropna()
+    if len(reihen) < 2:
+        return None
+    panel = pd.DataFrame(reihen).dropna()
+    if len(panel) < 64 or panel.shape[1] < 2:
+        return None
+    return panel.corr().to_numpy()
 
 
 def mean_pairwise_correlation(markets: dict[str, list[Bar]]) -> float:

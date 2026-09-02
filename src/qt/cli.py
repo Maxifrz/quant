@@ -204,6 +204,7 @@ def data_report() -> None:
     """Bestand und Integritaet aller gespeicherten Daten anzeigen."""
     from qt.data.integrity import check
     from qt.data.store import available, read_bars
+    from qt.data.tiingo import calendar_of
 
     entries = available()
     if not entries:
@@ -214,7 +215,12 @@ def data_report() -> None:
     typer.echo("-" * 100)
     problems = 0
     for symbol, timeframe in entries:
-        report = check(symbol, timeframe, read_bars(symbol, timeframe))
+        report = check(
+            symbol,
+            timeframe,
+            read_bars(symbol, timeframe),
+            calendar=calendar_of(symbol, timeframe),
+        )
         typer.echo(report.summary())
         if not report.ok:
             problems += 1
@@ -1415,6 +1421,58 @@ def placebo_cross(
     typer.echo("")
     typer.echo(ergebnis.table())
     raise typer.Exit(code=0 if ergebnis.median_sharpe > 0 else 2)
+
+@data_app.command("stocks")
+def data_stocks(
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Kommagetrennt. Ohne Angabe der Korb aus docs/ZIEL.md."),
+    ] = None,
+    since: Annotated[str, typer.Option(help="Startdatum YYYY-MM-DD")] = "2019-01-01",
+    until: Annotated[str | None, typer.Option(help="Enddatum YYYY-MM-DD")] = None,
+) -> None:
+    """Aktien-, Anleihen-, Rohstoff- und FX-ETFs von Tiingo ziehen.
+
+    Die zweite Anlageklasse ist der einzige Hebel, der die beweisbare
+    Sharpe-Schwelle wirklich senkt: bei 1,4 effektiv unabhaengigen Maerkten
+    liegt sie bei 0,67, bei 5 nur noch bei 0,33 (docs/ZIEL.md). Weitere
+    Krypto-Paare bringen bei einer Korrelation von 0,67 fast nichts.
+
+    Geladen werden **adjustierte** OHLC -- eine Dividende ist sonst ein
+    Uebernachtsprung, den ein Trendfolger als Signal handelt. Neben jede Reihe
+    kommt eine Meta-Datei mit Abrufdatum, weil die Adjustierung retroaktiv ist
+    und eine heute gezogene Reihe damit eine andere ist als dieselbe von
+    letztem Jahr (ADR-055).
+
+    Schluessel aus `TIINGO_API_KEY`.
+    """
+    from qt.data.tiingo import BASKET, TiingoUnavailable, describe_basket, pull
+
+    start = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+    end = datetime.fromisoformat(until).replace(tzinfo=timezone.utc) if until else None
+    namen = _split(symbols) if symbols else sorted(BASKET)
+
+    if not symbols:
+        typer.echo("Korb aus docs/ZIEL.md:")
+        typer.echo(describe_basket())
+        typer.echo("")
+
+    typer.echo(f"Ziehe {len(namen)} Ticker ab {since} von Tiingo ...")
+
+    def melden(ticker: str, n: int, hinweis: str) -> None:
+        klasse = BASKET.get(ticker, ("", ""))[0]
+        typer.echo(f"  {ticker:<6} {klasse:<10} {n:>6,} Bars  {hinweis}")
+
+    try:
+        geschrieben = pull(namen, start, end, on_symbol=melden)
+    except TiingoUnavailable as exc:
+        typer.echo(f"\n{exc}")
+        raise typer.Exit(code=1) from None
+
+    if not geschrieben:
+        typer.echo("Nichts geschrieben -- Ticker oder Zeitraum pruefen.")
+        raise typer.Exit(code=1)
+    typer.echo(f"\n{len(geschrieben)} Reihen geschrieben. Jetzt pruefen: qt data report")
 
 # **Ganz am Ende, und das ist keine Formsache.** Der Block stand lange in der
 # Mitte der Datei -- vor `research`, `data trades` und allen drei

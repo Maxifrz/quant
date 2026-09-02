@@ -29,12 +29,18 @@ BPS = 1e-4
 class FillContext:
     """Was ueber den Markt zum Ausfuehrungszeitpunkt bekannt ist.
 
-    Aktuell nur das Bar-Volumen -- mehr geben OHLCV-Daten nicht her. Der Typ
+    Bar-Volumen und Symbol -- mehr geben OHLCV-Daten nicht her. Der Typ
     existiert trotzdem, damit ein spaeterer Wechsel auf Orderbuchdaten die
     Signatur der Fill-Modelle nicht bricht.
+
+    `symbol` ist noetig, seit im Store mehr als eine Anlageklasse liegt. Ein
+    US-ETF kostet je Ausfuehrung wenige Basispunkte, ein Krypto-Taker 45 --
+    beides mit demselben Satz zu rechnen macht die eine Haelfte des Laufs
+    absurd pessimistisch und die andere absurd optimistisch (ADR-055).
     """
 
     bar_volume: float | None = None
+    symbol: str | None = None
 
     def participation(self, qty: float) -> float:
         """Anteil der Order am Volumen des Bars, 0.0 wenn unbekannt."""
@@ -109,11 +115,27 @@ class FlatFillModel(FillModel):
 
     name = "flat"
 
-    def __init__(self, cfg: CostConfig | None = None) -> None:
+    def __init__(
+        self,
+        cfg: CostConfig | None = None,
+        by_symbol: dict[str, CostConfig] | None = None,
+    ) -> None:
         self.cfg = cfg or CostConfig()
+        self.by_symbol = dict(by_symbol or {})
+
+    def costs_for(self, symbol: str | None) -> CostConfig:
+        """Kostensatz dieses Symbols, sonst der Default.
+
+        Bewusst ein Nachschlagen und keine Heuristik auf dem Symbolnamen: eine
+        Regel wie "enthaelt ein Slash, also Krypto" waere genau die Sorte
+        stiller Annahme, die dieses Projekt sonst ueberall herausrechnet.
+        """
+        if symbol is None:
+            return self.cfg
+        return self.by_symbol.get(symbol, self.cfg)
 
     def fill(self, reference_price: float, qty: float, ctx: FillContext) -> TradeCost:
-        return apply(reference_price, qty, self.cfg)
+        return apply(reference_price, qty, self.costs_for(ctx.symbol))
 
 
 class SizeAwareFillModel(FillModel):
@@ -138,20 +160,32 @@ class SizeAwareFillModel(FillModel):
 
     name = "size_aware"
 
-    def __init__(self, cfg: CostConfig | None = None, impact_bps: float = 100.0) -> None:
+    def __init__(
+        self,
+        cfg: CostConfig | None = None,
+        impact_bps: float = 100.0,
+        by_symbol: dict[str, CostConfig] | None = None,
+    ) -> None:
         self.cfg = cfg or CostConfig()
+        self.by_symbol = dict(by_symbol or {})
         if impact_bps < 0:
             raise ValueError("impact_bps darf nicht negativ sein.")
         self.impact_bps = impact_bps
 
+    def costs_for(self, symbol: str | None) -> CostConfig:
+        if symbol is None:
+            return self.cfg
+        return self.by_symbol.get(symbol, self.cfg)
+
     def fill(self, reference_price: float, qty: float, ctx: FillContext) -> TradeCost:
+        basis = self.costs_for(ctx.symbol)
         participation = ctx.participation(qty)
         if participation <= 0:
-            return apply(reference_price, qty, self.cfg)
+            return apply(reference_price, qty, basis)
 
         extra_bps = self.impact_bps * math.sqrt(min(participation, 1.0))
-        cfg = self.cfg.model_copy(
-            update={"slippage_bps": self.cfg.slippage_bps + extra_bps}
+        cfg = basis.model_copy(
+            update={"slippage_bps": basis.slippage_bps + extra_bps}
         )
         return apply(reference_price, qty, cfg)
 

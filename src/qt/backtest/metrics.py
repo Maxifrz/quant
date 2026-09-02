@@ -2,8 +2,14 @@
 
 Zwei Konventionen, die hier bewusst gesetzt sind:
 
-- Annualisiert wird mit 365.25 Tagen, nicht 252. Krypto handelt 24/7; mit
-  Aktienkonventionen zu rechnen verzerrt jeden Sharpe um rund 20%.
+- **Die Annualisierung wird gemessen, nicht angenommen** (siehe
+  `observed_periods_per_year`). Frueher stand hier fest "365.25 Tage, nicht
+  252, denn Krypto handelt 24/7" -- richtig, solange ausschliesslich Krypto
+  im Store lag. Sobald ein Aktien-ETF danebenliegt, ist dieselbe Konstante um
+  Faktor 1,20 falsch, und zwar lautlos. Die Bar-Dichte steht in der Zeitachse
+  der Reihe; sie dort abzulesen ist billiger, als sie je Markt zu pflegen
+  (ADR-055). `bars_per_year(timeframe)` bleibt die Rueckfallebene fuer Reihen
+  ohne Zeitindex.
 - Sharpe ohne risikofreien Zins (rf = 0). Bei Krypto-Zeitreihen mit
   wechselnden Zinsumfeldern ist ein pauschaler rf mehr Schein- als
   Genauigkeitsgewinn; wer ihn braucht, uebergibt ihn explizit.
@@ -79,6 +85,32 @@ class Metrics:
         return "\n".join(lines)
 
 
+def observed_periods_per_year(index: pd.Index, fallback: float) -> float:
+    """Bars je Kalenderjahr, **gemessen** statt aus dem Timeframe geschlossen.
+
+    `bars_per_year(tf)` unterstellt 24/7 -- fuer Krypto richtig, fuer alles
+    andere falsch. Ein Aktien-ETF handelt an rund 252 statt 365 Tagen im Jahr;
+    mit der 24/7-Annahme waere jeder annualisierte Sharpe um Faktor
+    sqrt(365,25/252) = **1,20 zu hoch**, ohne dass irgendetwas fehlschlaegt
+    (ADR-055).
+
+    Gemessen wird aus der Zeitachse selbst: Zahl der Schritte geteilt durch die
+    tatsaechlich verstrichene Kalenderspanne. Fuer Krypto aendert das praktisch
+    nichts (gemessen: BTC 1d 365,2 gegen angenommene 365,25; 1h weicht wegen
+    der neun Luecken um 0,03% ab), fuer Handelskalender ist es schlicht richtig
+    -- und fuer eine lueckenhafte Reihe ist es **richtiger** als die Annahme.
+
+    `fallback` greift, wenn die Zeitachse nichts hergibt: kein Zeitindex,
+    weniger als zwei Punkte, oder eine Spanne von null.
+    """
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:
+        return fallback
+    spanne = (index[-1] - index[0]).total_seconds()
+    if spanne <= 0:
+        return fallback
+    return (len(index) - 1) / (spanne / (365.25 * 86400))
+
+
 def compute(
     equity: pd.Series,
     timeframe: str,
@@ -86,7 +118,12 @@ def compute(
     turnover: float = 0.0,
     fees_paid: float = 0.0,
 ) -> Metrics:
-    """Kennzahlen aus einer Equity-Zeitreihe berechnen."""
+    """Kennzahlen aus einer Equity-Zeitreihe berechnen.
+
+    Annualisiert wird mit der **gemessenen** Bar-Dichte der Reihe, nicht mit
+    der aus dem Timeframe abgeleiteten -- siehe `observed_periods_per_year`.
+    `timeframe` bleibt als Rueckfallebene fuer Reihen ohne Zeitindex.
+    """
     equity = equity.dropna()
     if len(equity) < 2:
         return Metrics(
@@ -94,14 +131,14 @@ def compute(
         )
 
     returns = equity.pct_change().dropna()
-    py = bars_per_year(timeframe)
+    py = observed_periods_per_year(equity.index, bars_per_year(timeframe))
 
     total_return = float(equity.iloc[-1] / equity.iloc[0] - 1)
     years = len(returns) / py
     cagr = float((equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1) if years > 0 else 0.0
 
     ann_vol = float(returns.std(ddof=1) * np.sqrt(py))
-    sharpe_value = sharpe(returns.to_numpy(), timeframe)
+    sharpe_value = sharpe(returns.to_numpy(), timeframe, periods_per_year=py)
     sharpe_value = sharpe_value if np.isfinite(sharpe_value) else 0.0
 
     downside = returns[returns < 0]
@@ -150,7 +187,9 @@ def compute(
     )
 
 
-def sharpe(returns: np.ndarray, timeframe: str) -> float:
+def sharpe(
+    returns: np.ndarray, timeframe: str, periods_per_year: float | None = None
+) -> float:
     """Annualisierter Sharpe einer Renditereihe, `nan` wenn nicht bestimmbar.
 
     Steht bewusst getrennt von `compute()` und arbeitet auf einem Array: die
@@ -158,6 +197,12 @@ def sharpe(returns: np.ndarray, timeframe: str) -> float:
     und Strategie und koennen dafuer nicht durch pandas gehen. Zwei getrennte
     Sharpe-Definitionen im System waeren schlimmer -- sie laufen mit der Zeit
     auseinander, und dann misst der Allokator etwas anderes als der Report.
+
+    `periods_per_year` uebersteuert die aus dem Timeframe abgeleitete
+    Annualisierung. Ein blosses Array hat keine Zeitachse, aus der sich die
+    Bar-Dichte messen liesse (siehe `observed_periods_per_year`) -- wer sie
+    kennt, reicht sie durch. Ohne Angabe gilt weiter die 24/7-Annahme, die
+    fuer Krypto richtig und fuer Handelskalender um Faktor 1,20 falsch ist.
     """
     values = np.asarray(returns, dtype=float)
     if len(values) < 2 or not np.all(np.isfinite(values)):
@@ -165,7 +210,8 @@ def sharpe(returns: np.ndarray, timeframe: str) -> float:
     sd = values.std(ddof=1)
     if sd <= 0:
         return float("nan")
-    return float(values.mean() / sd * np.sqrt(bars_per_year(timeframe)))
+    py = periods_per_year if periods_per_year is not None else bars_per_year(timeframe)
+    return float(values.mean() / sd * np.sqrt(py))
 
 
 def drawdown(equity: pd.Series) -> pd.Series:

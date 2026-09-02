@@ -303,3 +303,77 @@ def test_ohne_gemeinsames_fenster_gibt_es_keine_korrelation():
         for bar in b
     ]
     assert math.isnan(mean_pairwise_correlation({"A/USD": a, "B/USD": versetzt}))
+
+
+def test_die_effektive_marktzahl_ist_exakt_und_keine_naeherung():
+    """Der eigentliche Fund aus ADR-055 -- und er widerlegt meine Vermutung.
+
+    `n/(1+(n-1)*rho)` sieht nach einer Naeherung fuer gleich korrelierte
+    Reihen aus. Sie ist exakt `n^2 / 1'C1`, also die effektive
+    Stichprobengroesse eines gleichgewichteten Mittels, und gilt fuer **jede**
+    Struktur. Geprueft wird das an einer ausgepraegten Blockstruktur, also
+    genau dort, wo eine Gleichkorrelations-Naeherung auseinanderfallen muesste.
+    """
+    n = 600
+    rng = np.random.default_rng(21)
+    gemeinsam = rng.normal(0, 0.02, n)
+    maerkte: dict[str, list] = {}
+    # Block A: sechs Maerkte, die fast dasselbe tun.
+    for i in range(6):
+        r = 0.9 * gemeinsam + 0.1 * rng.normal(0, 0.02, n)
+        maerkte[f"A{i}/USD"] = make_bars(
+            n, f"A{i}/USD", "1d", prices=100 * np.cumprod(1 + r)
+        )
+    # Block B: sechs weitgehend eigenstaendige.
+    for i in range(6):
+        r = rng.normal(0, 0.02, n)
+        maerkte[f"B{i}/USD"] = make_bars(
+            n, f"B{i}/USD", "1d", prices=100 * np.cumprod(1 + r)
+        )
+
+    from qt.research.placebo import CrossMarketResult, MarketRun, correlation_matrix
+
+    ergebnis = CrossMarketResult(
+        laeufe=[MarketRun(symbol=s, sharpe=0.1, n_windows=2) for s in maerkte],
+        mittlere_korrelation=mean_pairwise_correlation(maerkte),
+        korrelationsmatrix=correlation_matrix(maerkte),
+    )
+
+    C = ergebnis.korrelationsmatrix
+    n = C.shape[0]
+    exakt = n**2 / C.sum()
+    assert ergebnis.effektive_maerkte == pytest.approx(exakt, rel=1e-9), (
+        "die Formel ist nicht exakt -- dann waere sie tatsaechlich nur eine "
+        "Naeherung, und ADR-055 haette recht gehabt"
+    )
+    # Die Teilnahmequote misst etwas anderes und darf abweichen.
+    assert ergebnis.unabhaengige_richtungen != pytest.approx(exakt, rel=1e-3)
+
+
+def test_ohne_gemeinsames_fenster_gibt_es_keine_matrix():
+    """Eigenwerte einer aus Fragmenten zusammengesetzten Matrix sind keine."""
+    from qt.research.placebo import correlation_matrix
+
+    assert correlation_matrix({"A/USD": make_bars(300, "A/USD", "1d")}) is None
+    assert correlation_matrix({}) is None
+
+
+def test_bei_unkorrelierten_maerkten_stimmen_beide_schaetzer_ueberein():
+    """Gegenprobe: ohne Struktur darf der neue Schaetzer nichts erfinden."""
+    n = 800
+    rng = np.random.default_rng(5)
+    maerkte = {
+        f"U{i}/USD": make_bars(
+            n, f"U{i}/USD", "1d", prices=100 * np.cumprod(1 + rng.normal(0, 0.02, n))
+        )
+        for i in range(6)
+    }
+    from qt.research.placebo import CrossMarketResult, MarketRun, correlation_matrix
+
+    ergebnis = CrossMarketResult(
+        laeufe=[MarketRun(symbol=s, sharpe=0.1) for s in maerkte],
+        mittlere_korrelation=mean_pairwise_correlation(maerkte),
+        korrelationsmatrix=correlation_matrix(maerkte),
+    )
+    assert ergebnis.unabhaengige_richtungen == pytest.approx(6.0, abs=0.6)
+    assert ergebnis.effektive_maerkte == pytest.approx(6.0, abs=0.6)
