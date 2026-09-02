@@ -5,6 +5,184 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-057 — Gate 1 ist jetzt ein Programm, und die Buchführung war an drei Stellen falsch
+**Datum:** 2026-09-02
+
+**Die Entscheidung:** `qt gate` prüft alle Kriterien aus `ZIEL.md` in einem
+Lauf, in Kostenreihenfolge, mit **fest verdrahteten Schwellen und ohne eine
+einzige Option, die eine davon setzt.** Wer die Latte senken will, ändert eine
+Konstante in `qt.research.gate` — und das erscheint in einem Diff.
+
+Phase C sollte die Suche sein. Bevor sie beginnen konnte, war zu klären, wonach
+gesucht wird. Dabei kam heraus, dass drei Zahlen, auf denen die Suche steht,
+falsch geführt waren — alle drei zu unseren Gunsten.
+
+---
+
+### Warum das Gate ein Programm sein muss
+
+Die sechs Kriterien standen als Prosa in `ZIEL.md`, die Werkzeuge als sechs
+einzelne Befehle daneben. Niemand erzwang die Reihenfolge, niemand führte das
+Ergebnis zusammen.
+
+Das ist die Bauform, an der dieses Projekt schon zweimal gescheitert ist: das
+Paper-Konto stand wochenlang still, während die ROADMAP behauptete, es laufe
+(ADR-051); ein Dokument widersprach sich in zwei aufeinanderfolgenden Absätzen
+(ADR-052). **Ein Kriterium, das nur ein Mensch anwendet, ist ein Vorsatz.**
+
+Die Schwellen als Konstanten und nicht als Optionen ist der eigentliche
+Bauentscheid. Nach einem verfehlten Kriterium ist die Versuchung, den Maßstab
+nachzubessern, am größten — ADR-055 hält fest, wie nah dieses Projekt daran
+schon einmal war. Ein `--min-sharpe 0.30` hinterließe keine Spur. Ein
+`test_das_gate_kennt_keine_option_die_eine_schwelle_setzt` schlägt fehl, wenn
+jemand eine einbaut.
+
+---
+
+### Fehler 1: Der Versuchszähler kannte sieben Hypothesen nicht
+
+Der Zähler stand bei **8**. Alle acht stammten aus dem LLM-Loop vom 31.08. Die
+sieben handgeschriebenen Strategien in `qt/strategy/library/` — `trend`,
+`meanrev`, `elliott`, `macross`, `hashribbon`, `orderflow`, `timesfm` — waren
+nicht dabei.
+
+Jede von ihnen ist eine Hypothese, die an *diesen* Daten geprüft wurde. Jede
+hat ein ADR mit einem Walk-Forward-Ergebnis. `ZIEL.md` sagt selbst: „Sieben
+Hypothesen geprüft, sieben gescheitert." Das Projekt wusste also von sieben
+Blicken — nur die Zahl, die in die Deflated Sharpe Ratio eingeht, wusste es
+nicht.
+
+ADR-032 sagt „nur abgeschlossenes Screening zählt". Das war eine Entscheidung
+über die Buchführung des Research-Loops, nicht darüber, was ein Blick auf die
+Daten ist. ADR-005 ist älter und eindeutiger: die Registry zählt **alle je
+getesteten** Kandidaten. Die sieben über eine Formalie auszunehmen — sie kamen
+nicht durch den Loop — wäre genau die Technikalität, die einen Schutz zur Zierde
+macht.
+
+Nachgetragen über `qt trials --backfill`, idempotent. **Der Zähler steht jetzt
+bei 15.** Der erwartete beste Sharpe aus reinem Rauschen steigt damit von 1,459
+auf 1,771 — die Hürde wird für jeden künftigen Kandidaten **härter**. Eine
+Korrektur der Buchführung, die das eigene Ergebnis verbessert, wäre verdächtig;
+diese verschlechtert es.
+
+### Fehler 2: Ein Rauchtest hob den Versuchszähler
+
+Beim End-to-End-Test der Kette mit `qt research --generate 3 --stub` sprang der
+Zähler von 15 auf **18**. Der Stub-Lauf existiert, um die Verdrahtung ohne
+API-Schlüssel zu prüfen; seine Kandidaten stehen fest, unabhängig davon, was
+die Kurse sagen. Sie sind damit kein Selektionsereignis im Sinne von
+Bailey/López de Prado und dürfen den Nenner nicht belasten.
+
+Drei Zeilen entfernt, Zähler zurück auf 15. `--stub` schreibt jetzt nach
+`registry_stub.duckdb`. Die volle Schreibstrecke wird weiterhin geprüft — nur
+eben in einer Datei, die niemanden etwas kostet.
+
+### Fehler 3: Die Registry war nicht versioniert, und die `.gitignore`-Regel, die sie hätte retten sollen, funktionierte nicht
+
+`qt/research/registry.py` begründet über zwanzig Zeilen, warum die Registry
+eine Datenbank mit Transaktionen sein muss: geht sie verloren, fällt der
+Zähler zurück und **jede künftige DSR wird zu optimistisch** — „ein zu
+optimistischer Overfitting-Schutz ist schlimmer als gar keiner".
+
+Sie lag unversioniert in `data/`, das komplett gitignored ist, in einem
+Container, der laut Umgebungsbeschreibung nach Inaktivität eingezogen wird.
+Überlebt hat sie, weil das Arbeitsverzeichnis auf einem persistenten Volume
+liegt — nicht, weil irgendetwas sie geschützt hätte.
+
+Beim Beheben fiel der eigentliche Fehler auf. Die `.gitignore` hatte längst
+eine sorgfältig begründete Ausnahme:
+
+```
+/data/
+!/data/paper/     <- wirkungslos
+```
+
+**Git kann einen Pfad nicht wieder aufnehmen, dessen Elternverzeichnis
+ausgeschlossen ist.** Die Ausnahme tat seit Wochen nichts. Der Paper-Kontostand
+lag nur deshalb im Repo, weil `scripts/paper_tick.sh` mit `git add -f` schreibt
+und den Ausschluss dabei umgeht. Der Kommentar darüber erklärte also eine Regel,
+die es nicht gab — und behauptete nebenbei, das Paper-Konto sei „das einzige
+nicht rekonstruierbare Stück im Datenverzeichnis". Das stimmte nie.
+
+`/data/*` statt `/data/`, beide Ausnahmen wirken jetzt, geprüft an drei
+Pfaden.
+
+---
+
+### Der erste Lauf über die Bibliothek
+
+Alle sieben, auf 1d, gegen den vollen Store:
+
+| Strategie | Ausführungen | Umschlag/EK/Jahr | Urteil |
+|---|---|---|---|
+| trend | ✓ | **15,4×** | durchgefallen (Umschlag) |
+| meanrev | ✓ | **15,7×** | durchgefallen (Umschlag) |
+| elliott | ✓ | **13,3×** | durchgefallen (Umschlag) |
+| macross | ✓ | **8,8×** | durchgefallen (Umschlag) |
+| hashribbon | ✓ | **7,1×** | durchgefallen (Umschlag) |
+| orderflow | **1** | — | durchgefallen (Aktivität) |
+| timesfm | **0** | — | durchgefallen (Aktivität) |
+
+**Keine einzige kommt bis zum Walk-Forward.** Fünf scheitern am
+Umschlagbudget, zwei daran, dass sie gar nicht handeln.
+
+`hashribbon` scheitert mit 7,1 gegen 7,0. Das ist knapp, und genau deshalb
+bleibt die Schwelle stehen: sie wurde in ADR-056 hergeleitet, **bevor** diese
+Zahl bekannt war. Sie jetzt auf 7,5 zu setzen, wäre kein besserer Maßstab,
+sondern ein Maßstab, der sich an ein Ergebnis anlehnt.
+
+**Ein Kriterium, das sich durch Nichtstun erfüllen lässt, ist keines.** Im
+ersten Lauf „bestanden" `orderflow` und `timesfm` das Umschlagbudget mit 0,1×
+und 0,0× — weil beiden die Datenquelle fehlt und sie schlicht nicht handeln.
+Deshalb steht jetzt eine Aktivitätsschwelle davor: mindestens 20 Ausführungen.
+Sie ist keine Meinung über gute Strategien, sondern die Grenze, unterhalb derer
+die späteren Prüfungen nichts mehr messen können — die Permutationskontrolle
+vertauscht Episodenlängen, und bei fünf Episoden gibt es kaum etwas zu
+vertauschen.
+
+**Kein Lauf hat einen Versuch gekostet.** Alle sieben brachen vor dem
+Walk-Forward ab, der Zähler steht unverändert bei 15. Das ist der Zweck der
+Kostenreihenfolge, nicht nur Sparsamkeit.
+
+---
+
+### Was das für die Suche heißt
+
+Der Generator kannte die Grenzen nicht. Die acht Kandidaten vom 31.08. —
+SmaTrend, DonchianVolBreakout, ATRChannelReversion, RocMomentum,
+ZScoreMomentum, BollingerReversion, VWAPReversion, DonchianMeanReversion —
+stammen aus derselben Familie wie die fünf, die am Umschlag scheitern. Ein
+Generator, der das nicht weiß, läuft gegen eine Wand, die er nicht sieht.
+
+Die zwei harten Grenzen stehen deshalb jetzt im Generator-Briefing. **Das
+weicht das blinde Briefing nicht auf** (ADR-003): blind heißt keine Kurse,
+keine Kennzahlen, keine Zeiträume, keine Marktnamen — nichts, woran sich eine
+Idee an *diese* Daten anpassen ließe. Die Handelsfrequenz ist nichts davon; sie
+folgt aus dem Gebührenplan der Börse und stünde genauso fest, wenn die Daten
+andere wären.
+
+**Die Suche selbst steht aus und braucht einen API-Schlüssel.** In dieser
+Umgebung ist keiner gesetzt. Die Kette ist gegen die Stubs end-to-end geprüft;
+was fehlt, ist der Zugang, nicht die Verdrahtung.
+
+---
+
+### Konsequenzen
+
+- **Versuchszähler: 15.** Jeder künftige Kandidat wird gegen 16 deflationiert.
+- **Sechs Kriterien plus Aktivitätsschwelle**, alle als Konstanten, keine als
+  Option. `qt gate` gibt Exit 0 nur bei vollständigem Bestehen.
+- **Die Registry liegt im Repo.** Eine Datei, keine Textkopie daneben — zwei
+  Zahlen an verschiedenen Orten laufen auseinander.
+- **Kein Kandidat aus dem Bestand ist ein Kandidat.** Die Suche startet ohne
+  Vorlage, und das ist ein Ergebnis: `macross`, seit ADR-035 die einzige
+  Hoffnung des Projekts, scheitert nicht am Signal, sondern daran, dass es sich
+  seine eigene Handelsfrequenz nicht leisten kann.
+- **Der Abbruch vor dem Walk-Forward ist Teil des Schutzes**, nicht eine
+  Optimierung: was nicht gerechnet wurde, hat die Daten nicht befragt.
+
+---
+
 ## ADR-056 — Das Kostenregime entscheidet nur unter 1d, und der Default war zu billig
 **Datum:** 2026-09-02
 

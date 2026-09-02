@@ -86,6 +86,16 @@ from qt.core.config import PROJECT_ROOT
 
 DEFAULT_PATH = PROJECT_ROOT / "data" / "research" / "registry.duckdb"
 
+# Eigene Datei fuer Laeufe gegen die Stubs. Ein Rauchtest ist kein Blick auf
+# die Daten: die Stub-Kandidaten stehen fest, unabhaengig davon, was die
+# Kurse sagen -- sie sind damit kein Selektionsereignis im Sinne von
+# Bailey/Lopez de Prado und duerfen den Nenner nicht erhoehen.
+#
+# Gemessen und nicht vermutet: ein `qt research --generate 3 --stub` hat den
+# echten Zaehler am 2026-09-02 von 15 auf 18 gehoben, bevor diese Trennung
+# existierte (ADR-057).
+STUB_PATH = PROJECT_ROOT / "data" / "research" / "registry_stub.duckdb"
+
 TABLE = "candidates"
 
 # Werte fuer `sandbox_status` und `screening_status`. Als Konstanten, damit ein

@@ -6,7 +6,14 @@ __pycache__/
 
 # Marktdaten und Ergebnisse werden nicht versioniert.
 # Fuehrender Slash ist wichtig: 'data/' wuerde sonst auch src/qt/data/ treffen.
-/data/
+#
+# `/data/*` und nicht `/data/`: git kann einen Pfad nicht wieder aufnehmen,
+# dessen **Elternverzeichnis** ausgeschlossen ist. Mit `/data/` waren die
+# beiden Ausnahmen unten wirkungslos -- `data/paper/` lag nur deshalb im
+# Repo, weil `scripts/paper_tick.sh` mit `git add -f` schreibt und den
+# Ausschluss damit uebergeht. Der Kommentar darunter erklaerte also seit
+# Wochen eine Regel, die nichts tat (ADR-057).
+/data/*
 # Ausnahme: der Kontostand des Paper-Kontos. Er ist wenige Kilobyte JSON,
 # enthaelt keine Geheimnisse -- und er ist das **einzige** im Datenverzeichnis,
 # das sich nicht rekonstruieren laesst. Bars zieht ein Tick bei kaltem Store
@@ -14,6 +21,25 @@ __pycache__/
 # weg, wenn die Datei weg ist. Ein Paper-Lauf ueber Wochen in einem Container,
 # der taeglich neu gebaut wird, braucht deshalb genau diese Zeile.
 !/data/paper/
+# Ausnahme zwei, aus demselben Grund und mit mehr Gewicht: die
+# Kandidaten-Registry ist der Nenner jeder Deflated Sharpe Ratio im Projekt.
+# Geht sie verloren, faellt der Versuchszaehler zurueck und **jede kuenftige
+# DSR wird zu optimistisch** -- ein Overfitting-Schutz, der Sicherheit
+# vortaeuscht, ist schlimmer als keiner (siehe qt/research/registry.py).
+#
+# Bis 2026-09-02 stand sie unversioniert in einem Container, der laut
+# Umgebungsbeschreibung nach Inaktivitaet eingezogen wird. Sie hat das
+# ueberlebt, weil das Arbeitsverzeichnis auf einem persistenten Volume liegt
+# -- nicht, weil irgendetwas sie geschuetzt haette. Der Absatz oben behauptete
+# ausserdem, das Paper-Konto sei das einzige nicht rekonstruierbare Stueck im
+# Datenverzeichnis. Das stimmte nie (ADR-057).
+#
+# Eine Datei und keine zweite Textkopie daneben: zwei Zahlen, die zueinander
+# passen muessen und an verschiedenen Orten stehen, laufen auseinander.
+!/data/research/
+# Die Stub-Registry ist Wegwerfzustand aus Rauchtests und gehoert nicht ins
+# Repo -- im Gegensatz zur echten daneben.
+/data/research/registry_stub.duckdb
 /reports/
 # Der LLM-Cache ist ausgenommen, sobald ein teurer Lauf drinsteckt: der
 # Gate-Lauf kostet 145 Aufrufe und knapp vier Stunden, und der Cache macht ihn

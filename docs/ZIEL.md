@@ -223,10 +223,31 @@ drei übereinstimmenden Sekundärquellen. Alle drei brauchen echte Fills.
 
 Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
-1. Mindest-Sharpe aus Phase A ableiten und **vorab** als ADR festschreiben:
-   **0,41** (ADR-055). Dazu das Umschlagbudget aus Phase B: **≤ 7× EK/Jahr**,
-   auf 1d oder gröber, unter `coinbase_taker` (ADR-056).
+1. ~~Mindest-Sharpe aus Phase A ableiten und **vorab** als ADR
+   festschreiben.~~ **Erledigt und ausführbar gemacht (ADR-057):** alle
+   Kriterien stecken in `qt gate`, mit fest verdrahteten Schwellen und
+   **ohne eine einzige Option, die eine davon setzt**. Wer die Latte senkt,
+   hinterlässt einen Diff.
+
+   > **Der Bestand ist durch — und niemand kommt bis zum Walk-Forward.**
+   > Fünf der sieben Bibliotheksstrategien scheitern am Umschlagbudget
+   > (`trend` 15,4×, `meanrev` 15,7×, `elliott` 13,3×, `macross` 8,8×,
+   > `hashribbon` 7,1×), zwei daran, dass sie mangels Datenquelle gar nicht
+   > handeln. Kein Lauf hat einen Versuch gekostet.
+   >
+   > `macross`, seit ADR-035 die einzige Hoffnung des Projekts, scheitert
+   > damit **nicht am Signal**, sondern daran, dass es sich seine eigene
+   > Handelsfrequenz nicht leisten kann.
+   >
+   > Nebenbefund, der die Latte für alle hebt: der Versuchszähler kannte die
+   > sieben handgeschriebenen Hypothesen nicht und stand bei 8. Er steht
+   > jetzt bei **15**.
 2. Research-Loop und eigene Ideen gegen die erweiterte Marktbasis.
+   **Offen, und blockiert:** in dieser Umgebung ist kein API-Schlüssel
+   gesetzt. Die Kette ist gegen die Stubs end-to-end geprüft; es fehlt der
+   Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt die beiden
+   harten Grenzen inzwischen — vorher lief es gegen eine Wand, die es nicht
+   sah.
 3. **Jeder Kandidat durchläuft die volle Kette, in dieser Reihenfolge:**
    Sandbox → Kritik → Walk-Forward → DSR → `qt placebo shuffle` →
    `qt placebo cross`. Die Kontrollen stehen jetzt als Befehl bereit
@@ -245,6 +266,10 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |
 | Anlageklassen | wirkt in mindestens zwei, nicht nur in Krypto |
 | Umschlag | ≤ 7× Eigenkapital pro Jahr, unter `coinbase_taker` (ADR-056) |
+| Aktivität | ≥ 20 Ausführungen — was nicht handelt, ist nicht prüfbar (ADR-057) |
+
+Prüfbar in einem Befehl: `uv run qt gate --strategy <name> --tf 1d`. Exit 0
+nur, wenn jede Zeile steht.
 
 Die letzte Zeile ist neu und die schärfste: ein Effekt, der nur in einer
 Anlageklasse auftritt, ist wahrscheinlich deren Beta und nicht dein Edge.
@@ -276,7 +301,8 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei 8 und vergisst nichts (ADR-032).
+Versuchszähler steht bei **15** und vergisst nichts (ADR-032, ADR-057).
+Nachsehen statt erinnern: `uv run qt trials`.
 
 ---
 

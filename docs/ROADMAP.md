@@ -27,7 +27,12 @@
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
 > uv run qt data report         # Bestand und Lücken
+> uv run qt trials              # Versuchszähler der DSR — steht bei 15
+> uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > ```
+> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. Kein Bestandskandidat
+> kommt derzeit bis zum Walk-Forward — fünf von sieben scheitern am
+> Umschlagbudget.
 >
 > ### Wofür das alles
 >

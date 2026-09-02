@@ -39,13 +39,44 @@ def build_generation_briefing(
     Ohne sie liefert dasselbe Modell auf dasselbe Prompt zwanzigmal die
     naheliegendste Idee -- und zwanzig Varianten derselben Idee sind fuer die
     Deflated Sharpe Ratio trotzdem zwanzig Versuche.
+
+    **Die Grenzen aus Gate 1 stehen mit drin, und das ist keine Aufweichung
+    des blinden Briefings** (ADR-003). Blind heisst: keine Kurse, keine
+    Kennzahlen, keine Zeitraeume, keine Marktnamen -- nichts, woran sich eine
+    Idee an *diese* Daten anpassen liesse. Die Handelsfrequenz ist nichts
+    davon; sie folgt aus dem Gebuehrenplan der Boerse (ADR-056) und stuende
+    genauso fest, wenn die Daten andere waeren.
+
+    Der Anlass ist gemessen: der erste Lauf ueber die Bibliothek zeigte, dass
+    fuenf von sieben Strategien am Umschlagbudget scheitern, und die acht
+    Kandidaten des Loops vom 31.08. stammen aus derselben Familie. Ein
+    Generator, der das nicht weiss, laeuft gegen eine Wand, die er nicht
+    sieht.
     """
+    from qt.research.gate import MAX_UMSCHLAG_PRO_JAHR, MIN_FILLS
+
     previous = previous or []
     lines = [
         f"Kandidat {index + 1} von {total}.",
         "",
         "Entwirf eine Handelsstrategie und schreibe sie als Klasse in der",
         "vorgegebenen Form.",
+        "",
+        "Zwei harte Grenzen, an denen die meisten Entwuerfe scheitern:",
+        "",
+        f"  1. Die Strategie darf hoechstens {MAX_UMSCHLAG_PRO_JAHR:.0f} mal "
+        "ihr Eigenkapital pro Jahr",
+        "     umschlagen. Das ist die Grenze, ab der die Ausfuehrungskosten",
+        "     mehr fressen, als das Signal einbringen kann. Ein taeglich",
+        "     wechselndes Gewicht ist damit ausgeschlossen; ein Signal, das",
+        "     einige Wochen steht, ist es nicht.",
+        f"  2. Mindestens {MIN_FILLS} Ausfuehrungen ueber die Historie. Eine",
+        "     Strategie, die fast nie handelt, ist nicht pruefbar -- sie",
+        "     erfuellt jedes Kostenkriterium durch Nichtstun.",
+        "",
+        "Beides betrifft die Handelsfrequenz, nicht die Idee. Gesucht ist ein",
+        "Signal, das traege ist, weil es etwas Traeges misst -- nicht eines,",
+        "das durch einen Glaettungsparameter kuenstlich langsam gemacht wurde.",
     ]
 
     if previous:

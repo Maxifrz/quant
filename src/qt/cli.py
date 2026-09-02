@@ -894,10 +894,16 @@ def research(
         StubGeneratorClient,
     )
     from qt.research.loop import run_research_loop
-    from qt.research.registry import ResearchRegistry
+    from qt.research.registry import STUB_PATH, ResearchRegistry
 
     model = _resolve_model(provider, model)
-    registry = ResearchRegistry.open()
+    # Ein Lauf gegen die Stubs schreibt in eine eigene Datei. Sonst hebt ein
+    # Rauchtest den Versuchszaehler und macht die DSR fuer jeden echten
+    # Kandidaten haerter, ohne dass jemand auf die Daten geschaut haette
+    # (ADR-057).
+    registry = ResearchRegistry.open(STUB_PATH if stub else None)
+    if stub:
+        typer.echo(f"Stub-Lauf: schreibt nach {STUB_PATH.name}, nicht in die Registry.")
 
     if show is not None:
         _show_candidate(registry, show)
@@ -1625,6 +1631,137 @@ def maker_cmd(
         f"die Order geht durch, zahlt aber Taker. Die Fuellquote ist eine "
         f"Obergrenze (Warteschlange nicht modelliert)."
     )
+
+
+@app.command("gate")
+def gate_cmd(
+    strategy: Annotated[str, typer.Option(help="Strategiename, siehe qt strategies")] = "macross",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    symbol: Annotated[
+        str, typer.Option(help="Hauptmarkt fuer Umschlag, Walk-Forward und Permutation")
+    ] = "BTC/USD",
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 1000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 250,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 20,
+    draws: Annotated[int, typer.Option(help="Ziehungen der Permutationskontrolle")] = 200,
+) -> None:
+    """Gate 1 aus ZIEL.md, alle Kriterien auf einmal, Abbruch beim ersten Nein.
+
+    **Es gibt hier absichtlich keine Option, die eine Schwelle setzt.** Die
+    Zahlen stehen als Konstanten in `qt.research.gate`; wer sie aendert,
+    hinterlaesst einen Diff. Nach einem verfehlten Kriterium ist die
+    Versuchung, den Massstab nachzubessern, am groessten -- ADR-055 haelt
+    fest, wie nah dieses Projekt daran schon war.
+
+    Der Lauf **schreibt nichts** in die Registry. Er rechnet die DSR gegen
+    `trial_count() + 1` -- also so, als zaehlte er mit --, legt aber keine
+    Zeile an: eine Bibliotheksstrategie ist kein Kandidat mit Quelltext-
+    Schnappschuss. Wer einen neuen Kandidaten einbucht, tut das ueber
+    `qt research --screen`; wer den Bestand nachtraegt, ueber
+    `qt trials --backfill` (ADR-057).
+    """
+    from qt.data.store import available, read_bars, to_bars
+    from qt.research.gate import run_gate
+    from qt.research.registry import ResearchRegistry
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    strategie = get(strategy)
+    namen = sorted({sym for sym, timeframe in available() if timeframe == tf})
+    if not namen:
+        typer.echo(f"Keine Maerkte mit Timeframe {tf} im Store.")
+        raise typer.Exit(code=1)
+
+    maerkte = {sym: to_bars(sym, tf, read_bars(sym, tf)) for sym in namen}
+    haupt = _split(symbol)
+
+    with ResearchRegistry.open() as registry:
+        vorher = registry.trial_count()
+
+    typer.echo(f"\nGate 1: {strategy} @ {tf}, Hauptmarkt {', '.join(haupt)}")
+    typer.echo(f"Versuchszaehler vor diesem Lauf: {vorher}\n")
+
+    ergebnis = run_gate(
+        strategie,
+        maerkte,
+        tf,
+        trial_count=vorher + 1,
+        haupt_symbole=haupt,
+        train_bars=train,
+        test_bars=test,
+        embargo_bars=embargo,
+        draws=draws,
+        on_stage=lambda name: typer.echo(f"  ... {name}"),
+    )
+
+    typer.echo("")
+    typer.echo(ergebnis.table())
+
+    raise typer.Exit(code=0 if ergebnis.bestanden else 2)
+
+
+@app.command("trials")
+def trials_cmd(
+    backfill: Annotated[
+        bool,
+        typer.Option(
+            "--backfill",
+            help="Die handgeschriebenen Bibliotheksstrategien als Versuche "
+            "nachtragen. Idempotent.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Nur zeigen, was fehlen wuerde")
+    ] = False,
+) -> None:
+    """Der Versuchszaehler der Deflated Sharpe Ratio, und was ihn ausmacht.
+
+    Der Zaehler ist der Nenner jeder DSR im Projekt. Faellt er zu niedrig aus,
+    wird jede kuenftige Korrektur zu optimistisch -- und ein zu optimistischer
+    Overfitting-Schutz ist schlimmer als keiner, weil er Sicherheit
+    vortaeuscht (siehe `qt.research.registry`).
+    """
+    import pandas as pd
+
+    from qt.research.backfill import HYPOTHESEN, QUELLE, nachtragen
+    from qt.research.registry import ResearchRegistry
+
+    with ResearchRegistry.open() as registry:
+        if backfill or dry_run:
+            neu = nachtragen(registry, dry_run=dry_run)
+            if not neu:
+                typer.echo("Nichts nachzutragen -- alle sieben stehen schon drin.")
+            elif dry_run:
+                typer.echo(f"Wuerde {len(neu)} Versuche nachtragen: {', '.join(neu)}")
+            else:
+                typer.echo(f"{len(neu)} Versuche nachgetragen: {', '.join(neu)}")
+
+        stand = registry.trial_count()
+        df = registry.history()
+
+    typer.echo(f"\nVersuchszaehler: {stand}")
+    if df.empty or "generator_model" not in df.columns:
+        return
+
+    gezaehlt = df[df["screening_status"].notna()] if "screening_status" in df else df
+    hand = int((gezaehlt["generator_model"] == QUELLE).sum())
+    typer.echo(f"  davon handgeschrieben: {hand} von {len(HYPOTHESEN)} bekannten")
+    typer.echo(f"  davon aus dem Research-Loop: {stand - hand}")
+    typer.echo(
+        "\nJeder abgeschlossene Screening-Lauf erhoeht diese Zahl dauerhaft "
+        "und macht\ndie DSR-Huerde fuer jeden kuenftigen Kandidaten haerter "
+        "(ADR-032)."
+    )
+    if not pd.isna(stand) and stand > 0:
+        from qt.research.dsr import expected_max_sharpe
+
+        try:
+            typer.echo(
+                f"\nErwarteter bester Sharpe aus reinem Rauschen bei {stand} "
+                f"Versuchen: {expected_max_sharpe(stand):.3f}"
+            )
+        except Exception:  # noqa: BLE001 -- reine Zusatzinfo
+            pass
 
 
 # unten aus und startet die CLI, bevor die spaeteren Dekoratoren gelaufen
