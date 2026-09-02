@@ -18,6 +18,11 @@ data_app = typer.Typer(help="Marktdaten ziehen und pruefen", no_args_is_help=Tru
 app.add_typer(data_app, name="data")
 paper_app = typer.Typer(help="Paper-Konto: sicher wiederholbare Ticks", no_args_is_help=True)
 app.add_typer(paper_app, name="paper")
+placebo_app = typer.Typer(
+    help="Negativkontrollen: schlaegt eine Strategie ihre gewuerfelte Fassung?",
+    no_args_is_help=True,
+)
+app.add_typer(placebo_app, name="placebo")
 
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
@@ -1284,6 +1289,132 @@ def paper_reset(
         raise typer.Exit(code=1) from None
     typer.echo(f"Kill-Switch zurueckgesetzt. halted={state.halted}")
 
+
+@placebo_app.command("shuffle")
+def placebo_shuffle(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbol: Annotated[str, typer.Option(help="Ein Symbol")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 1000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 250,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 20,
+    draws: Annotated[int, typer.Option(help="Zahl der Ziehungen")] = 200,
+    seed: Annotated[int, typer.Option(help="Zufallssaat")] = 0,
+    threshold: Annotated[
+        float, typer.Option(help="Perzentil, das die echte Strategie halten muss")
+    ] = 0.95,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Die Strategie gegen gewuerfelte Fassungen ihrer selbst.
+
+    Die Episodenlaengen des echten Gewichtsverlaufs werden untereinander
+    getauscht: gleiche Zeit im Markt, gleiche Trade-Zahl, gleiche Gebuehren --
+    nur die **Lage** in der Zeit ist zufaellig. Genau das ist die Groesse, die
+    eine Strategie behauptet zu koennen.
+
+    Der Vergleich gilt nur, wenn der Abspieler mit den echten Gewichten
+    dieselbe Kennzahl liefert wie die Strategie. Diese Kalibrierung steht mit
+    im Bericht; ist die Abweichung nicht winzig, ist das Ergebnis wertlos.
+    """
+    from qt.data.store import read_bars, to_bars
+    from qt.research.placebo import permutation_control
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    bars = {symbol: to_bars(symbol, tf, read_bars(symbol, tf, start=since, end=until))}
+
+    typer.echo(f"{strategy} auf {symbol} @ {tf}, {draws} Ziehungen ...")
+    fortschritt = max(1, draws // 10)
+
+    def melden(i: int, wert: float) -> None:
+        if i % fortschritt == 0:
+            typer.echo(f"  {i}/{draws}")
+
+    ergebnis = permutation_control(
+        lambda: get(strategy)([symbol], tf),
+        bars, train_bars=train, test_bars=test, embargo_bars=embargo,
+        draws=draws, seed=seed, on_draw=melden,
+    )
+
+    typer.echo("")
+    typer.echo(ergebnis.table())
+
+    if ergebnis.kalibrierfehler > 1e-6:
+        typer.echo(
+            f"\n  !! Kalibrierfehler {ergebnis.kalibrierfehler:.2e} -- der "
+            "Abspieler bildet die Strategie nicht ab.\n"
+            "     Das Ergebnis vergleicht zwei verschiedene Dinge und ist "
+            "nicht auswertbar."
+        )
+        raise typer.Exit(code=1)
+
+    if ergebnis.bestanden(threshold):
+        typer.echo(
+            f"\nBESTANDEN -- die echte Strategie liegt im obersten "
+            f"{1 - threshold:.0%} ihrer eigenen Permutationen."
+        )
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"\nDURCHGEFALLEN -- Perzentil {ergebnis.perzentil:.1%} liegt unter "
+        f"{threshold:.0%}.\n"
+        "Die Zeit im Markt traegt das Ergebnis, nicht das Timing. Das ist ein\n"
+        "Ergebnis und kein Fehler (ADR-048)."
+    )
+    raise typer.Exit(code=2)
+
+
+@placebo_app.command("cross")
+def placebo_cross(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 1000,
+    test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 250,
+    embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 20,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Kommagetrennt. Ohne Angabe alle Maerkte des Stores."),
+    ] = None,
+) -> None:
+    """Dieselbe Strategie, unveraendert, auf jedem Markt des Stores.
+
+    Kein Parameter wird je Markt neu gewaehlt -- das waere genau die Selektion,
+    gegen die der Test gerichtet ist. Maerkte mit zu kurzer Historie werden mit
+    Grund ausgewiesen statt still uebersprungen.
+
+    Krypto-Maerkte laufen stark gleich. Der Bericht weist deshalb die mittlere
+    paarweise Korrelation und die daraus folgende **effektive** Marktzahl aus
+    (ADR-052): dreizehn Maerkte sind keine dreizehn Tests.
+    """
+    from qt.data.store import available, read_bars, to_bars
+    from qt.research.placebo import cross_market_control
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    if symbols is not None:
+        namen = _split(symbols)
+    else:
+        namen = sorted({sym for sym, timeframe in available() if timeframe == tf})
+    if not namen:
+        typer.echo(f"Keine Maerkte mit Timeframe {tf} im Store.")
+        raise typer.Exit(code=1)
+
+    maerkte = {sym: to_bars(sym, tf, read_bars(sym, tf)) for sym in namen}
+    typer.echo(f"{strategy} unveraendert auf {len(maerkte)} Maerkten @ {tf} ...")
+
+    def melden(lauf) -> None:
+        stand = f"{lauf.sharpe:+.2f}" if lauf.testbar else lauf.grund
+        typer.echo(f"  {lauf.symbol:<12} {stand}")
+
+    ergebnis = cross_market_control(
+        get(strategy), maerkte, tf, train_bars=train, test_bars=test,
+        embargo_bars=embargo, on_market=melden,
+    )
+
+    typer.echo("")
+    typer.echo(ergebnis.table())
+    raise typer.Exit(code=0 if ergebnis.median_sharpe > 0 else 2)
 
 # **Ganz am Ende, und das ist keine Formsache.** Der Block stand lange in der
 # Mitte der Datei -- vor `research`, `data trades` und allen drei

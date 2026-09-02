@@ -31,28 +31,34 @@
 >
 > ### Der Stand in einem Satz
 >
-> **Sechs Hypothesen geprüft, sechs gescheitert.** LLM-Allokator zweimal
-> (ADR-045/046), `hashribbon` (ADR-048), echtes ML (ADR-050), dazu die
-> Timeframe-Frage (ADR-047) und zwei BTC-Mechanismen, die vor der ersten
-> Codezeile fielen (ADR-048). Übrig ist `macross` auf 1d — und dessen
-> Ergebnis steht auf zwei von 33 Trades (ADR-049).
+> **Sieben Hypothesen geprüft, sieben gescheitert.** LLM-Allokator zweimal
+> (ADR-045/046), `hashribbon` (ADR-048), echtes ML (ADR-050), die
+> Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
+> (ADR-048) — und seit ADR-054 auch `macross` selbst: es liegt auf Perzentil
+> **74 % (BTC) / 82 % (ETH)** seiner eigenen gewürfelten Fassungen, gefordert
+> waren 95 %. Nichts im Repo hat je eine Negativkontrolle bestanden.
 >
 > Dazu ein vollständiger Code-Audit (ADR-053): neun Funde, davon fünf, die
 > Zahlen verfälscht haben, ohne dass ein Test rot wurde. Behoben, mit 28
 > neuen Tests — 14 davon fallen gegen den alten Code durch.
 >
+> **Die Paper-Konten laufen trotzdem weiter, und zwar genau deswegen.** Die
+> historischen Daten können die fehlenden unabhängigen Beobachtungen nicht
+> liefern; Vorwärtszeit kann es. Was sich geändert hat, ist der Anspruch: die
+> Konten prüfen nicht nach, ob eine belegte Strategie hält — sie sammeln die
+> Evidenz, die noch fehlt.
+>
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Warten und ticken lassen.** Vorwärtszeit ist die einzige Evidenz, die
->    ein Backtest nicht liefern kann, und sie ist uhrgebunden. Zwei Konten
->    laufen; sie sind nach ADR-052 zusammen **1,2 unabhängige Tests wert**,
->    nicht 2 — die Equity-Kurven korrelieren mit 0,65.
-> 2. **Ein Jahr Order-Flow für `orderflow`.** Die einzigen *ungenutzten Daten*
->    statt ungenutzter Ideen. Der Bestand täuscht: 2,4 Mio Trades über 361
->    Tage Spanne, aber mit einem **301-Tage-Loch** — real zwei Blöcke von 33
->    und 26 Tagen. Fortsetzbar über `qt data trades --days 365`; dreimal an
->    Container-Neustarts gestorben (ADR-034), braucht also dieselbe
->    Sicherungslogik wie der Paper-Zustand.
+> 1. **Warten und ticken lassen — läuft von selbst.** Die Routine
+>    `Paper-Tick macross BTC+ETH (taeglich)` feuert täglich 01:00 UTC in einer
+>    frischen Sitzung. Vorwärtszeit ist die einzige Evidenz, die ein Backtest
+>    nicht liefern kann. Zwei Konten sind nach ADR-052 zusammen **1,2
+>    unabhängige Tests wert**, nicht 2.
+> 2. **Negativkontrollen für alles, was noch keine hat.** ADR-054 hat gezeigt,
+>    wie billig das ist (0,09 s je Durchlauf) und wie viel es entscheidet.
+>    `qt placebo shuffle` und `qt placebo cross` laufen ohne API-Kosten gegen
+>    jede registrierte Strategie.
 > 3. **Gate mit `macross` im Korb**, falls der LLM-Allokator noch eine Chance
 >    bekommen soll. Alle bisherigen Läufe verteilten `trend` und `meanrev` auf
 >    4h — beide verlieren dort dreistellig. Ein Allokator kann nicht
@@ -67,8 +73,18 @@
 >    Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
 >    (ADR-032). Das Budget ist nicht gratis.
 >
+> **Order-Flow ist herabgestuft, und zwar aus einem gemessenen Grund.** Der
+> Punkt stand hier lange auf Platz 2 mit der Begründung, er brauche „dieselbe
+> Sicherungslogik wie der Paper-Zustand". Das geht nicht auf: der Paper-Zustand
+> sind 2 KB JSON, die Trades sind **27,8 MB für 59 nutzbare Tage** — ein Jahr
+> wären rund 170 MB, und GitHub lehnt Dateien über 100 MB ab. Dazu lebt Order
+> Flow auf 4h, und ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede*
+> getestete Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen. Der Punkt
+> kostet Stunden, ein ungelöstes Speicherproblem und kämpft gegen ein
+> Kostenregime, das schon vier Strategien erledigt hat.
+>
 > **Was ausdrücklich nicht empfohlen wird:** noch eine Strategie-Idee. Nicht
-> weil Ideen schlecht wären, sondern weil dieses Projekt gerade sechsmal
+> weil Ideen schlecht wären, sondern weil dieses Projekt gerade siebenmal
 > gezeigt hat, dass es sie zuverlässig widerlegt — und jede kostet einen
 > Versuch im Nenner.
 
@@ -147,10 +163,10 @@ Backtest-Pfad war davon nie betroffen — dort sind Bars immer längst
 geschlossen.
 
 **Warum `macross` und nicht `orderflow` oder `elliott`:** `macross` ist der
-einzige Kandidat mit echter Evidenz (ADR-035) — Out-of-Sample positiv,
-repliziert auf ETH ohne Neuanpassung. Paper-Trading ist der teuerste Weg,
-eine ungeprüfte Strategie zu testen; hier ist wenigstens die Vorprüfung
-gemacht.
+einzige Kandidat mit positiver Out-of-Sample-Kennzahl, auf BTC und auf ETH
+ohne Neuanpassung. *Nicht* „mit echter Evidenz" — so stand es hier, und
+ADR-054 hat es widerlegt: die Permutationskontrolle ist nicht bestanden.
+Es bleibt der beste verfügbare Kandidat, nicht ein belegter.
 
 ---
 

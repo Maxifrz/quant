@@ -5,6 +5,113 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-054 — `macross` ist von seiner eigenen Wuerfelfassung nicht zu unterscheiden
+**Datum:** 2026-09-02
+
+Sechs Hypothesen geprüft, sechs verworfen — und in drei Fällen entschied
+**diese** Art Test: `hashribbon` fiel, weil eine von fünf permutierten
+Hashraten die echte Reihe schlug (ADR-048), das ML-Modell an vertauschten
+Labels (ADR-050), `elliott` bekam den Placebo nachträglich (ADR-033).
+
+`macross` — die einzige überlebende Strategie, seit ADR-037 auf zwei
+Paper-Konten — hatte nie eine. Sie hatte ein Parameterfeld und eine
+Replikation auf ETH. Beides beantwortet die eigentliche Frage nicht:
+
+> Die Strategie ist 54 % der Zeit long in einem Markt, der Faktor 16 gemacht
+> hat. Trägt das **Timing** etwas bei, oder misst der Sharpe „viel long im
+> Bullenmarkt"?
+
+Buy-and-Hold beantwortet das nicht — das ist 100 % Zeit im Markt.
+
+### Die Kontrolle
+
+Der echte Gewichtsverlauf wird in Läufe zerlegt; innerhalb jeder
+Gewichtsklasse werden die **Längen** getauscht. Erhalten bleiben Episodenzahl,
+Zeit im Markt, Abwechslungsmuster — und damit Trade-Zahl und Gebühren.
+Zufällig wird ausschließlich, **wann** die Episoden liegen.
+
+Gemessen, nicht unterstellt:
+
+| | echt | 200 Ziehungen |
+|---|---|---|
+| Trades | 47 | Median 45 (35–54) |
+| Umsatz | 4.807.710 | Median 4.816.397 |
+
+Die gewürfelten Fassungen zahlen dieselbe Reibung. Kein Vorteil durch weniger
+Handeln.
+
+**Die Kalibrierprobe ist Teil der Kontrolle.** Der Abspieler mit den *echten*
+Gewichten muss dieselbe Kennzahl liefern wie die Strategie. Abweichung
+gemessen: **0,0000** — bitidentisch, in beiden Märkten. Ohne diese Probe
+verglichen die Ziehungen zwei verschiedene Dinge, und niemand hätte es
+gesehen.
+
+### Das Ergebnis, Kriterium vorab festgelegt
+
+Gefordert war: die echte Strategie im obersten **5 %** ihrer Permutationen.
+
+| | echter Sharpe | Median der Ziehungen | p95 | Perzentil |
+|---|---|---|---|---|
+| BTC/USD | +0,308 | +0,098 | +0,635 | **74,3 %** |
+| ETH/USD | +0,321 | +0,024 | +0,536 | **82,1 %** |
+
+Je 1000 Ziehungen. **257 bzw. 179 von 1000 Zufallsplatzierungen waren
+mindestens so gut wie die echte Strategie.** Das Kriterium ist nicht knapp
+verfehlt, sondern deutlich.
+
+### Der Querschnitt, dieselbe Strategie auf 13 Märkten
+
+Unverändert 10/50, kein Parameter je Markt neu gewählt:
+
+| | |
+|---|---|
+| Median-Sharpe | **+0,14** |
+| davon positiv | 69 % |
+| Spanne | −1,17 (DOT) bis +0,48 (XLM) |
+| mittlere paarweise Korrelation | 0,67 |
+| **effektive Marktzahl** | **1,4**, nicht 13 |
+
+Besteht dem Buchstaben nach (Median > 0). Aber zwei Dinge relativieren das
+sofort: bei einer Korrelation von 0,67 sind dreizehn Krypto-Märkte nach
+ADR-052 gut *ein* unabhängiger Test — und **BTC und ETH liegen auf Platz 3
+und 4 von 13**, mit gut dem doppelten Median-Sharpe. Genau das erwartet man,
+wenn zwei Märkte ausgewählt wurden.
+
+### Was daraus folgt — und was nicht
+
+**Nicht:** „`macross` funktioniert nicht." Die Strategie liegt in beiden
+Märkten **über** dem Median ihrer Ziehungen (0,31 gegen 0,10; 0,32 gegen
+0,02) und über dem Querschnitts-Median. Es ist ein Hinweis, nur keiner, der
+die Schwelle dieses Projekts hält.
+
+**Sondern:** die Aussage von ADR-035 war zu stark. Dort steht „die erste
+Strategie, die Geld verdient" und im ROADMAP „der einzige Kandidat mit echter
+Evidenz". Richtig ist: **der einzige Kandidat, dessen Kennzahl positiv ist
+und der keine Kontrolle bestanden hat.** ADR-035 sagte das im DSR-Absatz
+bereits selbst („man kann einen Sharpe von 0,6 mit 4,8 Jahren Tagesdaten
+nicht beweisen"); diese Kontrolle sagt dasselbe aus einer zweiten Richtung
+und macht es konkret.
+
+**Grenze des Tests, ausdrücklich:** bei 47 Round-Trips hat er wenig
+Trennschärfe. Ein Perzentil von 74 % heißt „nicht gezeigt", nicht „gezeigt,
+dass nichts da ist". Eine echte, aber schwache Kante würde hier genauso
+durchfallen.
+
+### Konsequenz für die Paper-Konten: sie laufen weiter
+
+Das ist kein Widerspruch, sondern der Grund, warum es sie gibt. Die
+historischen Daten können die fehlenden unabhängigen Beobachtungen nicht
+liefern — Vorwärtszeit kann es, und nur sie. Was sich ändert, ist der
+Anspruch: die Konten prüfen nicht nach, ob eine belegte Strategie hält. Sie
+sammeln die Evidenz, die noch fehlt, bei einem Risikoprofil (long/flach, vier
+Trades im Jahr, kein Hebel), das den Irrtum billig macht.
+
+Was ausdrücklich **nicht** passiert: Parameter nachjustieren, weil das
+Ergebnis dünn ist. Jede Nachjustierung wäre ein weiterer Versuch auf
+denselben Daten und träfe denselben Nenner (ADR-005).
+
+---
+
 ## ADR-053 — Ein vollständiger Audit: was zwischen den Tests durchfiel
 **Datum:** 2026-09-02
 
@@ -1293,6 +1400,13 @@ exakt die alte Formel. Der Tearsheet reicht `one_way_bps(config.costs)` durch.
 
 ## ADR-035 — Die erste Strategie, die Geld verdient — und warum sie trotzdem nicht bewiesen ist
 **Datum:** 2026-08-27
+
+> **Nachtrag 2026-09-02 (ADR-054):** „nicht bewiesen" war noch zu freundlich.
+> Die Permutationskontrolle, die `hashribbon` gekippt hat, wurde nachgeholt:
+> `macross` liegt auf **Perzentil 74 % (BTC) und 82 % (ETH)** seiner eigenen
+> gewürfelten Fassungen — 257 bzw. 179 von 1000 Zufallsplatzierungen derselben
+> Episoden waren mindestens so gut. Die unten stehenden Zahlen bleiben richtig;
+> was nicht gilt, ist die Lesart „die erste Strategie, die etwas kann".
 
 **Ausgangslage:** Vier Strategien gebaut, vier verloren. Alle vier liefen auf
 1h- oder 4h-Bars, alle vier durften short gehen. Beide Entscheidungen waren
