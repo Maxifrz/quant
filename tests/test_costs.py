@@ -284,7 +284,7 @@ def test_one_way_bps_ist_die_haelfte_des_round_trips():
 
     cfg = CostConfig()
     assert round_trip_bps(cfg) == pytest.approx(2 * one_way_bps(cfg))
-    assert one_way_bps(cfg) == pytest.approx(45.0)
+    assert one_way_bps(cfg) == pytest.approx(65.0)
 
 
 def test_buy_and_hold_ohne_kosten_bleibt_die_alte_formel():
@@ -352,3 +352,98 @@ def test_negative_einstiegskosten_werden_abgelehnt():
 
     with pytest.raises(ValueError, match="negativ"):
         buy_and_hold(pd.Series([100.0, 110.0]), 100_000.0, entry_cost_bps=-1.0)
+
+
+# --------------------------------------------------------------------------
+# Kostenregime (ADR-056)
+# --------------------------------------------------------------------------
+
+
+def test_jedes_regime_ist_ueber_seinen_namen_erreichbar():
+    from qt.core.config import COST_REGIMES, regime
+
+    for name in COST_REGIMES:
+        assert regime(name) is COST_REGIMES[name]
+
+
+def test_unbekanntes_regime_nennt_die_bekannten():
+    """Eine Fehlermeldung, die nur 'unbekannt' sagt, kostet einen Blick ins Modul."""
+    from qt.core.config import regime
+
+    with pytest.raises(KeyError, match="coinbase_taker"):
+        regime("gibtsnicht")
+
+
+def test_der_default_ist_die_eingangsstufe_und_nicht_die_guenstigere():
+    """60 bps Taker, nicht 40.
+
+    Der Default stand bis 2026-09-02 auf 40 bps mit dem Kommentar
+    "Coinbase ~40bps". 40 ist der Taker-Satz der Stufe ab 10k USD
+    Monatsvolumen; die Eingangsstufe zahlt 60. Der Kommentar war also nicht
+    falsch abgeschrieben, sondern auf die falsche Zeile der Staffel gerichtet
+    -- und ein Konto am ersten Tag steht in der Eingangsstufe (ADR-056).
+    """
+    from qt.core.config import COINBASE_TAKER, CostConfig
+
+    assert CostConfig().taker_fee_bps == 60.0
+    assert CostConfig() == COINBASE_TAKER
+
+
+def test_maker_zahlt_keine_spanne_weil_er_sie_verdient():
+    from qt.core.config import COINBASE_MAKER, COINBASE_TAKER
+
+    assert COINBASE_MAKER.half_spread_bps == 0.0
+    assert COINBASE_MAKER.slippage_bps == 0.0
+    assert COINBASE_MAKER.taker_fee_bps < COINBASE_TAKER.taker_fee_bps
+
+
+def test_kraken_ist_beim_taker_teurer_als_coinbase():
+    """Die Staffel von Juli 2026: 0,80 % Taker gegen 0,60 %.
+
+    Steht als Test da, weil im Netz weiterhin die alten 0,26 % kursieren --
+    und eine Zahl, die man aus dem Gedaechtnis "weiss", ist genau die, die
+    niemand nachprueft.
+    """
+    from qt.core.config import COINBASE_TAKER, KRAKEN_TAKER
+
+    assert KRAKEN_TAKER.taker_fee_bps > COINBASE_TAKER.taker_fee_bps
+
+
+def test_us_etf_ist_fast_aber_nicht_ganz_gebuehrenfrei():
+    """Aufsichtsgebuehren sind winzig und nicht null.
+
+    0.0 wuerde behaupten, ein Verkauf koste nichts; SEC- und FINRA-Abgaben
+    fallen auf jeden Verkauf an (Alpaca-Gebuehrenplan, ADR-056).
+    """
+    from qt.core.config import US_ETF_COSTS
+
+    assert 0.0 < US_ETF_COSTS.taker_fee_bps < 1.0
+
+
+def test_adr009_maker_reproduziert_die_alte_tabelle():
+    """16 bps Round-Trip -- die Zeile, an der ADR-009 seine Hoffnung aufhing."""
+    from qt.backtest.costs import round_trip_bps
+    from qt.core.config import ADR009_MAKER
+
+    assert round_trip_bps(ADR009_MAKER) == pytest.approx(16.0)
+
+
+def test_costs_for_symbols_erkennt_die_etfs_und_laesst_krypto_in_ruhe():
+    """Das Feld gab es seit ADR-055 -- gefuellt hat es niemand (ADR-056).
+
+    Ein Konfigurationsfeld, das existiert und leer bleibt, sieht im Code aus
+    wie eine geloeste Frage. Dieser Test ist der Grund, warum es diesmal
+    auffiele.
+    """
+    from qt.core.config import US_ETF_COSTS, costs_for_symbols
+
+    zuordnung = costs_for_symbols(["SPY", "GLD", "BTC/USD", "ETH/USD", "UNBEKANNT"])
+    assert zuordnung == {"SPY": US_ETF_COSTS, "GLD": US_ETF_COSTS}
+
+
+def test_ein_etf_zahlt_ueber_zwanzigmal_weniger_als_ein_krypto_taker():
+    """Die Groessenordnung, um die es beim Verdrahtungsfehler ging."""
+    from qt.backtest.costs import round_trip_bps
+    from qt.core.config import COINBASE_TAKER, US_ETF_COSTS
+
+    assert round_trip_bps(COINBASE_TAKER) > 20 * round_trip_bps(US_ETF_COSTS)

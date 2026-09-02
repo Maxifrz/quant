@@ -222,19 +222,31 @@ kaputten Bars.* Alle Zahlen sind **In-Sample** und wandern mit dem Datenstand
 — `macross` steht am 2026-09-01 bei Faktor 16,0 / Sharpe 1,04, Buy & Hold bei
 20,1 / 0,94. Die belastbaren Zahlen stehen weiter oben, out-of-sample.
 
-| Lauf | Ergebnis | Buy & Hold |
-|---|---|---|
-| `trend` BTC/USD 4h | Faktor 0,46 · Sharpe −0,06 | Faktor 17,4 · Sharpe 0,92 |
-| `meanrev` ETH/USD 1h | Faktor 0,00 · Sharpe −2,08 | Faktor 14,6 · Sharpe 0,84 |
-| `elliott` BTC/USD 4h | Faktor 0,03 · Sharpe −0,68 | Faktor 17,4 · Sharpe 0,92 |
-| **`macross` BTC/USD 1d** | **Faktor 15,2 · Sharpe 1,03 · MaxDD −57%** | Faktor 16,8 · Sharpe 0,91 · MaxDD −77% |
+Nachgezogen am 2026-09-02: der Gebührensatz im Kostenmodell stand auf der
+falschen Zeile der Coinbase-Staffel (40 statt 60 bps, ADR-056). Der Round-Trip
+ist von 90 auf 130 bps gestiegen, **alle vier Zeilen wurden dadurch
+schlechter**, und die alten Zahlen standen bis dahin hier, als seien sie
+aktuell. Nachrechnen: `uv run qt costs --symbol BTC/USD --tf 4h`.
+
+| Lauf | Ergebnis (130 bps) | vorher (90 bps) | Buy & Hold |
+|---|---|---|---|
+| `trend` BTC/USD 4h | Faktor 0,14 · Sharpe −0,44 | 0,46 · −0,06 | Faktor 17,4 · Sharpe 0,92 |
+| `meanrev` ETH/USD 1h | Faktor 0,00 · Sharpe −2,37 | 0,00 · −2,08 | Faktor 14,6 · Sharpe 0,84 |
+| `elliott` BTC/USD 4h | Faktor 0,01 · Sharpe −0,87 | 0,03 · −0,68 | Faktor 17,4 · Sharpe 0,92 |
+| **`macross` BTC/USD 1d** | **Faktor 14,15 · Sharpe 1,00 · MaxDD −58%** | 15,2 · 1,03 | Faktor 16,8 · Sharpe 0,91 · MaxDD −77% |
+
+Die letzte Zeile ist die interessante: `macross` verliert durch 40 bps mehr
+Round-Trip-Kosten **0,03 Sharpe**, `trend` auf 4h verliert 0,38. Das ist der
+Frequenzeffekt aus ADR-056 in zwei Zahlen.
 
 Beide verlieren deutlich — wie erwartet. Die Diagnose ist aber unterschiedlich, und
 genau das ist der Wert dieser Phase:
 
 - **`trend` scheitert an den Kosten, nicht am Signal.** Ohne Gebühren macht dieselbe
   Strategie Faktor 6,44, bei Maker-Gebühren 4,04, bei Coinbase-Taker-Gebühren 0,46.
-  Details in ADR-009.
+  Details in ADR-009 — die Zahlen reproduzieren bis heute, aber sie gelten für
+  **4h**. Auf 1d kostet dieselbe Annahme nur 0,08 bis 0,23 Sharpe (ADR-056).
+  Nachzusehen mit `uv run qt costs --symbol BTC/USD --tf 1d`.
 - **`elliott` scheitert ebenfalls am Signal** (ADR-033). Ohne jede Gebühr bleibt
   Faktor 0,14 bei Sharpe −0,25; mit Kosten 0,03. Die Wellenzählung findet Muster,
   aber die Muster sagen nichts über den nächsten Bar. Walk-Forward: 7 von 17

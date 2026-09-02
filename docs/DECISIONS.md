@@ -5,6 +5,245 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-056 — Das Kostenregime entscheidet nur unter 1d, und der Default war zu billig
+**Datum:** 2026-09-02
+
+**Die Entscheidung:** Ab Phase C wird unter **`coinbase_taker`** gesucht — 60 bps
+Gebühr, 2 bps halber Spread, 3 bps Slippage, zusammen **130 bps Round-Trip**.
+Kein Maker-Szenario, keine günstigere Börse, keine Hoffnung auf eine
+Volumenstufe. Dazu ein vorab festgelegtes **Umschlagbudget**, siehe unten.
+
+Phase B sollte laut ZIEL.md klären, ob billigere Ausführung den Suchraum
+öffnet. Sie hat drei Dinge gefunden, und nur eines davon war die erwartete
+Frage.
+
+---
+
+### 1. Der Gebührensatz im Code war die falsche Zeile der Staffel
+
+`CostConfig.taker_fee_bps` stand seit Phase 1 auf **40.0**, mit dem Kommentar
+„Coinbase ~40bps". Nachgelesen am 2026-09-02:
+
+| Börse | Stufe | Maker | Taker |
+|---|---|---|---|
+| Coinbase Advanced | < 10k USD / 30 T | 0,40 % | **0,60 %** |
+| Coinbase Advanced | 10k–50k USD | 0,25 % | 0,40 % |
+| Kraken Pro | Eingangsstufe | 0,40 % | **0,80 %** |
+
+40 bps ist der Taker-Satz der **zweiten** Stufe. Ein Konto am ersten Tag steht
+in der ersten und zahlt 60. Der Kommentar war nicht falsch abgeschrieben — er
+zeigte auf die falsche Zeile, und das ist die Sorte Fehler, die kein Test
+findet, weil beide Zahlen im Gebührenplan stehen.
+
+Der Default steht jetzt auf 60 bps. **Das macht jede bisher gemessene Zahl
+schlechter, nicht besser** — der Round-Trip steigt von 90 auf 130 bps.
+
+**Zur Belastbarkeit der Quellen, weil sie ungleich ist.** Kraken und Alpaca
+sind Primärquellen (`kraken.com/features/fee-schedule`,
+`files.alpaca.markets/disclosures/BrokFeeSched.pdf`, beide abgerufen
+2026-09-02). Coinbase antwortet aus dieser Umgebung mit HTTP 403; die 0,40/0,60
+stammen aus **drei unabhängigen Sekundärquellen**, die übereinstimmen. Das ist
+schwächer, und es steht so im Code.
+
+Ein Nebenbefund, der die Regel begründet: für Kraken nennen mehrere aktuelle
+Zusammenstellungen 0,16 %/0,26 %. Das ist die Staffel **vor** Krakens Umstellung
+im Juli 2026. Eine Sekundärquelle ohne Datum ist wertlos, auch wenn sie von
+2026 ist.
+
+---
+
+### 2. ADR-009s Kernaussage gilt nur unter 1d — und wurde überall zitiert, als gälte sie allgemein
+
+ADR-009 maß `trend` auf BTC/USD **4h** und schloss: die Kostenannahme leistet
+mehr als jede Strategieentscheidung. Der Satz ist seither in `ZIEL.md`, in
+`config.py` und in mehreren ADRs als allgemeine Wahrheit weitergereicht worden.
+
+`qt costs` zieht die Tabelle jetzt für jede registrierte Strategie nach. Zuerst
+die Gegenprobe, dass der alte Befund reproduziert — er tut es **exakt**:
+
+**BTC/USD, 4h** (Endkapital als Faktor, dahinter Sharpe):
+
+| Strategie | ohne Kosten | adr009_maker (16 bps) | coinbase_taker (130 bps) |
+|---|---|---|---|
+| trend | 6,44× / 0,81 | 4,04× / 0,66 | 0,14× / −0,44 |
+| macross | 9,44× / 0,92 | 6,53× / 0,80 | 0,47× / −0,03 |
+
+6,44 und 4,04 sind die Zahlen aus ADR-009, auf die Stelle.
+
+**Dieselben Strategien auf 1d:**
+
+| Strategie | ohne Kosten | coinbase_taker (130 bps) | ΔSharpe |
+|---|---|---|---|
+| macross | 21,69× / 1,13 | 14,15× / **1,00** | −0,13 |
+| trend | 3,96× / 0,63 | 1,85× / 0,40 | −0,23 |
+| hashribbon | 10,15× / 0,83 | 7,18× / 0,75 | −0,08 |
+| elliott | 1,04× / 0,28 | 0,53× / 0,12 | −0,16 |
+| meanrev | 0,06× / −0,54 | 0,03× / −0,72 | −0,18 |
+
+**Auf 4h kostet die Ausführung 0,94 bis 1,26 Sharpe. Auf 1d kostet sie 0,08 bis
+0,23.** Das ist kein gradueller Unterschied, das ist ein anderer Sachverhalt.
+
+Das deckt sich mit ADR-047 („unter 1d entscheidet die Frequenz, über 1d
+entscheidet nichts mehr") — dies ist dessen Kostenseite.
+
+---
+
+### 3. Warum, in einer Formel — und damit ein Budget statt einer Meinung
+
+Der Mechanismus ist nicht „weniger Trades". `macross` schlägt auf 1d mehr
+Gegenwert um als auf 4h. Was zählt, ist der Umschlag **relativ zum jeweiligen
+Eigenkapital**:
+
+> **Kostendrag p. a. ≈ (Umschlag / Eigenkapital / Jahr) × (einfache Kosten in bps)**
+>
+> **ΔSharpe ≈ − Kostendrag / annualisierte Volatilität**
+
+Gegengerechnet auf BTC/USD bei 65 bps je Ausführung:
+
+| Strategie | TF | Umschlag/EK/Jahr | vorhergesagt | gemessen |
+|---|---|---|---|---|
+| trend | 4h | 77,4 | 50,3 % | 50,3 % |
+| macross | 4h | 61,0 | 39,7 % | 43,7 % |
+| trend | 1d | 15,4 | 10,0 % | 11,3 % |
+| macross | 1d | 8,8 | 5,7 % | 8,1 % |
+
+**Grenze der Formel:** sie überschätzt, wenn das Konto zusammenbricht — bei
+`meanrev` auf 4h sagt sie 53,6 % und misst 26,8 %, weil ein schrumpfendes Konto
+immer kleinere Positionen handelt. Für einen Kandidaten, der sein Kapital
+hält, stimmt sie auf wenige Prozentpunkte.
+
+**Daraus das Budget, vorab und in Zahlen.** Gate 1 verlangt Sharpe ≥ 0,41
+(ADR-055). Die Ausführung darf davon höchstens **0,10 Sharpe** fressen. Bei
+44 % Jahresvolatilität sind das 4,4 % Drag, bei 65 bps je Ausführung:
+
+> **Ein Kandidat in Phase C darf höchstens rund 7× sein Eigenkapital pro Jahr
+> umschlagen.** Darüber wird er nicht gescreent — nicht weil er schlecht wäre,
+> sondern weil er die Kosten nicht tragen kann, die er nachweislich zahlt.
+
+`macross` auf 1d liegt bei 8,8 und damit knapp darüber. Auf 4h bei 61.
+
+---
+
+### 4. Die Füllquote widerlegt Maker nicht — und die Messung ist trotzdem wenig wert
+
+Das Maker-Regime setzt voraus, dass eine passive Limit-Order gefüllt wird.
+`qt maker` (`qt.backtest.maker`) rechnet das je vorgemerkter Order nach: Limit
+beim Signalpreis, dann drei Fälle im Ausführungsbar.
+
+`macross`, BTC/USD:
+
+| TF | Orders | marktnah | passiv gefüllt | nie gefüllt |
+|---|---|---|---|---|
+| 1h | 1.746 | 62 % | 37 % | **1 %** |
+| 4h | 461 | 63 % | 36 % | **1 %** |
+| 1d | 67 | 67 % | 33 % | **0 %** |
+
+Über drei Zeitebenen stabil: der Kurs kommt fast immer zurück. Der Einwand
+„Trendfolge kauft in die Stärke, das Limit wird nie erreicht" ist damit **nicht
+bestätigt**.
+
+**Trotzdem trägt die Zahl die Entscheidung nicht.** Das Modell zählt jede
+Berührung des Limits als vollen Fill. Genau das ist die Annahme, die bei einer
+ruhenden Order an einem kurz angetippten Kurs bricht — vor uns steht die
+Warteschlange. Die 0 bis 1 % Ausfall sind ein direktes Produkt dieser Annahme,
+nicht ein Ergebnis daneben. Was hier entscheiden würde, ist die
+Warteschlangenposition, und die steht in Tages-OHLC nicht drin.
+
+Also: **Maker bleibt eine Aufwärtsmöglichkeit, kein Suchszenario.** Geprüft
+wird sie in Phase D/E an echten Fills, wo die Antwort direkt abzulesen ist.
+
+---
+
+### 5. Der Spread ließ sich nicht messen, und der Versuch steht als Warnung im Repo
+
+Der halbe Spread stand als blanke Zahl im Code. Der Versuch, ihn aus Tages-OHLC
+zu schätzen — Corwin/Schultz (2012) und Abdi/Ranaldo (2017) —, ist
+**gescheitert**. `qt.backtest.spread` bleibt als offen markierter Fehlschlag
+liegen, wie `timesfm` und `elliott` (ADR-022, ADR-033).
+
+Zwei Gründe, und der erste ist der wichtigere:
+
+**Die erste Fassung meldete 47 bps für eine simulierte Reihe mit einem Spread
+von exakt null.** Beide Formeln stehen in ihren Papieren unter einem
+Erwartungswert; ich hatte sie je Tagespaar ausgewertet und die Ergebnisse
+hinterher gemittelt. 42 % der Paarschätzungen waren negativ, wurden auf 0
+geklemmt, und der Median der übrigen lag hoch. Erst β und γ zu mitteln ergibt
+−16 bps, also null im Rauschen. **An echten Kursen hätte die Zahl plausibel
+ausgesehen und wäre in dieses ADR gewandert.** Aufgefallen ist es nur an einer
+Simulation, in der die Antwort bekannt war; sie steht deshalb als Test im Repo
+(`tests/test_spread.py`).
+
+**Auch repariert taugt die Methode hier nicht.** Gegen bekannte Wahrheit liegt
+Corwin/Schultz systematisch zu tief und klemmt bei 0, Abdi/Ranaldo zu hoch, und
+zwar um rund 0,14 × Tagesvolatilität — bei 4 % Tagesvol und Spread 0 meldet er
+55 bps. In der Simulation klammern die beiden den wahren Wert ein. Auf echten
+Kursen nicht: über die 28 Reihen im Store liegt CS in **10 Fällen über AR**, was
+in der Simulation nie vorkommt. Und der Fall mit bekannter Antwort geht daneben
+— BTC/USD auf Coinbase handelt mit einer Spanne im Bereich eines Basispunkts,
+geschätzt werden 23,3 und 45,9.
+
+Ursache: beide Verfahren setzen konstante Volatilität im Zweitagesfenster
+voraus. Volatilitätsclusterung und Sprünge schreiben sie dem Spread zu.
+
+**Konsequenz:** `half_spread_bps` und `slippage_bps` sind **Annahmen** und im
+Feld-Text jetzt als solche gekennzeichnet, statt als Zahlen dazustehen, die
+nach Messung aussehen. Aus Tages-OHLC sind sie nicht zu holen.
+
+---
+
+### Konsequenzen
+
+- **Gesucht wird unter `coinbase_taker`**, auf **1d oder gröber**, mit einem
+  Umschlagbudget von **≈ 7× Eigenkapital pro Jahr**. Alle drei sind vorab
+  festgelegt und wandern in Gate 1.
+- **Die Hoffnung aus ZIEL.md §2 wird nicht gebraucht.** „Billigere Ausführung
+  öffnet den Suchraum" gilt unter 1d; dort wird nicht gesucht. Auf 1d kostet
+  die pessimistischste Annahme rund 0,13 Sharpe, und das ist bezahlbar.
+- **Der Versuchszähler bleibt bei 8.** Hier wurde kein Kandidat gescreent
+  (ADR-032).
+- **Neue Befehle:** `qt costs` (Sensitivität je Strategie und Regime),
+  `qt maker` (Füllquote passiver Orders), `qt backtest --costs <regime>`.
+- **Was offen bleibt und offen heißt:** der reale Spread, die
+  Warteschlangenposition, und ob Coinbases 0,60 % stimmen. Alle drei sind erst
+  mit echten Fills oder Orderbuchdaten zu klären — also in Phase E, nicht durch
+  längeres Nachdenken.
+
+---
+
+### Nachtrag am selben Tag: `costs_by_symbol` gab es, aber niemand füllte es
+
+Beim Nachziehen der ROADMAP-Tabelle fiel ein zweiter Verdrahtungsfehler auf.
+`BacktestConfig.costs_by_symbol` entstand in Phase A (ADR-055) genau dafür,
+dass ein US-ETF nicht den Krypto-Taker zahlt — **aber keine einzige Aufrufstelle
+hat es je gefüllt.** `qt placebo cross` baute seine Konfiguration ohne, und
+damit standen die ETF-Zellen in ADR-055 unter **130 statt 5,2 bps**
+Round-Trip, dem 25-fachen.
+
+Ein Feld, das existiert und leer bleibt, ist schlimmer als keines: es sieht im
+Code aus wie eine gelöste Frage.
+
+Verdrahtet über `qt.core.config.costs_for_symbols`. Der Querschnitt danach:
+
+| | vorher (ETFs auf Krypto-Tarif) | nachher |
+|---|---|---|
+| Median-Sharpe über 26 Märkte | +0,03 | **+0,15** |
+| davon positiv | — | 69 % |
+| mittlere Paarkorrelation | 0,26 | **0,26** |
+| effektive Märkte | 3,4 | **3,4** |
+
+**Das Kriterium bleibt verfehlt.** Und das ist der Punkt, an dem die Korrektur
+lehrreich ist: sie hat den Median vervierfacht und an der Zahl, auf die es
+ankommt, **nichts** geändert. `n_eff` misst die Korrelationsstruktur, nicht das
+Niveau — ein Kostenfehler verschiebt alle Reihen ähnlich und lässt ihre
+Korrelation in Ruhe. Gate 1 bleibt bei Mindest-Sharpe **0,41**.
+
+Die vier besten Zellen sind jetzt GLD 1,45, QQQ 1,25, SLV 1,23, SPY 1,20. Das
+bleibt, was es in ADR-055 schon war: **kein Ergebnis.** Vier von 26 Zellen,
+drei OOS-Fenster statt sieben, ohne Permutationskontrolle, ohne DSR. Ein
+Kandidat für Phase C, nicht mehr.
+
+---
+
 ## ADR-055 — Vier Anlageklassen: Kriterium verfehlt, und die Ausrede war falsch
 **Datum:** 2026-09-02
 

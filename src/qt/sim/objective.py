@@ -179,7 +179,8 @@ class ObjectiveConfig(BaseModel):
         ge=0,
         description="Kosten eines vollen Round-Trips in Basispunkten, "
         "proportional zum Exposure verrechnet. Default aus dem Kostenmodell "
-        "(~90 bps, ADR-009). 0 schaltet Kosten fuer Analysen ab.",
+        "(130 bps, Coinbase-Eingangsstufe, ADR-056). 0 schaltet Kosten fuer "
+        "Analysen ab.",
     )
     risk_basis: Literal["terminal", "drawdown"] = Field(
         default="drawdown",

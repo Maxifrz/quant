@@ -43,7 +43,7 @@ def build_critique_briefing(
     probe: ProbeReport | None = None,
     literals: list[LiteralFlag] | None = None,
     oos_bars: int | None = None,
-    round_trip_bps: float = 90.0,
+    round_trip_bps: float | None = None,
 ) -> str:
     """Das Briefing fuer die Kritik: Code, Begruendung, harte Vorbefunde.
 
@@ -53,7 +53,20 @@ def build_critique_briefing(
     umsonst findet, soll kein Modell fuer Geld nacherzaehlen. Das Modell soll
     die Frage beantworten, die der AST-Durchlauf nicht beantworten kann --
     ob eine auffaellige Zahl ein legitimer Lookback oder ein Kursniveau ist.
+
+    `round_trip_bps=None` zieht den Wert aus dem geltenden Kostenmodell,
+    statt ihn zu kopieren. Vorher stand hier fest 90.0 -- der Default hat sich
+    am 2026-09-02 auf 130 geaendert (ADR-056), und eine kopierte Zahl haette
+    dem Kritiker weiter die alte genannt, ohne dass etwas fehlschlaegt.
     """
+    if round_trip_bps is None:
+        from qt.backtest.costs import round_trip_bps as _rt
+        from qt.core.config import CostConfig
+
+        kosten_bps = _rt(CostConfig())
+    else:
+        kosten_bps = round_trip_bps
+
     lines = [
         "Pruefe diesen Strategie-Kandidaten, bevor er einen Walk-Forward-Lauf",
         "bekommt.",
@@ -65,7 +78,7 @@ def build_critique_briefing(
         proposal.code.rstrip(),
         "```",
         "",
-        f"Handelskosten im Test: {round_trip_bps:.0f} Basispunkte Round-Trip.",
+        f"Handelskosten im Test: {kosten_bps:.0f} Basispunkte Round-Trip.",
     ]
 
     if oos_bars is not None:

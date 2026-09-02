@@ -75,11 +75,12 @@ DEFAULT_CONTEXT_LEN = 512
 DEFAULT_HORIZON = 16
 DEFAULT_CHECKPOINT = "google/timesfm-2.5-200m-pytorch"
 
-# Round-Trip-Kosten laut ADR-009 (Coinbase Taker, BTC/USD 4h) liegen bei rund
-# 90bps. Der Default-Schwellenwert ist bewusst das Doppelte: eine Vorhersage
-# ist unsicherer als eine gemessene Gebuehr, und ein Modell, das nur knapp
+# Round-Trip-Kosten der Coinbase-Eingangsstufe liegen bei 130 bps (ADR-056;
+# bis 2026-09-02 stand hier 90 aus ADR-009, mit einem zu guenstig gelesenen
+# Gebuehrensatz). Der Schwellenwert bleibt das Doppelte: eine Vorhersage ist
+# unsicherer als eine nachgelesene Gebuehr, und ein Modell, das nur knapp
 # ueber den Kosten liegt, verdient keinen Trade.
-DEFAULT_MIN_EDGE_BPS = 180.0
+DEFAULT_MIN_EDGE_BPS = 260.0
 
 
 class ForecasterUnavailable(RuntimeError):

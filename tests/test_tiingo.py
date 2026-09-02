@@ -250,8 +250,8 @@ def test_abdeckung_wird_ohne_handelskalender_nicht_erfunden():
 def test_etf_und_krypto_zahlen_verschiedene_kosten():
     """90 bps auf einen ETF waeren absurd, 5 bps auf Krypto ebenso."""
     modell = FlatFillModel(CostConfig(), by_symbol={"SPY": US_ETF_COSTS})
-    assert round_trip_bps(modell.costs_for("BTC/USD")) == pytest.approx(90.0)
-    assert round_trip_bps(modell.costs_for("SPY")) == pytest.approx(5.0)
+    assert round_trip_bps(modell.costs_for("BTC/USD")) == pytest.approx(130.0)
+    assert round_trip_bps(modell.costs_for("SPY")) == pytest.approx(5.2)
 
     teuer = modell.fill(100.0, 10.0, FillContext(symbol="BTC/USD"))
     billig = modell.fill(100.0, 10.0, FillContext(symbol="SPY"))
@@ -260,8 +260,8 @@ def test_etf_und_krypto_zahlen_verschiedene_kosten():
 
 def test_ein_unbekanntes_symbol_faellt_auf_den_default():
     modell = FlatFillModel(CostConfig(), by_symbol={"SPY": US_ETF_COSTS})
-    assert modell.costs_for("VOLLIG/NEU").taker_fee_bps == 40.0
-    assert modell.costs_for(None).taker_fee_bps == 40.0
+    assert modell.costs_for("VOLLIG/NEU").taker_fee_bps == 60.0
+    assert modell.costs_for(None).taker_fee_bps == 60.0
 
 
 def test_auch_das_groessenabhaengige_modell_trennt_die_saetze():
@@ -269,7 +269,9 @@ def test_auch_das_groessenabhaengige_modell_trennt_die_saetze():
     ctx = FillContext(bar_volume=1000.0, symbol="SPY")
     kosten = modell.fill(100.0, 10.0, ctx)
     # Der Impact kommt oben drauf, die Grundgebuehr bleibt die des ETF.
-    assert kosten.fee == pytest.approx(0.0), "ETF-Gebuehr ist null, nicht 40 bps"
+    # Nicht null: Aufsichtsgebuehren fallen auch beim provisionsfreien Broker
+    # an. Aber um Groessenordnungen unter dem Krypto-Taker (ADR-056).
+    assert 0.0 < kosten.fee < 0.05, "ETF-Gebuehr ist winzig, nicht null und nicht 60 bps"
 
 
 def test_der_broker_reicht_das_symbol_durch():
@@ -289,8 +291,9 @@ def test_der_broker_reicht_das_symbol_durch():
     broker.execute_pending("BTC/USD", 100.0, ts)
     krypto_gebuehr = broker.fees_paid - etf_gebuehr
 
-    assert etf_gebuehr == pytest.approx(0.0)
+    assert 0.0 < etf_gebuehr < 0.05
     assert krypto_gebuehr > 3.0
+    assert krypto_gebuehr > 100 * etf_gebuehr
 
 
 # ---------------------------------------------------------------------------

@@ -109,10 +109,22 @@ keine zusätzliche Evidenz.** Der Standardfehler bleibt, wo er ist. Was sie
 ändern, ist der *Suchraum*: bei 16 bps sind Strategien möglich, die bei 90 bps
 tot sind — und darunter vielleicht eine mit Sharpe über 0,67.
 
-*Was dafür fehlt:* der reale Gebührenplan der Zielbörse, geprüft und
-dokumentiert, plus die Frage, ob Maker-Ausführung für dieses Signal überhaupt
-erreichbar ist (Limit-Orders, die nicht gefüllt werden, sind keine Ersparnis,
-sondern ein verpasster Trade).
+> **Erledigt am 2026-09-02 (ADR-056), und der Absatz oben stimmt nur halb.**
+> Die Tabelle darüber ist `trend` auf **4h**. Auf **1d** kostet dieselbe
+> pessimistische Annahme 0,08 bis 0,23 Sharpe statt 0,94 bis 1,26 — das
+> Kostenniveau leistet dort **weniger** als jede Strategieentscheidung, nicht
+> mehr. Der Satz war nie falsch, er war nie allgemein, und er ist überall
+> zitiert worden, als wäre er es.
+>
+> Zwei Korrekturen fielen dabei an. Der Gebührensatz im Code (40 bps) war die
+> zweite Zeile der Coinbase-Staffel; die Eingangsstufe zahlt **60**. Der
+> Default steht jetzt dort, der Round-Trip damit auf **130 bps** — alle
+> bisherigen Zahlen werden dadurch schlechter, nicht besser. Und der halbe
+> Spread ließ sich **nicht** messen: der Versuch über Corwin/Schultz und
+> Abdi/Ranaldo ist gescheitert und liegt als markierter Fehlschlag im Repo.
+>
+> Da unter 1d ohnehin nicht gesucht wird (ADR-047), wird die Hoffnung aus
+> diesem Abschnitt **nicht gebraucht**.
 
 ### 3. Eine Zielhöhe, die zur Datenlage passt
 
@@ -178,20 +190,42 @@ gemeldet worden. Dazu kam eine dritte, die hier noch nicht stand: das
 Kostenmodell kannte keine Symbole, ein gemischter Lauf war damit gar nicht
 ehrlich möglich. Alle drei sind erledigt (ADR-055).
 
-### Phase B — Kostenregime klären *(1 Arbeitsblock)*
+### Phase B — Kostenregime klären ✅ *(erledigt 2026-09-02, ADR-056)*
 
-1. Realen Gebührenplan der Zielbörse dokumentieren, mit Quelle und Datum.
-2. `qt backtest --fills` um ein Maker-Szenario erweitern und die
-   Sensitivitätstabelle aus ADR-009 für **alle** registrierten Strategien
-   nachziehen.
-3. **Entscheidung als ADR:** unter welcher Kostenannahme wird ab jetzt
-   gesucht — und was macht sie in der Ausführung erforderlich.
+1. ~~Realen Gebührenplan der Zielbörse dokumentieren, mit Quelle und Datum.~~
+   Coinbase 0,40/0,60 %, Kraken 0,40/0,80 %, Alpaca provisionsfrei plus
+   Aufsichtsgebühren. Die Regime heißen jetzt `coinbase_taker`,
+   `kraken_maker` und so weiter, jedes mit Quelle und Abrufdatum im Code.
+2. ~~Sensitivitätstabelle für alle Strategien nachziehen.~~ `qt costs` zieht
+   sie auf Zuruf. ADR-009 reproduziert auf 4h exakt (6,44× / 4,04×) — und
+   gilt dort auch nur.
+3. ~~Entscheidung als ADR.~~ Siehe unten.
+
+**Das Ergebnis in drei Zeilen:**
+
+| | |
+|---|---|
+| Gesucht wird unter | `coinbase_taker` — 130 bps Round-Trip, ohne Maker-Hoffnung |
+| Zeitebene | **1d oder gröber**; darunter frisst die Ausführung den Edge |
+| Umschlagbudget | **≤ 7× Eigenkapital pro Jahr** (aus 0,10 Sharpe Kostenspielraum) |
+
+Das Budget folgt aus einer Identität, die auf wenige Prozentpunkte stimmt:
+**Drag p. a. ≈ (Umschlag/EK/Jahr) × einfache Kosten**, und
+**ΔSharpe ≈ −Drag/Vola**. Damit ist die Kostenwirkung eines Kandidaten
+vorhersagbar, ohne ihn zu rechnen.
+
+Was **nicht** geklärt ist und offen heißt: der reale Spread (nicht messbar aus
+Tages-OHLC), die Warteschlangenposition bei Limit-Orders, und ob Coinbases
+0,60 % stimmen — deren Seite antwortet hier mit HTTP 403, die Zahl steht auf
+drei übereinstimmenden Sekundärquellen. Alle drei brauchen echte Fills.
 
 ### Phase C — Suchen, mit scharfer Latte *(offen, das ist die eigentliche Arbeit)*
 
 Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
-1. Mindest-Sharpe aus Phase A ableiten und **vorab** als ADR festschreiben.
+1. Mindest-Sharpe aus Phase A ableiten und **vorab** als ADR festschreiben:
+   **0,41** (ADR-055). Dazu das Umschlagbudget aus Phase B: **≤ 7× EK/Jahr**,
+   auf 1d oder gröber, unter `coinbase_taker` (ADR-056).
 2. Research-Loop und eigene Ideen gegen die erweiterte Marktbasis.
 3. **Jeder Kandidat durchläuft die volle Kette, in dieser Reihenfolge:**
    Sandbox → Kritik → Walk-Forward → DSR → `qt placebo shuffle` →
@@ -210,6 +244,7 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 | Permutation | Perzentil ≥ 95 % (`qt placebo shuffle`) |
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |
 | Anlageklassen | wirkt in mindestens zwei, nicht nur in Krypto |
+| Umschlag | ≤ 7× Eigenkapital pro Jahr, unter `coinbase_taker` (ADR-056) |
 
 Die letzte Zeile ist neu und die schärfste: ein Effekt, der nur in einer
 Anlageklasse auftritt, ist wahrscheinlich deren Beta und nicht dein Edge.

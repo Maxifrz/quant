@@ -124,6 +124,16 @@ def _fill_model(name: str):
         ) from None
 
 
+def _regime(name: str):
+    """Kostenregime nach Namen. Die Namen und ihre Quellen: ADR-056."""
+    from qt.core.config import regime
+
+    try:
+        return regime(name)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc).strip("\"'")) from None
+
+
 @data_app.command("pull")
 def data_pull(
     symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = DEFAULT_SYMBOLS,
@@ -243,12 +253,16 @@ def backtest(
     until: Annotated[str | None, typer.Option()] = None,
     cash: Annotated[float, typer.Option(help="Startkapital")] = 100_000.0,
     fills: Annotated[str, typer.Option(help="Fill-Modell: flat oder size_aware")] = "flat",
+    costs: Annotated[
+        str, typer.Option(help="Kostenregime, siehe qt costs --help")
+    ] = "coinbase_taker",
     out: Annotated[Path | None, typer.Option(help="Pfad fuer das Tearsheet-PNG")] = None,
 ) -> None:
     """Eine Strategie ueber gespeicherte Daten laufen lassen."""
     from qt.backtest.engine import run_backtest
     from qt.core.config import BacktestConfig
     from qt.data.store import read_bars, to_bars
+    from qt.backtest.costs import round_trip_bps
     from qt.report.tearsheet import print_summary, render
     from qt.strategy.registry import get, load_library
 
@@ -267,9 +281,9 @@ def backtest(
             raise typer.Exit(code=1)
         bars[sym] = to_bars(sym, tf, df)
 
-    result = run_backtest(
-        strategy_obj, bars, BacktestConfig(initial_cash=cash), _fill_model(fills)
-    )
+    cfg = BacktestConfig(initial_cash=cash, costs=_regime(costs))
+    result = run_backtest(strategy_obj, bars, cfg, _fill_model(fills))
+    typer.echo(f"Kostenregime: {costs} ({round_trip_bps(cfg.costs):.1f}bps Round-Trip)")
     print_summary(result)
     path = render(result, out)
     typer.echo(f"\nTearsheet: {path}")
@@ -1393,6 +1407,7 @@ def placebo_cross(
     paarweise Korrelation und die daraus folgende **effektive** Marktzahl aus
     (ADR-052): dreizehn Maerkte sind keine dreizehn Tests.
     """
+    from qt.core.config import BacktestConfig, costs_for_symbols
     from qt.data.store import available, read_bars, to_bars
     from qt.research.placebo import cross_market_control
     from qt.strategy.registry import get, load_library
@@ -1407,6 +1422,8 @@ def placebo_cross(
         raise typer.Exit(code=1)
 
     maerkte = {sym: to_bars(sym, tf, read_bars(sym, tf)) for sym in namen}
+    # Ohne das zahlen die ETFs den Krypto-Taker (ADR-056).
+    cfg = BacktestConfig(costs_by_symbol=costs_for_symbols(namen))
     typer.echo(f"{strategy} unveraendert auf {len(maerkte)} Maerkten @ {tf} ...")
 
     def melden(lauf) -> None:
@@ -1415,7 +1432,7 @@ def placebo_cross(
 
     ergebnis = cross_market_control(
         get(strategy), maerkte, tf, train_bars=train, test_bars=test,
-        embargo_bars=embargo, on_market=melden,
+        embargo_bars=embargo, on_market=melden, cfg=cfg,
     )
 
     typer.echo("")
@@ -1479,6 +1496,137 @@ def data_stocks(
 # `paper`-Befehlen. Ueber das Konsolenskript (`qt = qt.cli:app`) faellt das
 # nicht auf, weil das Modul erst vollstaendig importiert und dann `app()`
 # gerufen wird. `python src/qt/cli.py` dagegen fuehrt die Datei von oben nach
+@app.command("costs")
+def costs_cmd(
+    strategy: Annotated[
+        str, typer.Option(help="Kommagetrennt, oder 'alle' fuer die Registry")
+    ] = "alle",
+    symbol: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    regimes: Annotated[
+        str, typer.Option(help="Kommagetrennt; leer = alle bekannten")
+    ] = "none,adr009_maker,coinbase_maker,coinbase_taker,kraken_taker",
+    cash: Annotated[float, typer.Option(help="Startkapital")] = 100_000.0,
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Wie stark haengt das Ergebnis an der Kostenannahme?
+
+    Zieht die Sensitivitaetstabelle aus ADR-009 fuer beliebige Strategien nach.
+    Sie stand dort fuer genau eine Strategie auf genau einem Markt und wurde
+    seither zitiert, als gaelte sie allgemein -- diese Annahme ist mit einem
+    Befehl pruefbar statt mit Vertrauen (ADR-056).
+
+    Die Spalte `none` ist kein Szenario, sondern das Messgeraet: die Differenz
+    zu ihr ist genau das, was die Ausfuehrung frisst.
+    """
+    from qt.backtest.costs import round_trip_bps
+    from qt.backtest.engine import run_backtest
+    from qt.backtest.metrics import compute
+    from qt.core.config import BacktestConfig
+    from qt.data.store import read_bars, to_bars
+    from qt.strategy.registry import get, load_library, names
+
+    load_library()
+    namen = names() if strategy == "alle" else _split(strategy)
+    regime_namen = _split(regimes)
+    konfigs = {r: _regime(r) for r in regime_namen}
+    symbols = _split(symbol)
+
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbols
+    }
+
+    typer.echo(f"\n{', '.join(symbols)}  |  {tf}  |  Startkapital {cash:,.0f}\n")
+    kopf = f"{'Strategie':<14}" + "".join(f"{r:>16}" for r in regime_namen)
+    typer.echo(kopf)
+    typer.echo(f"{'Round-Trip bps':<14}" + "".join(
+        f"{round_trip_bps(konfigs[r]):>16.1f}" for r in regime_namen
+    ))
+    typer.echo("-" * len(kopf))
+
+    for name in namen:
+        try:
+            strategie = get(name)(symbols, tf)
+        except Exception as exc:  # noqa: BLE001 -- eine Strategie darf fehlen
+            typer.echo(f"{name:<14}  uebersprungen: {exc}")
+            continue
+
+        zeile = f"{name:<14}"
+        for r in regime_namen:
+            cfg = BacktestConfig(initial_cash=cash, costs=konfigs[r])
+            try:
+                res = run_backtest(strategie, bars, cfg)
+                m = compute(res.equity.set_index("ts")["equity"], tf)
+                faktor = res.equity["equity"].iloc[-1] / cash
+                zeile += f"{faktor:>9.2f}x{m.sharpe:>6.2f}"
+            except Exception:  # noqa: BLE001 -- Warmup zu lang o.ae.
+                zeile += f"{'--':>16}"
+        typer.echo(zeile)
+
+    typer.echo("\nJe Zelle: Endkapital als Faktor, dahinter Sharpe.")
+
+
+@app.command("maker")
+def maker_cmd(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbol: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    since: Annotated[str | None, typer.Option()] = None,
+    until: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Waeren die Orders dieses Laufs passiv ueberhaupt gefuellt worden?
+
+    Das Maker-Kostenregime halbiert die Gebuehr und streicht Spanne und
+    Slippage -- unter der Bedingung, dass die Limit-Order gefuellt wird. Diese
+    Bedingung ist nachrechenbar (`qt.backtest.maker`), und die Antwort
+    entscheidet, ob das guenstigste Regime des Projekts ein Szenario ist oder
+    ein Wunsch.
+    """
+    from qt.backtest.engine import run_backtest
+    from qt.backtest.maker import klassifiziere, zusammenfassen
+    from qt.core.config import BacktestConfig
+    from qt.data.store import read_bars, to_bars
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    symbols = _split(symbol)
+    strategie = get(strategy)(symbols, tf)
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in symbols
+    }
+
+    result = run_backtest(strategie, bars, BacktestConfig(costs=_regime("coinbase_taker")))
+    quoten = klassifiziere(result.fills, bars)
+    if not quoten:
+        typer.echo("Keine Orders im Zeitraum -- nichts zu klassifizieren.")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\n{strategy}  |  {', '.join(symbols)}  |  {tf}")
+    typer.echo(f"{len(result.fills)} Orders aus dem Taker-Lauf\n")
+    typer.echo(
+        f"{'Symbol':<12} {'n':>4} {'marktnah':>9} {'passiv':>7} "
+        f"{'Ausfall':>8} {'Maker%':>7} {'Ausfall%':>9} {'Ausf.$%':>8}"
+    )
+    typer.echo("-" * 70)
+    for q in [*quoten, zusammenfassen(quoten)]:
+        typer.echo(
+            f"{q.symbol:<12} {q.n:>4} {q.marktnah:>9} {q.passiv_gefuellt:>7} "
+            f"{q.nicht_gefuellt:>8} {q.maker_quote:>6.0%} "
+            f"{q.ausfallquote:>8.0%} {q.ausfallquote_notional:>7.0%}"
+        )
+
+    g = zusammenfassen(quoten)
+    typer.echo(
+        f"\nNur {g.maker_quote:.0%} der Orders waeren passiv gefuellt worden. "
+        f"'marktnah' heisst: das Limit war schon beim Open erreichbar --\n"
+        f"die Order geht durch, zahlt aber Taker. Die Fuellquote ist eine "
+        f"Obergrenze (Warteschlange nicht modelliert)."
+    )
+
+
 # unten aus und startet die CLI, bevor die spaeteren Dekoratoren gelaufen
 # sind: die Haelfte der Befehle existierte dort schlicht nicht, ohne
 # Fehlermeldung (ADR-053).
