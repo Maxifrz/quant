@@ -29,6 +29,18 @@
 > uv run qt data report         # Bestand und Lücken
 > ```
 >
+> ### Wofür das alles
+>
+> Das Ziel und der Weg dahin stehen in **`docs/ZIEL.md`**: echtes Geld,
+> 12 Monate, besserer Calmar als Buy-and-Hold. Der Termin, der wirklich zählt,
+> ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
+> bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
+>
+> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und 1,4 effektiv
+> unabhängigen Märkten ist erst ein **Sharpe ab 0,67** beweisbar. `macross`
+> hat 0,31 — dafür bräuchte es 46 Jahre. Deshalb steht das Verbreitern der
+> Datenbasis vor jeder neuen Strategie-Idee.
+>
 > ### Der Stand in einem Satz
 >
 > **Sieben Hypothesen geprüft, sieben gescheitert.** LLM-Allokator zweimal
