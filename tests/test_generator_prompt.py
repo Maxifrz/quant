@@ -143,3 +143,69 @@ def test_jeder_indikator_ist_genau_wie_dokumentiert_aufrufbar(name):
         f"`ta.{name}` laesst sich nicht so aufrufen, wie der Prompt es zeigt: "
         f"{probe.error}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Das laengere Gedaechtnis (ADR-065)
+# ---------------------------------------------------------------------------
+
+
+def test_das_briefing_nennt_was_schon_geprueft_wurde():
+    """Ohne das schlaegt der Generator dieselben Klassiker wieder vor.
+
+    Gemessen am Lauf vom 2026-09-03: von fuenf Kandidaten waren
+    `SMACross50_200`, `DonchianBreakout` und `ZScoreMeanReversion`
+    Neuauflagen von `macross`, `trend` und `meanrev` -- allesamt seit Phase 1
+    im Repo und laengst gescheitert. **Drei von fuenf Versuchen** dafuer, und
+    der Zaehler vergisst sie nie (ADR-032).
+    """
+    from qt.research.generator import build_generation_briefing
+
+    text = build_generation_briefing(
+        0, 3, bereits_geprueft=["macross", "trend", "meanrev"]
+    )
+    assert "bereits geprueft und gescheitert" in text
+    for name in ("macross", "trend", "meanrev"):
+        assert name in text
+    assert "kostet einen Versuch" in text
+
+
+def test_das_briefing_nennt_keine_ergebnisse():
+    """Nur Namen. Wer sagt, welcher Ansatz wie gut war, laesst in der Naehe
+    der besten bisherigen Zahl suchen -- Overfitting mit einem Umweg ueber
+    ein Sprachmodell."""
+    from qt.research.generator import build_generation_briefing
+
+    text = build_generation_briefing(0, 3, bereits_geprueft=["macross"])
+    for verboten in ("Sharpe", "DSR", "Rendite", "Perzentil", "0.", "%"):
+        assert verboten not in text.split("bereits geprueft und gescheitert")[1][:400], (
+            f"{verboten!r} steht in der Liste der geprueften Ansaetze"
+        )
+
+
+def test_die_liste_kommt_aus_bibliothek_und_registry():
+    """Zwei Quellen, weil es zwei Arten von Vorwissen gibt."""
+    import pandas as pd
+
+    from qt.research.loop import bereits_geprueft
+
+    class _Registry:
+        def history(self):
+            return pd.DataFrame({"class_name": ["VolRegime", "VolRegime", None]})
+
+    namen = bereits_geprueft(_Registry())
+    assert "macross" in namen, "die Bibliothek fehlt"
+    assert "VolRegime" in namen, "die Registry fehlt"
+    assert namen == sorted(set(namen)), "doppelte oder unsortierte Eintraege"
+
+
+def test_eine_kaputte_registry_stoppt_den_loop_nicht():
+    """Ohne Vorwissen laeuft er schlechter, aber er laeuft."""
+    from qt.research.loop import bereits_geprueft
+
+    class _Kaputt:
+        def history(self):
+            raise RuntimeError("Datei weg")
+
+    namen = bereits_geprueft(_Kaputt())
+    assert "macross" in namen

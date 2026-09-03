@@ -5,6 +5,329 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-066 — Ein ruiniertes Konto meldete Sharpe +8,65
+**Datum:** 2026-09-03
+
+**Der Fehler:** `qt.backtest.metrics.compute` rechnete `equity.pct_change()`
+ohne Untergrenze. Sobald eine Kapitalkurve durch null geht, liest diese Zeile
+jede **Verschlechterung** als Gewinn — von −10.000 auf −20.000 sind
+rechnerisch +100 %.
+
+Minimalbeispiel, gegen den alten Code gemessen:
+
+```
+Kurve       [100.000, -10.000, -20.000, -40.000, -80.000]
+pct_change  [-1,1, +1,0, +1,0, +1,0]      Mittelwert +0,475
+gemeldet    Sharpe +8,65 bei Gesamtrendite -180 %
+```
+
+**Das ist ADR-026, eine Ebene höher.** Dort stand derselbe Satz für
+`qt.sim`: „`prod(1 + r)` ohne Untergrenze … negatives Kapital, das sich
+rechnerisch erholt." Korrigiert wurde er damals in der Pfad-Simulation. Im
+Backtest nicht — und dort ist er schlimmer, weil hier die Zahlen entstehen,
+die in ADRs landen.
+
+---
+
+### Wie er aufgefallen ist
+
+Nicht durch einen Test. Durch den ersten Research-Lauf gegen die erweiterte
+Marktbasis (ADR-065): fünf Kandidaten, vier davon mit **positivem**
+OOS-Sharpe, einer bei +0,67 — die ersten positiven Zahlen, die der
+Research-Loop je geliefert hat. Das war zu gut, um es ungeprüft zu glauben.
+
+`MomentumTrend`, der beste davon, nachgerechnet:
+
+| | |
+|---|---|
+| Startkapital | 100.000 |
+| Minimum der Kurve | **−96.506** |
+| Endwert | **0** |
+| Gesamtrendite | **−100 %** |
+| Punkte unter null | **979 von 1.751** |
+| gemeldeter Sharpe | **+0,59** |
+
+Alle fünf Kandidaten hatten das Konto ruiniert, zwischen 2021-10 und 2024-01.
+Nach der Korrektur:
+
+| Kandidat | vorher | jetzt | ruiniert am |
+|---|---|---|---|
+| `SMACross50_200` | −0,42 | **−3,09** | 2021-12-05 |
+| `DonchianBreakout` | +0,49 | **−2,70** | 2022-02-06 |
+| `VolRegime` | +0,55 | **−2,12** | 2021-12-05 |
+| `ZScoreMeanReversion` | +0,44 | **−1,14** | 2024-01-12 |
+| `MomentumTrend` | +0,67 | **−0,91** | 2021-10-28 |
+
+### Was **nicht** betroffen ist, nachgeprüft statt gehofft
+
+Die naheliegende Sorge ist, dass die dokumentierten Zahlen des Projekts auf
+demselben Fehler stehen. Jede Bibliotheksstrategie über denselben Store
+nachgerechnet:
+
+| Strategie | Sharpe | Ruin |
+|---|---|---|
+| `macross` | +0,25 | – |
+| `trend` | +0,16 | – |
+| `elliott` | +0,15 | – |
+| `orderflow` | +0,00 | – |
+| `timesfm` | −0,09 | – |
+| `crossmom` | −0,08 | – |
+| `meanrev` | −0,42 | – |
+| `crossrev` | −0,77 | – |
+
+**Keine einzige ruiniert das Konto.** Der Fehler hat also keine Zahl in
+ADR-035, ADR-054, ADR-058 oder ADR-061 verfälscht — er traf ausschließlich
+die generierten Kandidaten, weil nur die mit ungebremster Hebelwirkung über
+38 Märkte laufen (ADR-065).
+
+Das ist die beruhigende Hälfte des Befunds. Die andere: **der Fehler hätte
+jede dieser Zahlen treffen können**, und aufgefallen wäre er nur, weil das
+Ergebnis diesmal *zu gut* aussah. Ein Fehler, der zu schlechte Zahlen
+produziert hätte, läge noch drin.
+
+### Die Korrektur
+
+`absorbiere_ruin(equity)` schneidet die Kurve am ersten Punkt ≤ 0 ab und hält
+sie dort — dieselbe Regel wie `growth_factors()` in ADR-026. Zurückgegeben
+wird **die Kurve und der Zeitpunkt**, nicht nur die Kurve: wer nur
+abschneidet, verwandelt einen Totalverlust in eine flache Linie, die wie
+„hat nicht gehandelt" aussieht. `Metrics.ruined_at` trägt ihn, `as_dict()`
+zeigt ihn.
+
+Ein zweiter Schritt war nötig und stand nicht im ersten Entwurf: nach der
+Absorption liefert `pct_change` für `0/0` ein `nan`, `dropna()` macht daraus
+eine Reihe mit einem Wert, und der Sharpe fiel auf **0,0** zurück — ein
+ruiniertes Konto las sich wie eines, das nichts getan hat. Ein totes Konto
+hat Rendite **null**, nicht undefiniert; die Division steht deshalb jetzt
+explizit da. Erst damit meldet das Beispiel oben **−9,56** statt +8,65.
+
+### Konsequenz
+
+- **Jede gemeldete Kennzahl läuft durch die Absorption**, weil `compute` die
+  einzige Stelle ist, an der `Metrics` entsteht.
+- **Drei Tests**, einer davon mit einer Zusicherung über den Testfall selbst:
+  er prüft vorab, dass die Rohreihe einen positiven Mittelwert hat. Ohne das
+  prüft er nichts — mein erster Entwurf hatte eine Kurve, die auch im alten
+  Code negativ herauskam, und wäre grün durchgegangen.
+- **Offen:** die Absorption sitzt in der Berichtsschicht, nicht in der
+  Engine. Ein Broker, dessen Konto null erreicht, handelt weiter. Das ist
+  folgenlos, solange jede Zahl durch `compute` geht — aber es ist die Sorte
+  Annahme, die dieses Projekt schon zweimal eingeholt hat.
+
+---
+
+## ADR-065 — Phase C: der Loop hat kein Gedächtnis, die Kette hat ein Loch
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Der Research-Loop läuft erstmals gegen die erweiterte
+Marktbasis. Dabei fielen drei Dinge auf, die alle dieselbe Form haben wie die
+Funde aus ADR-059: **etwas fehlte, und das sah aus wie etwas, das da war.**
+
+Der Versuchszähler steht danach bei **21** statt 16. Fünf Versuche, dauerhaft,
+und was sie gekauft haben, steht unten.
+
+---
+
+### Der Lauf
+
+```bash
+uv run qt research --generate 5 --screen --provider nim --tf 1d \
+    --symbols <38 Märkte> --train 1000 --test 250 --embargo 20
+```
+
+Fünf Kandidaten erzeugt, fünf durch Sandbox, Kritik und Sanity, fünf
+gescreent, null bestanden. Das ist der Normalfall (ADR-005).
+
+Die berichteten Sharpes waren **positiv** — die ersten, die dieser Loop je
+geliefert hat; die acht Kandidaten vom 2026-08-31 lagen zwischen −1,84 und
+−8,21. Das war zu gut, und es war falsch: alle fünf hatten das Konto ruiniert,
+und die Kennzahl hat es nicht gemerkt. Der Fund hat ein eigenes ADR bekommen
+(**ADR-066**), weil er nicht den Loop betrifft, sondern jede Zahl des Systems.
+
+### Fund 1: der Generator kannte die Bibliothek nicht
+
+Von fünf Kandidaten waren drei Neuauflagen dessen, was seit Phase 1 im Repo
+steht:
+
+| erzeugt | ist in Wahrheit |
+|---|---|
+| `SMACross50_200` | `macross` |
+| `DonchianBreakout` | `trend` |
+| `ZScoreMeanReversion` | `meanrev` |
+
+**Drei von fünf Versuchen für Hypothesen, die dieses Projekt längst verworfen
+hat** — und der Zähler vergisst sie nie (ADR-032).
+
+Das Briefing kannte die **laufende Charge** (`previous`) und sonst nichts.
+Der Kommentar dazu benannte den Mechanismus sogar präzise: „zwanzig Varianten
+derselben Idee sind für die Deflated Sharpe Ratio trotzdem zwanzig Versuche."
+Nur reichte das Gedächtnis genau bis zum Ende des Laufs.
+
+**Behoben:** `bereits_geprueft(registry)` sammelt die Namen aus Bibliothek
+*und* Registry — derzeit 42 — und das Briefing führt sie als „bereits geprüft
+und gescheitert". Es weicht das blinde Briefing nicht auf (ADR-003): eine
+Liste von Ansatznamen enthält keine Kurse, keine Kennzahlen, keinen Markt.
+**Nur Namen, keine Ergebnisse** — wer dem Generator sagt, welcher Ansatz wie
+gut war, lässt ihn in der Nähe der besten bisherigen Zahl suchen, und das ist
+Overfitting mit einem Umweg über ein Sprachmodell. Ein Test hält beides fest.
+
+### Fund 2: die Kette endete bei der DSR
+
+`docs/ZIEL.md` Phase C.3 schreibt die Reihenfolge vor: Sandbox → Kritik →
+Walk-Forward → DSR → `qt placebo shuffle` → `qt placebo cross`. Die letzten
+beiden Stufen liefen nie. `screen_candidate` hörte nach der DSR auf.
+
+**Bemerkt hat es niemand, weil nie ein Kandidat bis dorthin kam.** Eine
+fehlende Stufe hinter einer nie genommenen Hürde sieht genauso aus wie eine
+vorhandene.
+
+**Behoben:** die Permutationskontrolle läuft jetzt für Kandidaten, die die DSR
+bestehen — **nach** ihr, nicht davor: 200 Ziehungen Walk-Forward kosten ein
+Vielfaches des Screenings, und ein an der DSR gescheiterter Kandidat ist
+ohnehin tot. Dieselbe Kostenreihenfolge wie im übrigen Trichter. Ein Test
+prüft die Reihenfolge im Quelltext, ein zweiter, dass ein Kandidat mit
+bestandener DSR und durchgefallenem Placebo als durchgefallen gilt.
+
+### Fund 3: der Loop hat keine Positionsgrößen-Schicht
+
+Warum ruinierten die Kandidaten das Konto? Weil sie über 38 Märkte laufen und
+jedes Gewicht für sich vergeben. `qt backtest` und `qt wf` rufen keine
+Risk-Engine auf (ADR-053) — das Bruttoexposure summiert sich damit auf bis zu
+**38×** Eigenkapital.
+
+Gegenprobe, dieselben Kandidaten mit auf 1 normiertem Brutto:
+
+| | Brutto 38 | Brutto 1 |
+|---|---|---|
+| alle fünf | −0,91 bis −3,09 | **+0,00** |
+
+Bei Brutto 1 fällt jedes Gewicht unter das Rebalancing-Band und **keiner
+handelt mehr**. Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
+das Ergebnis der *Idee* zeigen würde.
+
+**Das ist nicht behoben, und der Grund steht hier:** eine Positionsgrößen-
+Schicht für generierte Kandidaten ist eine Entwurfsentscheidung mit Folgen für
+jede künftige Messung — Vol-Targeting, Gleichgewichtung, Brutto-Cap sind drei
+verschiedene Strategien, nicht drei Einstellungen. Sie gehört vorab
+festgelegt, nicht nebenbei gewählt, weil ein Lauf sonst schlecht aussah.
+
+**Die fünf Versuche haben damit die Verdrahtung geprüft, nicht die Signale.**
+Sie zählen trotzdem — ADR-032 kennt keine Ausnahme für „falsch aufgesetzt",
+und eine solche Ausnahme wäre die bequemste Hintertür im ganzen System.
+
+### Stand von Phase C
+
+| Punkt | Stand |
+|---|---|
+| 1. Mindest-Sharpe vorab festgeschrieben | erledigt (ADR-057, aktualisiert in ADR-061 auf 0,33) |
+| 2. Research-Loop gegen die erweiterte Marktbasis | **gelaufen** — fünf Kandidaten, null bestanden, drei Funde |
+| 3. Volle Kette je Kandidat | **jetzt vollständig** — Stufe 5 fehlte bis heute |
+
+Offen bleibt Punkt 3 in einer Hinsicht: `qt placebo cross` ist noch nicht Teil
+des automatischen Screenings. Für eine Timing-Strategie über 38 Märkte wäre
+er ein Lauf je Markt und damit teurer als alles davor; er bleibt der
+Handgriff vor einer Promotion.
+
+---
+
+## ADR-064 — Order Flow auf feineren Timeframes: die Frage ist nicht der Takt, sondern die Gebühr
+**Datum:** 2026-09-03
+
+**Die Frage:** Wäre `orderflow` auf kleineren Timeframes wirksamer? Die
+Vermutung dahinter ist gut: aggressiver Fluss ist ein kurzfristiges Signal.
+Was er über die nächsten Minuten sagt, hat er über die nächsten vier Stunden
+längst gesagt.
+
+**Die Antwort:** Die Vermutung stimmt vermutlich für das *Signal* und ist für
+das *Ergebnis* gleichgültig — unter diesem Kostenregime. Das lässt sich
+ausrechnen, ohne eine Zeile zu backtesten, und die Rechnung ist der Grund,
+warum unten trotzdem ein Lauf steht.
+
+---
+
+### Das Umschlagbudget hängt nicht am Timeframe
+
+Aus ADR-056: **Drag p. a. ≈ (Umschlag/EK/Jahr) × einfache Kosten** und
+**ΔSharpe ≈ −Drag/Vola**. Gate 1 erlaubt 7× Umschlag pro Jahr. Ein Round-Trip
+schlägt zweimal das Eigenkapital um, also:
+
+> **Das Budget erlaubt 3,5 Round-Trips pro Jahr — auf jedem Timeframe.**
+
+Es ist ein Jahresbudget, kein Bar-Budget. Ein feinerer Takt bekommt dadurch
+nicht mehr Spielraum, er macht es nur schwerer, im Budget zu bleiben:
+
+| Timeframe | Bars/Jahr | Haltedauer für 3,5 Round-Trips |
+|---|---|---|
+| 1d | 365 | 104 Bars |
+| 4h | 2.190 | 626 Bars |
+| 1h | 8.760 | 2.503 Bars |
+| 15m | 35.040 | 10.011 Bars |
+| 5m | 105.120 | 30.034 Bars |
+
+Eine 5m-Strategie, die eine Position 30.034 Bars hält, ist keine
+5m-Strategie. Sie ist eine Jahresstrategie mit teurer Datenbeschaffung.
+
+### Was ein schnelleres Signal leisten müsste
+
+Andersherum gefragt: angenommen, `orderflow` hält im Schnitt 20 Bars — für
+einen Flussindikator eher träge. Welchen **Brutto**-Sharpe bräuchte das
+Signal, damit nach Kosten die 0,33 aus ADR-061 übrig bleiben?
+
+| Timeframe | Umschlag/Jahr | taker 130 bps | maker 80 bps | ADR-009 16 bps |
+|---|---|---|---|---|
+| 1d | 36× | 1,0 | 0,7 | 0,4 |
+| 4h | 219× | 4,3 | 2,9 | 0,7 |
+| 1h | 876× | 13,3 | 8,4 | **1,9** |
+| 15m | 3.504× | 52 | 32 | 6,7 |
+| 5m | 10.512× | 156 | 96 | 19,4 |
+
+Die höchste je in diesem Repo gemessene Kennzahl ist Sharpe **1,04**, und die
+ist in-sample. Unter `coinbase_taker` — dem Regime, unter dem laut ADR-056
+gesucht wird — ist damit alles unter 1d erledigt, bevor ein Backtest läuft.
+
+**Eine Zelle in dieser Tabelle ist aber nicht absurd.** Bei den 16 bps aus
+ADR-009 braucht 1h einen Brutto-Sharpe von 1,9. Das ist ambitioniert und
+nicht unmöglich. Genau dort, und nur dort, lebt die Vermutung weiter: **die
+Frage ist nicht der Takt, sondern ob passiv gefüllt wird.**
+
+Dafür gibt es seit Phase 1 einen Befehl, `qt maker` — „Wären die Orders dieses
+Laufs passiv überhaupt gefüllt worden?". Er ist die richtige Frage an ein
+schnelleres Order-Flow-Signal, und sie ist nicht dieselbe wie „ist der
+Backtest positiv".
+
+### Die zweite Grenze, die keine Gebühr auflöst
+
+Feinere Bars sehen aus wie mehr Daten. ADR-047 hat gemessen, dass der
+Standardfehler eines annualisierten Sharpe an der **Kalenderspanne** hängt und
+nicht an der Bar-Frequenz:
+
+| Zeitraum | Bars auf 5m | beweisbarer Sharpe (t ≥ 2, ein Markt) |
+|---|---|---|
+| 1 Monat | 8.640 | 6,98 |
+| 3 Monate | 25.920 | 4,03 |
+| 1 Jahr | 105.120 | 2,00 |
+| 7,7 Jahre | 809.280 | 0,72 |
+
+Ein Monat 5m-Daten ist eine imposante Zeilenzahl und ein Monat Evidenz. Wer
+auf feinere Timeframes ausweicht, weil die Historie knapp ist, tauscht ein
+Problem gegen seine Illusion.
+
+### Was daraus folgt
+
+Nicht: „Order Flow funktioniert nicht." Das ist ungeprüft, und ungeprüft ist
+nicht widerlegt.
+
+Sondern: **die Timeframe-Frage ist unter diesem Kostenregime entschieden,
+bevor Daten gezogen werden.** Die Kontrolle für `orderflow` läuft deshalb auf
+**1h** — dem feinsten Takt, dessen Anforderung (1,9 brutto bei Maker-Gebühren)
+überhaupt in der Nähe des Messbaren liegt — und wird von `qt maker` begleitet.
+Ein positiver Befund dort wäre kein Kandidat für Gate 1 (das lässt seit
+ADR-056 nur 1d oder gröber zu), sondern ein Argument, das Kostenregime neu zu
+verhandeln. Das ist ein anderes Gespräch, und es setzt eine Zahl voraus, die
+es noch nicht gibt.
+
+---
+
 ## ADR-063 — Aufteilen hilft, aber nicht in git: die Trade-Ablage war quadratisch
 **Datum:** 2026-09-03
 

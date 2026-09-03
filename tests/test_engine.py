@@ -222,3 +222,78 @@ def test_glattstellen_setzt_den_einstand_zurueck():
     position = broker.positions["BTC/USD"]
     assert position.qty == 0.0
     assert position.avg_price == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Ruin ist absorbierend -- auch im Backtest (ADR-066)
+# ---------------------------------------------------------------------------
+
+
+def test_ein_ruiniertes_konto_meldet_keinen_positiven_sharpe():
+    """Der Test, der gegen den alten Code durchfaellt.
+
+    Nachgestellt aus dem echten Fall: Kandidat `MomentumTrend` am
+    2026-09-03, Kapitalkurve von 100.000 auf **-96.506**, Endwert 0,
+    Gesamtrendite -100%, 979 von 1.751 Punkten unter null -- und ein
+    gemeldeter Sharpe von **+0,59**.
+
+    Der Grund ist `pct_change` ueber einen Vorzeichenwechsel: von -50.000 auf
+    -25.000 sind rechnerisch +50%, tatsaechlich ist das Konto laengst weg.
+    ADR-026 hat genau das in `qt.sim` korrigiert; im Backtest stand es noch.
+    """
+    import pandas as pd
+
+    from qt.backtest.metrics import compute
+
+    idx = pd.date_range("2021-01-01", periods=5, freq="D", tz="UTC")
+    # Der Mechanismus, exakt: sobald die Kurve negativ ist, liest
+    # `pct_change` jede **Verschlechterung** als Gewinn. Von -10.000 auf
+    # -20.000 sind rechnerisch +100%. Die Renditereihe dieser Kurve ist
+    # [-1,1, +1,0, +1,0, +1,0] -- Mittelwert +0,475 auf einem Konto, das
+    # 180% verloren hat.
+    kurve = pd.Series(
+        [100_000.0, -10_000.0, -20_000.0, -40_000.0, -80_000.0], index=idx
+    )
+
+    roh = kurve.pct_change().dropna()
+    assert roh.mean() > 0, (
+        "der Testfall trifft den Mechanismus nicht -- ohne positiven "
+        "Rohmittelwert prueft er nichts"
+    )
+
+    m = compute(kurve, "1d")
+
+    assert m.ruiniert, "der Ruin muss benannt sein, nicht nur weggerechnet"
+    assert m.ruined_at == idx[1]
+    assert m.sharpe < 0, f"ein ruiniertes Konto darf keinen Sharpe {m.sharpe:+.2f} melden"
+    assert m.total_return == pytest.approx(-1.0), "Totalverlust ist -100%, nicht mehr"
+    assert "RUINIERT am" in m.as_dict()
+
+
+def test_eine_gesunde_kurve_bleibt_unveraendert():
+    """Die Gegenprobe: der Eingriff darf nur den Ruinfall betreffen."""
+    import pandas as pd
+
+    from qt.backtest.metrics import absorbiere_ruin, compute
+
+    idx = pd.date_range("2021-01-01", periods=5, freq="D", tz="UTC")
+    kurve = pd.Series([100.0, 101.0, 99.0, 103.0, 102.0], index=idx)
+
+    bereinigt, ab = absorbiere_ruin(kurve)
+    assert ab is None
+    pd.testing.assert_series_equal(bereinigt, kurve)
+    assert not compute(kurve, "1d").ruiniert
+
+
+def test_nach_dem_ruin_bleibt_die_kurve_auf_null():
+    """Abschneiden allein waere zu wenig -- sie darf nicht wieder steigen."""
+    import pandas as pd
+
+    from qt.backtest.metrics import absorbiere_ruin
+
+    idx = pd.date_range("2021-01-01", periods=5, freq="D", tz="UTC")
+    kurve = pd.Series([100.0, 50.0, 0.0, 30.0, 80.0], index=idx)
+
+    bereinigt, ab = absorbiere_ruin(kurve)
+    assert ab == idx[2]
+    assert list(bereinigt.iloc[2:]) == [0.0, 0.0, 0.0]

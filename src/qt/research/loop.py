@@ -134,9 +134,14 @@ def run_research_loop(
         )
 
     seen: list[str] = []
+    # Was das Projekt schon geprueft hat -- Bibliothek plus Registry. Ohne
+    # diese Liste schlaegt der Generator zuverlaessig wieder SMA-Kreuzung,
+    # Donchian-Ausbruch und z-Score-Reversion vor: drei von fuenf Versuchen
+    # im Lauf vom 2026-09-03 gingen genau dafuer drauf (ADR-065).
+    bereits = bereits_geprueft(registry)
 
     for index in range(n):
-        briefing = build_generation_briefing(index, n, seen)
+        briefing = build_generation_briefing(index, n, seen, bereits_geprueft=bereits)
         try:
             proposal = generator_client.propose(briefing)
         except Exception as exc:  # noqa: BLE001 -- eine Charge stirbt nicht am Netz
@@ -284,3 +289,35 @@ def run_research_loop(
 def _say(echo, message: str) -> None:
     if echo is not None:
         echo(message)
+
+
+def bereits_geprueft(registry) -> list[str]:
+    """Ansaetze, die dieses Projekt schon durchgerechnet hat.
+
+    Zwei Quellen, weil es zwei Arten von Vorwissen gibt: die Bibliothek (was
+    von Hand gebaut und verworfen wurde) und die Registry (was der Loop schon
+    erzeugt hat). Beide zaehlen im DSR-Nenner, also gehoeren beide ins
+    Briefing.
+
+    **Nur Namen, keine Ergebnisse.** Wer dem Generator sagt, welcher Ansatz
+    wie gut war, laesst ihn in der Naehe der besten bisherigen Zahl suchen --
+    und das ist Overfitting mit einem Umweg ueber ein Sprachmodell.
+    """
+    namen: list[str] = []
+
+    try:
+        from qt.strategy.registry import load_library, names
+
+        load_library()
+        namen += list(names())
+    except Exception:  # noqa: BLE001 -- ohne Bibliothek laeuft der Loop trotzdem
+        pass
+
+    try:
+        frame = registry.history()
+        if "class_name" in frame:
+            namen += [str(x) for x in frame["class_name"].dropna().unique()]
+    except Exception:  # noqa: BLE001 -- eine leere Registry ist kein Fehler
+        pass
+
+    return sorted({n for n in namen if n})

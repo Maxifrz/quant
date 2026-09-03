@@ -30,6 +30,15 @@ from qt.core.types import Bar
 from qt.research.dsr import DEFAULT_THRESHOLD, DSRResult, dsr_from_returns
 
 
+#: Ziehungen der Permutationskontrolle im Screening. Weniger als in ADR-054
+#: (dort 1000), weil sie hier nur ueber Bestehen oder Nichtbestehen
+#: entscheidet und nicht ueber eine berichtete Zahl.
+PLACEBO_ZIEHUNGEN = 200
+
+#: Dieselbe Schwelle wie in `qt placebo shuffle` und in Gate 1 (ADR-054).
+PLACEBO_SCHWELLE = 0.95
+
+
 @dataclass(slots=True)
 class SanityResult:
     """Ergebnis der billigen Vorpruefung."""
@@ -53,15 +62,21 @@ class ScreeningResult:
     dsr_threshold: float = DEFAULT_THRESHOLD
     trial_count: int = 0
     detail: DSRResult | None = None
+    #: Perzentil der Permutationskontrolle -- nur gesetzt, wenn die DSR
+    #: bestanden wurde und die Kontrolle deshalb ueberhaupt lief.
+    placebo_perzentil: float | None = None
 
     def summary(self) -> str:
         if self.dsr is None:
             return f"kein Ergebnis: {self.reason}"
-        return (
+        text = (
             f"Sharpe {self.sharpe:+.2f} ueber {self.n_windows} Fenster "
             f"({self.oos_bars} OOS-Bars), DSR {self.dsr:.3f} gegen "
             f"{self.trial_count} Versuche, Schwelle {self.dsr_threshold:.2f}"
         )
+        if self.placebo_perzentil is not None:
+            text += f", Placebo-Perzentil {self.placebo_perzentil:.1%}"
+        return text
 
 
 def quick_sanity_check(
@@ -174,6 +189,46 @@ def screen_candidate(
         if passed
         else f"DSR {detail.dsr:.3f} unter der Schwelle {dsr_threshold:.2f}"
     )
+
+    # Die letzte Stufe der Kette aus docs/ZIEL.md Phase C.3. Sie lief bis
+    # ADR-065 nicht: `screen_candidate` hoerte nach der DSR auf, und die
+    # Kette stand nur im Plan. Bemerkt hat es niemand, weil bisher kein
+    # Kandidat je bis hierher kam -- eine fehlende Stufe hinter einer nie
+    # genommenen Huerde sieht genauso aus wie eine vorhandene.
+    #
+    # Erst **nach** der DSR, nicht davor: 200 Ziehungen Walk-Forward kosten
+    # ein Vielfaches des Screenings, und ein Kandidat, der an der DSR
+    # scheitert, ist ohnehin tot. Die Reihenfolge ist dieselbe wie im
+    # uebrigen Trichter -- nach Kosten sortiert.
+    placebo_perzentil = None
+    if passed:
+        try:
+            from qt.research.placebo import permutation_control
+
+            kontrolle = permutation_control(
+                lambda: strategy_cls(symbols, timeframe),
+                bars,
+                train_bars=train_bars,
+                test_bars=test_bars,
+                embargo_bars=embargo_bars,
+                draws=PLACEBO_ZIEHUNGEN,
+                cfg=cfg,
+            )
+            placebo_perzentil = kontrolle.perzentil
+            if not kontrolle.bestanden(PLACEBO_SCHWELLE):
+                passed = False
+                reason = (
+                    f"Placebo-Perzentil {kontrolle.perzentil:.1%} unter "
+                    f"{PLACEBO_SCHWELLE:.0%} -- die Lage der Episoden traegt "
+                    "das Ergebnis, nicht das Signal"
+                )
+        except Exception as exc:  # noqa: BLE001 -- ein Kandidat darf scheitern
+            passed = False
+            reason = (
+                f"Negativkontrolle nicht auswertbar: {type(exc).__name__}: {exc}. "
+                "Ungeprueft ist nicht bestanden."
+            )
+
     return ScreeningResult(
         passed=passed,
         reason=reason,
@@ -184,4 +239,5 @@ def screen_candidate(
         dsr_threshold=dsr_threshold,
         trial_count=trial_count,
         detail=detail,
+        placebo_perzentil=placebo_perzentil,
     )
