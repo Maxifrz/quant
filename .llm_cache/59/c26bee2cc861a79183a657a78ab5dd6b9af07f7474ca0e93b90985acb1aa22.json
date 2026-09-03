@@ -1,0 +1,22 @@
+{
+ "key": "59c26bee2cc861a79183a657a78ab5dd6b9af07f7474ca0e93b90985acb1aa22",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong positive Sharpe (4.14) and return (24%) over the 384-bar window; negative correlation with STRAT_B adds diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.95
+   },
+   {
+    "reason": "Consistently negative Sharpe across all windows (worst -4.49 at 384 bars); negative weight inverts the losing edge while keeping gross exposure near 1.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.05
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "The 384-bar window (largest sample) is the most reliable: STRAT_A delivers 4.14 Sharpe with 24% return and only 26% market exposure, while STRAT_B loses -18% with -4.49 Sharpe. The -0.79 correlation means inverting STRAT_B provides a modest hedge. Current allocation (0.75 / -0.25) already leans correctly; increasing STRAT_A to 0.95 and reducing the inverted STRAT_B to -0.05 captures the edge, maintains near-full gross exposure (1.0), and limits turnover.",
+  "regime": "STRAT_A shows persistent trend-following edge; STRAT_B exhibits structural underperformance."
+ }
+}

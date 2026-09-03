@@ -1,0 +1,22 @@
+{
+ "key": "f99a3b1395080520e7503e4e14340875fb95d705008fea0f3ad61395b3f8904f",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar return (-0.009) and Sharpe (-0.034) outweigh the 96-bar Sharpe spike; no evidence of persistent edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive 384-bar return (0.056) and Sharpe (1.342) with lower drawdown (-0.072) confirm a durable edge; current allocation maintained to avoid turnover costs.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B's 384-window metrics (return 0.056, Sharpe 1.342, hit rate 0.472, drawdown -0.072) indicate a stable, positive edge. STRAT_A's 384-window metrics are negative (return -0.009, Sharpe -0.034, drawdown -0.273). The strong negative correlation (-0.802) would normally favor combining both, but STRAT_A's long-term underperformance and deep drawdown make it a drag. STRAT_B's recent 96-window slump (Sharpe -8.966, hit rate 0.353) is short-window noise inconsistent with its longer-term profile. Keeping 100% in STRAT_B avoids turnover and relies on the most robust window.",
+  "regime": "STRAT_B shows consistent risk-adjusted returns; STRAT_A lacks persistent edge."
+ }
+}

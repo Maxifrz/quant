@@ -1,0 +1,22 @@
+{
+ "key": "87204da81dafce735261ecaed6367957a8ba7c9f2ed5c9b20c13005f64cd7763",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar return (-0.209) and Sharpe (-2.447); 96-bar Sharpe only 0.669 with 46% hit rate; deep drawdown (-24.6%) confirms structural weakness.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive 384-bar return (0.178) and strong Sharpe (2.265) over the longest stable window; -90% correlation with STRAT_A provides genuine diversification if STRAT_A ever recovers.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "The 384-bar window (largest, least noisy) is the primary guide: STRAT_B delivers +17.8% return with 2.27 Sharpe vs STRAT_A's -20.9% return and -2.45 Sharpe. STRAT_A's 96-bar Sharpe of 0.67 is modest and its 46% hit rate shows no clear edge. STRAT_B's 96-bar metrics are poor (negative Sharpe, 36% hit rate) but the window is shorter and noisier; the long-window consistency outweighs it. Current allocation is 100% STRAT_A — switching to 100% STRAT_B is justified by the magnitude and persistence of the long-window divergence. The -0.90 correlation means holding both would cancel returns; full allocation to the stronger strategy maximises expected risk-adjusted return. No leverage or inversion needed.",
+  "regime": "STRAT_A in sustained drawdown; STRAT_B shows persistent edge on long window"
+ }
+}

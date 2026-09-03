@@ -1,0 +1,22 @@
+{
+ "key": "10247f822e08018b47c30f96c20f2394b45753783714cb1fd506ea779750eac6",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Medium-term (96-bar) Sharpe 11.0 with 77% hit rate and only 23% time in market shows a strong risk-adjusted edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Medium-term (96-bar) data missing; long-term (384-bar) Sharpe 1.49 with 49% hit rate provides a positive but weaker edge. Negative correlation (-0.77) with STRAT_A justifies equal weight for diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "STRAT_A dominates on 24/96-bar windows (Sharpe 11-21.5, hit rates ~78%) but deteriorates sharply at 384 bars (Sharpe -0.38), suggesting its edge is confined to recent market behavior. STRAT_B has no signal on 24/96 bars but delivers a modest positive Sharpe (1.49) over 384 bars with 49% hit rate. The strongly negative correlation (-0.77) means combining them reduces portfolio variance significantly. Current allocation is 100% STRAT_B, which ignores STRAT_A's superior medium-term metrics. Equal weighting (0.5/0.5) balances STRAT_A's high but potentially transient edge with STRAT_B's weaker but more persistent long-term performance, while maximizing diversification benefit from the negative correlation. No inversion warranted as both show positive expectancy on at least one meaningful window.",
+  "regime": "Mixed regime: STRAT_A shows strong short/medium-term momentum; STRAT_B contributes only on longer horizons."
+ }
+}

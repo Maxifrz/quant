@@ -1,0 +1,22 @@
+{
+ "key": "2a2974d04454b53b913120c0d866bb3417d4eb0dae0de27d26ec93596952f763",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (1.50/2.55) with zero drawdown; STRAT_B shows negative Sharpe at 384 bars (-1.41) and 24 bars (-8.72) despite strong negative correlation.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative 384-bar Sharpe (-1.41) and deeply negative 24-bar Sharpe (-8.72) indicate no persistent edge; only 96-bar window is positive (1.01), insufficient to justify allocation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A demonstrates consistent risk-adjusted returns across all meaningful windows (96-bar Sharpe 1.50, 384-bar Sharpe 2.55) with no drawdown. STRAT_B has a negative 384-bar Sharpe (-1.41) and catastrophic 24-bar Sharpe (-8.72), indicating no durable edge. The -0.73 correlation would normally favor diversification, but STRAT_B's negative expectancy makes it a drag rather than a hedge. Current allocation (100% STRAT_A) is optimal; rebalancing would incur costs without expected benefit.",
+  "regime": "STRAT_A in sustained uptrend (0% drawdown, 45 bars since peak); STRAT_B in deep drawdown (-24.4%, 511 bars since peak)"
+ }
+}

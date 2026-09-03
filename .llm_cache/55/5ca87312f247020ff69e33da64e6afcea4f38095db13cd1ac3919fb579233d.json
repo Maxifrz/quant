@@ -1,0 +1,22 @@
+{
+ "key": "555ca87312f247020ff69e33da64e6afcea4f38095db13cd1ac3919fb579233d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar Sharpe 1.85 supports long exposure; near-zero correlation with STRAT_B justifies keeping current 0.5 weight.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "384-bar Sharpe 2.38 confirms short edge; negative correlation with STRAT_A diversifies portfolio.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "Both strategies exhibit strong 384-bar Sharpe ratios (1.85 and 2.38) with near-zero pairwise correlation (-0.037). Short-window metrics are noisy (24-bar Sharpe extremes of -8.1/+8.1) and discarded. Current gross allocation of 1.0 with 0.5/-0.5 weights is statistically justified; no rebalancing needed.",
+  "regime": "Low correlation, both strategies show positive long-term Sharpe; current allocation efficient."
+ }
+}

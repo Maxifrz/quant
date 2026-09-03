@@ -1,0 +1,22 @@
+{
+ "key": "4b011d7ca4679becb7241d150843a867e12f7ca0a5b874f05d54709c4b1d440a",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "STRAT_A shows strong positive Sharpe ratios across all windows (3.9/3.5/0.2) with consistent returns; STRAT_B shows persistently negative Sharpe (-5.1/-1.7/-3.1) and returns across all windows.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "STRAT_B has negative risk-adjusted returns in every window (Sharpe -5.1/-1.7/-3.1), a 16% drawdown from peak, and has not made a new high in 511 bars — no evidence of a durable edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "Allocate fully to STRAT_A because it demonstrates positive expected value across all lookback windows (Sharpe 3.9/3.5/0.2, positive returns) while STRAT_B shows persistently negative Sharpe and returns across all windows, a deep drawdown (-16%), and 511 bars since peak. The negative correlation (-0.59) would normally favor diversification, but only if both strategies have positive expectancy — here STRAT_B has none. Rebalancing from 50/50 to 100/0 is justified by the clear statistical edge difference. No inversion of STRAT_B: negative Sharpe alone doesn't prove a tradable negative edge, only absence of positive edge.",
+  "regime": "STRAT_A in uptrend with low drawdown; STRAT_B in prolonged drawdown with no recovery signal"
+ }
+}

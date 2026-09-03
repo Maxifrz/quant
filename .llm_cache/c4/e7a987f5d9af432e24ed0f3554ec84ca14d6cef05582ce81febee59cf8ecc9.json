@@ -1,0 +1,22 @@
+{
+ "key": "c4e7a987f5d9af432e24ed0f3554ec84ca14d6cef05582ce81febee59cf8ecc9",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative korreliert zu STRAT_B (r=-0.71), stabilisiert Portfolio bei mittlerem Sharpe (384b: 0.46).",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Starke langfristige Performance (384b Sharpe 1.74), aktuell naeher am Peak (DD -3.8%), Diversifikationseffekt.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Beide Strategien bleiben bei 0.5. STRAT_B zeigt ueber alle Fenster positive Returns und hohe Sharpe (384b: 1.74). STRAT_A hat langfristig positive Return (384b: +1.9%) aber niedrigeren Sharpe (0.46). Die starke negative Korrelation (-0.71) macht die 50/50 Allokation effizienter als Konzentration. Aktuelle Drawdowns: STRAT_A -21.3% (490 Bars seit Peak), STRAT_B -3.8% (6 Bars). Kein Grund fuer Umschichtung gegeben Transaktionskosten und Stabilitaet der Korrelation.",
+  "regime": "STRAT_B dominiert kurzfristig, STRAT_A liefert Korrelationsnutzen."
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "8110d058a05a9a1cebfef5d80d9d3dc7f64be4c5ad8e8fb4bcc16c52486f8db5",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe (3.61) and return (22.1%) over the longest window (384 bars); negative correlation with STRAT_B provides diversification but STRAT_B shows persistent negative edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative Sharpe across all windows (-3.36 over 384 bars) and negative return (-12.2%); no evidence of a durable edge to justify allocation or inversion.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A delivers a strong risk-adjusted return (Sharpe 3.61, return 22.1%) over the most statistically significant window (384 bars) with reasonable time-in-market (32.8%). STRAT_B has negative Sharpe (-3.36) and negative return (-12.2%) over the same window, with lower time-in-market (16.7%). The -0.86 correlation would normally favour holding both, but STRAT_B's consistent negative edge across all windows means adding it would reduce portfolio expectancy. Inverting STRAT_B (weight -1) is not warranted because the negative performance could be regime-specific rather than a structural short edge, and the 24-bar window shows no trades for either strategy. Current 50/50 allocation is not supported by the data; full allocation to STRAT_A maximises expected return per unit of risk.",
+  "regime": "STRAT_A exhibits a stable positive edge; STRAT_B shows persistent underperformance."
+ }
+}

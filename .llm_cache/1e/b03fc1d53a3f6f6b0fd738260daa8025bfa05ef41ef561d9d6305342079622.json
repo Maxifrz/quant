@@ -1,0 +1,22 @@
+{
+ "key": "1eb03fc1d53a3f6f6b0fd738260daa8025bfa05ef41ef561d9d6305342079622",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-window Sharpe -1.10 and return -28% show no persistent edge; strong negative correlation makes it a hedge but not a return source.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Only strategy with positive long-window return (+19.7%) and Sharpe (+1.48); current allocation already optimal.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B is the sole strategy with positive return and Sharpe over the longest window (384 bars: +19.7% return, 1.48 Sharpe). STRAT_A shows negative long-window return (-28.4%) and Sharpe (-1.10). The -0.94 correlation confirms STRAT_A is STRAT_B's mirror, but inversion would only replicate STRAT_B's performance with added execution cost. Current 100% STRAT_B allocation is optimal; no rebalancing needed.",
+  "regime": "STRAT_B positive long-term edge; STRAT_A none."
+ }
+}

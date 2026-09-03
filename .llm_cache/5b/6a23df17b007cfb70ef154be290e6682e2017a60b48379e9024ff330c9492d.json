@@ -1,0 +1,22 @@
+{
+ "key": "5b6a23df17b007cfb70ef154be290e6682e2017a60b48379e9024ff330c9492d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe im 384-Fenster (-2.86) und -28 % Return zeigen dauerhaft negative Kante; Drawdown -44 % bestätigt strukturelles Problem.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "384-Fenster Sharpe 2.0 bei +17.5 % Return und nur -16.5 % Drawdown belegen positive Kedge; Korrelation -0.86 macht STRAT_B zum besseren Einzelleg.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A zeigt im langfristigen Fenster (384 Bars) eine klare negative Kante (Return -28 %, Sharpe -2.86, DD -44 %). STRAT_B liefert im gleichen Fenster solide positive Kennzahlen (Return +17.5 %, Sharpe 2.0, DD -16.5 %). Die starke negative Korrelation (-0.86) wäre normalerweise ein Diversifikationsvorteil, aber nur wenn beide Strategien positive Erwartungswerte haben. Da STRAT_A negative Erwartung hat, würde eine Beimischung das Portfolio verschlechtern. Kurze Fenster (24, 96) sind verrauscht und werden ignoriert. Vollallokation auf STRAT_B ist überlegen gegenüber aktueller Allokation (-0.2 / 0.8) und Gleichgewichtung.",
+  "regime": "STRAT_B dominant, STRAT_A strukturell negativ"
+ }
+}

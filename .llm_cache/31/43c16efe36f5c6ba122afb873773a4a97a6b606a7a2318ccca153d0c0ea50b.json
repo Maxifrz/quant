@@ -1,0 +1,22 @@
+{
+ "key": "3143c16efe36f5c6ba122afb873773a4a97a6b606a7a2318ccca153d0c0ea50b",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar window shows -1.715 Sharpe and -23% return; reduce from 0.5 to limit drawdown exposure",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "384-bar window shows +1.041 Sharpe and +8.4% return; strongest long-window risk-adjusted performance",
+    "strategy_id": "STRAT_B",
+    "weight": 0.8
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B's 384-bar Sharpe of 1.041 with 22.7% time-in-market indicates a persistent edge. STRAT_A's 384-bar Sharpe of -1.715 and -37.5% drawdown from peak confirm structural underperformance. The -0.877 correlation would normally favor keeping both, but STRAT_A's negative expectancy makes it a drag, not a hedge. Reducing STRAT_A to 0.2 preserves some diversification while shifting capital to the positive-edge strategy. Short-window metrics (24, 96) are noisy and given low weight.",
+  "regime": "STRAT_B consistent positive long-window Sharpe; STRAT_A deeply negative"
+ }
+}

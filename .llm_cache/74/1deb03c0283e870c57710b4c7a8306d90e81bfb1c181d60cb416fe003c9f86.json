@@ -1,0 +1,22 @@
+{
+ "key": "741deb03c0283e870c57710b4c7a8306d90e81bfb1c181d60cb416fe003c9f86",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar Sharpe -0.24 beats STRAT_B's 384-bar -4.92 at 96-bar; lower DD (-2.6% vs -13.4%) and negative correlation enables diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.7
+   },
+   {
+    "reason": "384-bar Sharpe 2.02 shows long-term edge; keep reduced allocation for diversification despite recent 96-bar drawdown.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "Key metric: 384-bar Sharpe. STRAT_B=2.02 (positive long-term edge), STRAT_A=-0.24 (flat). STRAT_B's 96-bar Sharpe -4.92 signals recent regime shift. STRAT_A's 96-bar Sharpe 5.63 suggests recovery. Negative correlation (-0.86) means both add diversification value. STRAT_B DD -13.4% vs STRAT_A -2.6% favors STRAT_A near-term. Allocate 70/30 tilted to STRAT_A for stability while preserving STRAT_B's long-term alpha.",
+  "regime": "STRAT_B long-term edge persists; STRAT_A stabilizing after drawdown."
+ }
+}

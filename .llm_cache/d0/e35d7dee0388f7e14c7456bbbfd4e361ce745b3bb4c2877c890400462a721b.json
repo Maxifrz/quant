@@ -1,0 +1,22 @@
+{
+ "key": "d0e35d7dee0388f7e14c7456bbbfd4e361ce745b3bb4c2877c890400462a721b",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-bar Sharpe -3.46 and -37% return signal persistent negative edge; 24/96 bar Sharpe >2 are too short to offset long-term evidence.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.4
+   },
+   {
+    "reason": "384-bar Sharpe 0.76 with positive return and 51% market time is the only stable risk-adjusted edge; 24/96 bar weakness is noise.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.6
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "The 384-bar window (largest sample) is the only reliable guide. STRAT_A shows a significantly negative Sharpe (-3.46) and return (-37%), indicating structural negative expectancy — justifying an inverted allocation. STRAT_B shows a positive Sharpe (0.76) and return (+5%) over the same horizon, the only strategy with a credible long-term edge. Short windows (24, 96) are high-noise and contradictory; they are discarded per rules. The -0.77 correlation means the inverted STRAT_A and long STRAT_B are strongly aligned in the portfolio direction, so combined gross exposure is capped at 1.0 (0.4 + 0.6). Current allocation (0/1.0) ignores STRAT_A's negative edge; rebalancing captures diversification and mean-reversion potential in STRAT_A's deep drawdown (45%, 313 bars since peak).",
+  "regime": "STRAT_A in deep drawdown with negative long-term edge; STRAT_B flat but positive long-term expectancy"
+ }
+}

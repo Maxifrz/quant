@@ -1,0 +1,22 @@
+{
+ "key": "7ed372b829fbc4198589761d69f26552d9a0aa886c9395737b32951f2830d26f",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe ueber alle Fenster (0.358 bei 384 Bars) gegenueber dauerhaft negativer Sharpe von STRAT_B (-1.084 bei 384 Bars).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Dauerhaft negative Kante (Sharpe -1.084 ueber 384 Bars), Inversion nicht sinnvoll wegen Instabilitaet.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "STRAT_A zeigt ueber das langste Fenster (384 Bars) eine positive risikoadjustierte Rendite (Sharpe 0.358), waehrend STRAT_B ueber alle Fenster negativ ist (Sharpe -1.084 bei 384 Bars). Die -0.84 Korrelation waere ideal fuer Diversifikation, aber nur wenn beide Strategien positive Kante haben. Da STRAT_B dauerhaft verliert, waere eine Inversion spekulativ. Volle Allokation in STRAT_A ist durch die Daten getragen.",
+  "regime": "STRAT_A positiver Erwartungswert, STRAT_B negativ, starke negative Korrelation."
+ }
+}

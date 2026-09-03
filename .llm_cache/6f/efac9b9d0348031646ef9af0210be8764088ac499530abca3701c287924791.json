@@ -1,0 +1,11 @@
+{
+ "key": "6fefac9b9d0348031646ef9af0210be8764088ac499530abca3701c287924791",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "DonchianMeanReversion",
+  "code": "class DonchianMeanReversion(Strategy):\n    name = \"donchian_mean_reversion\"\n    LOOKBACK = 20\n    UPPER = 0.8\n    LOWER = 0.2\n    warmup_bars = 30\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        highs = window.highs()\n        lows = window.lows()\n        closes = window.closes()\n        high, low = ta.donchian(highs, lows, self.LOOKBACK)\n        close = closes[-1]\n        denom = high - low\n        if not math.isfinite(denom) or denom == 0:\n            return math.nan\n        pos = (close - low) / denom\n        if not math.isfinite(pos):\n            return math.nan\n        if pos > self.UPPER:\n            return -1.0\n        if pos < self.LOWER:\n            return 1.0\n        return 0.0",
+  "name": "donchian_mean_reversion",
+  "rationale": "Prices often oscillate within a recent Donchian channel. When the close approaches the upper edge (e.g., >80 % of the channel height) the market is stretched upward and tends to revert, suggesting a short position. Conversely, near the lower edge (<20 %) a long position is warranted. This mean‑reversion logic uses only the channel extremes and the current price level, avoiding trend‑following or volatility‑regime filters already covered by other strategies."
+ }
+}

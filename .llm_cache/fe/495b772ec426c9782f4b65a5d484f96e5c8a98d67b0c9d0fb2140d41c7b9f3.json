@@ -1,0 +1,22 @@
+{
+ "key": "fe495b772ec426c9782f4b65a5d484f96e5c8a98d67b0c9d0fb2140d41c7b9f3",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 384-bar Sharpe (1.531) mit 0.556 Hit-Rate vs negative -1.529 bei STRAT_B; stark negative Korrelation (-0.948) macht Inversion von B redundant.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Dauerhaft negative Kante ueber alle Fenster (384-bar Sharpe -1.529); Inversion waere nur Spiegel von A und erhoeht Transaktionskosten ohne Diversifikation.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A zeigt ueber das laengste Fenster (384 Bars) eine positive, statistisch plausibele Kante (Sharpe 1.53, Hit-Rate 0.556), waehrend STRAT_B ueber alle Fenster negativ ist. Die -0.948 Korrelation bestaetigt Spiegelbild.",
+  "regime": "Trend-following regime favors STRAT_A"
+ }
+}

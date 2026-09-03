@@ -1,0 +1,49 @@
+[project]
+name = "qt"
+version = "0.1.0"
+description = "Krypto-Quant-System mit LLM als Allokator und Strategie-Forscher"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyarrow>=15.0",
+    "duckdb>=0.10",
+    "ccxt>=4.2",
+    "pydantic>=2.6",
+    "typer>=0.12",
+    "matplotlib>=3.8",
+    "anthropic>=0.40",
+    "scipy>=1.11",
+    "arch>=6.3",
+    "hmmlearn>=0.3",
+]
+
+[project.scripts]
+qt = "qt.cli:app"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# Fuer qt.strategy.library.timesfm_strategy.TimesFMForecaster. Schwergewichtig
+# (zieht torch nach, mehrere GB inkl. Checkpoint) und deshalb keine
+# Standardabhaengigkeit -- ohne dieses Extra ist die Strategie ueber
+# NaiveForecaster trotzdem voll test- und lauffaehig. Siehe ADR-022.
+timesfm = ["timesfm[torch]>=2.0"]
+# Fuer `--provider nim` (NVIDIA NIM, siehe qt.llm.providers). NIM spricht die
+# OpenAI-kompatible Schnittstelle, deshalb das `openai`-SDK. Optional aus
+# demselben Grund wie oben: wer bei Anthropic bleibt -- dem Default -- soll
+# dafuer kein zweites SDK installieren muessen.
+nim = ["openai>=1.40"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = [
+    "slow: Test mit spuerbarer Laufzeit (Simulationen in Produktionsgroesse).",
+]

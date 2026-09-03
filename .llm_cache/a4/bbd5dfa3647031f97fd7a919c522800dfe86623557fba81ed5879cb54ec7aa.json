@@ -1,0 +1,22 @@
+{
+ "key": "a4bbd5dfa3647031f97fd7a919c522800dfe86623557fba81ed5879cb54ec7aa",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer 384-Bar Sharpe (-2.98) und anhaltender Drawdown (-26%, 284 Bars seit Peak) zeigen keine belastbare Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Stark positiver 384-Bar Sharpe (3.42) und moderater Drawdown (-9%, 51 Bars seit Peak) sprechen fuer nachhaltigen Vorteil; starke negative Korrelation zu STRAT_A waere Diversifikation, aber STRAT_A liefert keinen Ertrag.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Entscheidung traegt der 384-Bar Sharpe (STRAT_B +3.42 vs. STRAT_A -2.98) und die Drawdown-Dynamik (STRAT_B -9%/51B, STRAT_A -26%/284B). 96-Bar Fenster rauschen (STRAT_A +1.31, STRAT_B -0.24) und werden nicht gewichtet. Korrelation -0.83 waere Diversifikationswert, aber STRAT_A hat negative Erwartung, also wird es nicht gehandelt. Aktuelle Allokation (0.25/0.75) wird auf 0/1 verschoben, da die Kennzahlen eine klare Kante fuer STRAT_B zeigen und Ueberschichtungskosten gerechtfertigt sind.",
+  "regime": "STRAT_B dominiert mit starker Trendfolge-Kante; STRAT_A in anhaltender Schwachphase."
+ }
+}

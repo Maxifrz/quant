@@ -1,0 +1,14 @@
+{
+ "key": "8602d4910d52718ab49851a01e9ebc932bb24b46256d3f8647a082ee8f994f31",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.2,
+  "rationale_code_mismatch": false,
+  "reasoning": "Der Kandidat ist ein klassischer, parametrisierter Mean-Reversion-Ansatz mit ATR-basiertem Kanal. LOOKBACK=30 und MULT=2.0 sind plausible Standardwerte ohne Nachkommastellen-Verdacht. Keine harten Preisniveaus im Code, somit magic_price_constants=false. Mit 2 Freiheitsgraden bei ~1000 OOS-Bars ist das Freiheitsgrad-Problem vernachlassigbar. Die Begründung (volatilitätsadjustierter Kanal, Regime-Anpassung) deckt sich exakt mit dem Code (SMA ± MULT*ATR). Turnover ist nicht aus dem Snippet ableitbar, aber bei Kanal-Strategien typischerweise moderat; unrealistic_turnover daher false. Overfitting-Risk niedrig (0.2), da Parameter robust gewählt und Logik simpel. Empfehlung: proceed – der Backtest soll die Kosten-Sensitivität prüfen.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

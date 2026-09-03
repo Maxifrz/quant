@@ -1,0 +1,22 @@
+{
+ "key": "1037b97462ad2dee1144913fdf94433c14ffb9a52d33669f285b8638503d1761",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe über alle Fenster (0.6–6.6), geringe DD (-6 %), konsistente Hit-Rate > 0.5 im langen Fenster.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Sharpe über alle Fenster (-1.3 bis -2.9), hohe DD (-25 %), keine statistische Kante erkennbar.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A zeigt über alle drei Fenster positive risikoadjustierte Renditen (Sharpe 0.6–6.6), moderate Volatilität und einen Drawdown von nur -6 % nach 333 Bars seit dem Peak. STRAT_B liefert durchgängig negative Sharpe-Werte (-2.9 bis -1.3), eine Hit-Rate im langen Fenster unter 0.5 und einen Drawdown von -25 %. Die Korrelation von -0.55 würde theoretisch Diversifikation bringen, doch da STRAT_B keine positive Erwartung hat, würde jede Allokation die Portfoliosharpe senken. Ein negatives Gewicht (Short) ist nicht gerechtfertigt, da die Kennzahlen keine stabile negative Kante, sondern nur Inkompetenz zeigen. Daher bleibt die beste evidenzbasierte Entscheidung: 100 % in STRAT_A, 0 % in STRAT_B. Da die Regeln ein Gewicht pro Strategie verlangen und die Summe der Beträge ≤ 1 sein muss, setze ich STRAT_B auf 0.0 (nicht 0.5). Korrektur: Das Schema verlangt einen Eintrag je Strategie, Gewichte zwischen -1 und 1, Summe der Beträge ≤ 1. Ich allokiere therefore STRAT_A = 1.0, STRAT_B = 0.0.",
+  "regime": "Unclear / mixed"
+ }
+}

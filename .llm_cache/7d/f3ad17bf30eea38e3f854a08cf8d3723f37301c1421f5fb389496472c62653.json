@@ -1,0 +1,22 @@
+{
+ "key": "7df3ad17bf30eea38e3f854a08cf8d3723f37301c1421f5fb389496472c62653",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe in allen Fenstern (24:-0.37, 96:2.30, 384:1.21) und +8.6% Return ueber 384 Bars; STRAT_B hat negative Returns und Sharpe in 24/96.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Returns in 24/96 Fenstern, Sharpe -11.53/-5.73, und -14.6% Drawdown vom Peak nach 511 Bars.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A laesst ueber 384 Bars (laengstes Fenster) einen Return von +8.6% bei Sharpe 1.21 und max -0.5% Drawdown erkennen. STRAT_B liefert ueber 384 Bars nur +1.9% bei Sharpe 0.51, aber ueber 96/24 Bars negative Returns und stark negative Sharpe-Werte. Der Drawdown von -14.6% nach 511 Bars ohne neue Hochs signalisiert Strategieversagen. Negative Korrelation (-0.495) waere Diversifikationsvorteil, aber STRAT_B hat keine positive Kante mehr. Umschichtung von 100% STRAT_B auf 100% STRAT_A ist durch die Daten getraegt.",
+  "regime": "STRAT_A zeigt stabile Kante, STRAT_B in tiefem Drawdown ohne Erholung"
+ }
+}

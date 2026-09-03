@@ -1,0 +1,22 @@
+{
+ "key": "d32f2754baf33053ff0404ccd3eea2b389ff24d3be90c41e82334a3bd9609515",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe in allen Fenstern (24:11.2, 96:8.4, 384:2.2) und bei Hoechststand (Drawdown 0%).",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Durchgängig negative Sharpe (24:-11.7, 96:-7.6, 384:-3.7) und tiefer Drawdown (-34.1%); Inversion bringt keine stabile Kante.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A liefert ueber alle drei Fenster (24, 96, 384) starke positive Sharpe-Ratios (11.2, 8.4, 2.2) und steht am Allzeithoch. STRAT_B zeigt in jedem Fenster negative Sharpe (-11.7, -7.6, -3.7) und einen Drawdown von 34,1%. Die starke negative Korrelation (-0.875) ist ein Artefakt der gegensaeztlichen Performance, keine Diversifikation. Eine Inversion von STRAT_B wuerde nur die negativen Kennzahlen spiegeln, ohne Beleg fuer eine stabile positive Kante. Daher volle Allokation in STRAT_A, nichts in STRAT_B.",
+  "regime": "Trend-following STRAT_A dominant; STRAT_B strukturell negativ."
+ }
+}

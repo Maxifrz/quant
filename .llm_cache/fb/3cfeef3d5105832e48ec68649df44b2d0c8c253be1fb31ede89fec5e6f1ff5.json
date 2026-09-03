@@ -1,0 +1,11 @@
+{
+ "key": "fb3cfeef3d5105832e48ec68649df44b2d0c8c253be1fb31ede89fec5e6f1ff5",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "RsiReversion",
+  "code": "class RsiReversion(Strategy):\n    name = \"rsi_reversion\"\n    LOOKBACK = 14\n    HIGH = 70\n    LOW = 30\n    warmup_bars = 20\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        if len(closes) < self.LOOKBACK + 1:\n            return math.nan\n        diff = np.diff(closes)\n        gains = np.where(diff > 0, diff, 0.0)\n        losses = np.where(diff < 0, -diff, 0.0)\n        avg_gain = ta.sma(gains, self.LOOKBACK)\n        avg_loss = ta.sma(losses, self.LOOKBACK)\n        if not math.isfinite(avg_gain) or not math.isfinite(avg_loss):\n            return math.nan\n        if avg_loss == 0.0:\n            rsi = 100.0\n        else:\n            rs = avg_gain / avg_loss\n            rsi = 100.0 - 100.0 / (1.0 + rs)\n        rsi_last = rsi[-1]\n        if not math.isfinite(rsi_last):\n            return math.nan\n        if rsi_last > self.HIGH:\n            return -1.0\n        if rsi_last < self.LOW:\n            return 1.0\n        return 0.0",
+  "name": "rsi_reversion",
+  "rationale": "The Relative Strength Index (RSI) measures the speed and magnitude of recent price changes. Markets frequently exhibit short‑term mean‑reversion when RSI reaches extreme overbought (>70) or oversold (<30) levels, reflecting temporary excess optimism or pessimism. By scaling positions to -1, 0, or +1 based on these thresholds, the strategy aims to capture the ensuing pull‑backs while staying flat during neutral regimes. This approach is distinct from the existing trend‑following, breakout, and Bollinger/z‑score methods because it relies on a momentum oscillator rather than price channels or volatility bands."
+ }
+}

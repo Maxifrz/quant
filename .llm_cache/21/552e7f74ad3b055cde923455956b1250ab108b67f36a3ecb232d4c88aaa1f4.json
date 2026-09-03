@@ -1,0 +1,22 @@
+{
+ "key": "21552e7f74ad3b055cde923455956b1250ab108b67f36a3ecb232d4c88aaa1f4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe in allen Fenstern (384: 1.41, 96: 9.20, 24: 9.15) und positive Returns (384: 10.1%, 96: 11.7%, 24: 2.6%) zeigen eine dauerhafte Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Sharpe in den langfristigen Fenstern (384: -1.81, 96: -2.92) und negative Returns (384: -12.0%, 96: -2.8%) zeigen keine belastbare Kante; nur 24-Bar-Sharpe ist Rauschen.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A liefert in den relevanten Fenstern 96 und 384 Bars konsistent positive Sharpe-Ratios (9.20 und 1.41) und positive Returns. STRAT_B zeigt in denselben Fenstern durchgehend negative Sharpe-Ratios (-2.92 und -1.81) und negative Returns. Die Korrelation von -0.63 waere fuer Diversifikation guenstig, aber da STRAT_B keine eigene Kante hat, waere eine Allokation (auch invertiert) reine Spekulation auf Mean-Reversion ohne statistische Basis. Der 24-Bar-Sharpe von 9.15 fuer beide Strategien ist identisch und damit reines Rauschen. STRAT_B ist seit 305 Bars im Drawdown (-18.6%), STRAT_A nur 2 Bars (-0.8%). Umschichtung von der aktuellen Allokation (0.6 / -0.4) auf 1.0 / 0.0 ist durch die Daten klar getragen.",
+  "regime": "STRAT_A zeigt stabile positive Performance ueber alle Horizonze; STRAT_B ist strukturell negativ."
+ }
+}

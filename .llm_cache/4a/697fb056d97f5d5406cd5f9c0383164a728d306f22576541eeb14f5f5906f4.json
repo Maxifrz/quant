@@ -1,0 +1,22 @@
+{
+ "key": "4a697fb056d97f5d5406cd5f9c0383164a728d306f22576541eeb14f5f5906f4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positiver Sharpe ueber alle Fenster (4.1-10.1), negative Korrelation zu STRAT_B (-0.88) bietet Diversifikation",
+    "strategy_id": "STRAT_A",
+    "weight": 0.9
+   },
+   {
+    "reason": "Negativer Sharpe ueber alle Fenster (-5.5 bis -0.7), keine Kante erkennbar, dient nur als Hedge durch Korrelation",
+    "strategy_id": "STRAT_B",
+    "weight": 0.1
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A ist die einzige Strategie mit konsistenter positiver Kante (Sharpe 2.3-10.1 ueber 96-384 Bars). STRAT_B hat ueber alle Fenster negative Rendite und negativen Sharpe. Die starke negative Korrelation (-0.88) waere wertvoll, wenn beide Kanten haetten. Da STRAT_B aber systematisch verliert, waere ein Short (negatives Gewicht) theoretisch moeglich, birgt aber Umsetzungsrisiko. Gleichgewichtung (0.5/0.5) wuerde Kapital in eine verlierende Strategie binden. 0.9/0.1 behält den Hedge-Effekt bei, minimiert aber Drag. Aktuelle Allokation (0.2/0.8) ist stark gegen die Evidenz.",
+  "regime": "STRAT_A zeigt Trendfolge-Eigenschaften, STRAT_B ist in Drawdown ohne Erholungssignal"
+ }
+}

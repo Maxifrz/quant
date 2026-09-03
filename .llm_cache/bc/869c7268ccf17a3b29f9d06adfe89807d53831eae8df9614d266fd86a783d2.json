@@ -1,0 +1,22 @@
+{
+ "key": "bc869c7268ccf17a3b29f9d06adfe89807d53831eae8df9614d266fd86a783d2",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "STRAT_A shows consistent negative Sharpe across all windows (-5.6, -2.3, -1.1), 507 bars in drawdown, and -34.6% peak decline; inverting captures the persistent negative edge.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.3
+   },
+   {
+    "reason": "STRAT_B shows negative Sharpe in 96- and 384-bar windows (-6.0, -1.3), 365 bars in drawdown, and -17.9% peak decline; inverting captures the persistent negative edge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.3
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "Both strategies exhibit persistently negative Sharpe ratios across 96- and 384-bar windows (the only statistically meaningful horizons), extended drawdowns (507 and 365 bars), and negative cumulative returns. The -0.85 correlation means their inverted returns would be highly correlated (+0.85), so I limit gross exposure to 0.6 to avoid concentration risk. Equal -0.3 weights reflect similar evidence strength for both inversions.",
+  "regime": "Both strategies in prolonged drawdown with negative risk-adjusted returns across all meaningful windows"
+ }
+}

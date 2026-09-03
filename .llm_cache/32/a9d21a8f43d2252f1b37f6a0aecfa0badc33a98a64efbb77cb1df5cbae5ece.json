@@ -1,0 +1,22 @@
+{
+ "key": "32a9d21a8f43d2252f1b37f6a0aecfa0badc33a98a64efbb77cb1df5cbae5ece",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positiver Sharpe in allen Fenstern (384: 2.74), niedriger Drawdown (-0.6%), starke negative Korrelation zu STRAT_B (-0.667) als Diversifikator.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negativer Sharpe im langfristigen Fenster (384: -4.04), hoher Drawdown (-17.3%), keine Aktivität im kurzfristigen Fenster.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A liefert über alle drei Fenster konsistent positive risikoadjustierte Renditen (Sharpe 2.7–9.0), geringen Drawdown (-0.6%) und moderate Time-in-Market (33%). STRAT_B zeigt im relevanten 384-Bar-Fenster einen Sharpe von -4.04, Return -11.5% und Drawdown -17.3% – eine dauerhaft negative Kante. Das 24-Bar-Fenster von STRAT_B ist inaktiv (Time-in-Market 0%). Die starke negative Korrelation (-0.667) würde theoretisch für eine Long/Short-Kombination sprechen, aber da STRAT_B keine positive Erwartungswerte liefert, verbessert eine Short-Position das Portfolio nicht verlässlich (Short eines negativen Sharpe erfordert stabile Negative Edge, die hier durch fehlende Aktivität im kurzen Fenster und volatile negative Returns im mittleren Fenster nicht gegeben ist). Gleichgewichtung (0.5/0.5) würde Kapital in eine verlustbringende Strategie binden. Abweichung von aktueller Allokation (0.5/0.5) ist durch die Kennzahlen klar gerechtfertigt: volle Allokation auf STRAT_A.",
+  "regime": "STRAT_A zeigt stabile positive Kante; STRAT_B ist strukturell negativ und inaktiv."
+ }
+}

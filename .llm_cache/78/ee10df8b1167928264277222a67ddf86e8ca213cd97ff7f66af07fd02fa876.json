@@ -1,0 +1,22 @@
+{
+ "key": "78ee10df8b1167928264277222a67ddf86e8ca213cd97ff7f66af07fd02fa876",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (384-bar: -2.326) and 37.5% drawdown indicate persistent negative edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive Sharpe in 96-bar (3.548) and 384-bar (0.496) windows with only 25.4% drawdown shows durable positive edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A shows negative Sharpe across all meaningful windows (96-bar: -7.663, 384-bar: -2.326) and a deep 37.5% drawdown over 121 bars -- clear evidence of a broken strategy. STRAT_B delivers positive Sharpe at 96-bar (3.548) and 384-bar (0.496) with a shallower 25.4% drawdown over 497 bars. The -0.843 correlation means STRAT_B profits when STRAT_A loses, reinforcing the case for full rotation. Current allocation (100% STRAT_A) is unjustified by any window. Moving to 100% STRAT_B captures the positive edge and the diversification benefit.",
+  "regime": "STRAT_A failing; STRAT_B delivering consistent risk-adjusted returns."
+ }
+}

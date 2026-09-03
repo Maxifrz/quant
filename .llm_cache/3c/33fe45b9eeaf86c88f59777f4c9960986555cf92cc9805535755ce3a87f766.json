@@ -1,0 +1,14 @@
+{
+ "key": "3c33fe45b9eeaf86c88f59777f4c9960986555cf92cc9805535755ce3a87f766",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.2,
+  "rationale_code_mismatch": false,
+  "reasoning": "Der Code nutzt nur zwei Parameter (LOOKBACK=20, THRESHOLD=0.02), die als Klassenkonstanten definiert sind. Beide sind dimensionslos (Bars-Anzahl, Prozent-Rate-of-Change) und nicht an ein absolutes Kursniveau gebunden – keine magischen Preiskonstanten. Die Begründung spricht von ‚modest 2 % threshold‘ und ‚avoiding high turnover‘; der Code setzt genau diesen Schwellenwert ein und gibt nur -1, 0 oder 1 zurück, was einer Positionsänderung pro Bar entspricht. Bei 1000 OOS-Bars sind zwei Freiheitsgrade unproblematisch. Overfitting-Risiko ist gering (nur wenige harte Regeln, keine Optimierungsschleifen im Code). Einziges Manko: warmup_bars=30 > LOOKBACK=20 – technisch harmlos, aber leicht inkonsistent. Insgesamt kein harter Ausschlussgrund.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

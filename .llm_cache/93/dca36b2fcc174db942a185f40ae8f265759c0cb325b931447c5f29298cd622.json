@@ -1,0 +1,22 @@
+{
+ "key": "93dca36b2fcc174db942a185f40ae8f265759c0cb325b931447c5f29298cd622",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Aktuelle Allokation beibehalten, da 384-Bar Sharpe negativ ist und 24-Bar Sharpe nur Rauschen; keine belastbare Kante fuer Uebergwichtung.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Bester 384-Bar Sharpe (1.86) und positive Rendite ueber das laengste Fenster; starke negative Korrelation zu STRAT_A diversifiziert Portfolio.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Gleichgewichtung beibehalten, weil (1) 384-Bar Fenster die einzige belastbare Stichprobe ist, (2) STRAT_A dort -1.53 Sharpe zeigt, STRAT_B +1.86, (3) starke negative Korrelation (-0.92) die 50/50 Allokation bereits optimal diversifiziert, (4) 24/96-Bar Fenster zu kurz fuer verlassliche Signale, (5) Umschichtungskosten nicht durch klare Evidenz gerechtfertigt.",
+  "regime": "Uneinheitlich: STRAT_A in tiefer Drawdown-Phase, STRAT_B erholt sich aus Drawdown mit positiver langfristiger Kante."
+ }
+}

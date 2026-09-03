@@ -1,0 +1,22 @@
+{
+ "key": "43b497bd0d061d28db9613ab45b06ffa5868cb9ea3a19a7d8e5433447aee8371",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer Sharpe (-3.5 bis -4.4) auf 96/384 Bars und 34 % Drawdown zeigen keine positive Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positiver Sharpe (2.9 bis 4.2) auf 96/384 Bars bei geringem Drawdown (7,6 %) rechtfertigt volle Allokation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A zeigt über die mittel- und langfristigen Fenster (96/384 Bars) konsistent negative Sharpe-Ratios (-4,4 / -3,5) und einen Drawdown von 34 %. STRAT_B liefert über dieselben Fenster positive Sharpe-Ratios (2,9 / 4,2) bei nur 7,6 % Drawdown. Die starke negative Korrelation (-0,84) wäre Diversifikationsvorteil, doch da STRAT_A keine positive Erwartungswerte mehr aufweist, würde eine Beimischung das Portfolio nur belasten. Volle Allokation in STRAT_B ist evidenzbasiert; Umschichtung von der aktuellen 50/50-Gewichtung wird durch die Kennzahlen getragen.",
+  "regime": "STRAT_A in tiefer Drawdown-Phase, STRAT_B nahe Allzeithoch mit stabiler Kante"
+ }
+}

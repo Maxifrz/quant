@@ -1,0 +1,22 @@
+{
+ "key": "c0fc0fe3924083f4439da71fd2ffc9ec28a2cf79643596c88d09d34b747ff3ce",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe über alle Fenster (1.8–7.7), geringe Drawdown (-4 %), diversifiziert zu STRAT_B (korr. -0.65).",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Sharpe über alle Fenster (-2.9 bis -11.9), hoher Drawdown (-33 %), negative Korrelation ermöglicht Short-Hedge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "STRAT_A liefert über 96- und 384-Bar-Fenster konsistente positive Sharpe (7.7 und 1.8) bei moderater Volatilität und geringem Drawdown. STRAT_B zeigt über dieselben Fenster durchgängig negative Returns und Sharpe (-10.3 bis -2.9) sowie 33 % Drawdown. Die Korrelation von -0.65 macht Short-STRAT_B zu einem diversifizierenden Hedge. Equal-Weight Long/Short nutzt die Kante beider Seiten bei Portfolio-Volatilitätsreduktion. Aktuelle Allokation (100 % STRAT_B) wird vollständig gedreht, da Kennzahlen die Umstellung eindeutig tragen.",
+  "regime": "STRAT_A zeigt stabile Kante, STRAT_B systematisch negativ; negative Korrelation erlaubt Long/Short."
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "14cfb1efa75c50c8f26cd84879c7f2fc303a2ca93baae0c9126c89035a048fb2",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe over the longest window (384 bars: -1.097) indicates no persistent edge; current drawdown -12.7% after 375 bars since peak.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Strongest long-window Sharpe (384 bars: 2.624) with positive return (+17.8%) and moderate vol; negative correlation to STRAT_A adds diversification when paired with cash.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.7
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_B delivers the only positive risk-adjusted return over the longest observation window (384 bars: Sharpe 2.624, return +17.8%, vol 38.3%). STRAT_A shows negative Sharpe (-1.097) and return (-12.3%) over the same window, with a 12.7% drawdown persisting for 375 bars. The 24-bar window is noisy (perfectly anti-correlated Sharpes of ±4.26) and not reliable for allocation. The -0.673 correlation between strategies means holding both would reduce gross exposure for the same net risk, but STRAT_A contributes negative expectancy. Allocating 70% to STRAT_B and 30% to cash preserves the positive edge while respecting gross leverage ≤1.0 and avoiding forced inversion of a strategy that merely has a negative edge, not a tradable negative edge.",
+  "regime": "STRAT_B showing persistent skill over 384-bar window; STRAT_A in extended drawdown with negative long-window Sharpe"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "029cdf29709b590f9738dac1f4f8119a0b693f9ff9952dfc2410c8ec282e4419",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negativer Sharpe (-4.6) und -29% Rendite ueber 384 Bars zeigen dauerhaft negative Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positiver Sharpe (5.7) und +46% Rendite ueber 384 Bars bei -1.9% Drawdown rechtfertigen volle Allokation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.95,
+  "reasoning": "STRAT_A liefert ueber alle Fenster (24/96/384) negative Sharpe-Ratios (-10.8/-9.3/-4.6) und kumulativ -29% Rendite. STRAT_B liefert ueber dieselben Fenster konsistent positive Sharpe (10.8/10.7/5.7) und +46% Rendite bei minimalem Drawdown (-1.9%). Die -0.95 Korrelation bestaetigt, dass STRAT_B fast exakt das Inverse von STRAT_A ist. Eine Inversion von STRAT_A waere mathematisch aehnlich zu STRAT_B, aber unnoetig, da STRAT_B direkt verfuegbar ist. Volle Allokation in STRAT_B maximiert Erwartungswert ohne Korrelationsstrafe.",
+  "regime": "STRAT_B dominiert klar; STRAT_A ist dauerhaft negativ und stark negativ korreliert (-0.95), Inversion waere redundanz."
+ }
+}

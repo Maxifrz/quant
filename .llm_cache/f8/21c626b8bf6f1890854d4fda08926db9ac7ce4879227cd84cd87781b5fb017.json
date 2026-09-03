@@ -1,0 +1,22 @@
+{
+ "key": "f821c626b8bf6f1890854d4fda08926db9ac7ce4879227cd84cd87781b5fb017",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong 384-bar Sharpe (1.631) and positive return; negative correlation with STRAT_B adds diversification value.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative 384-bar return (-0.118) and poor Sharpe (-3.583) despite positive 96-bar window; deep drawdown (-23.4%) indicates sustained negative edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "STRAT_A shows consistent positive edge at the longest window (384 bars) with Sharpe 1.631 and 52.7% hit rate. STRAT_B has a strongly negative 384-bar Sharpe (-3.583) and return (-11.8%), with a deep 23.4% drawdown over 497 bars since peak. The negative correlation (-0.618) would normally favor allocation to both, but STRAT_B's long-term metrics indicate a persistent negative edge, not a temporary drawdown. The 96-bar positive Sharpe (0.815) for STRAT_B is insufficient to override the 384-bar evidence. Current allocation (100% STRAT_A) is optimal; no rebalancing needed.",
+  "regime": "STRAT_A recovering from shallow drawdown; STRAT_B in deep drawdown with negative long-term edge."
+ }
+}

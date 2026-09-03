@@ -1,0 +1,22 @@
+{
+ "key": "29efc2b30ccf1eb5a95340ffc2fade8f80b8668f169f62835fda7017033b30b7",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 384-bar Sharpe 5.09 and return 0.27; 96-bar Sharpe 9.4 confirms edge persistence.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.75
+   },
+   {
+    "reason": "Negative 384-bar Sharpe -4.19 and return -0.169; 96-bar Sharpe -8.1 confirms persistent negative edge, inversion adds diversification via -0.92 correlation.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.25
+   }
+  ],
+  "confidence": 0.8,
+  "reasoning": "STRAT_A shows consistent positive returns and high Sharpe across 96/384 bars. STRAT_B shows consistent negative returns and negative Sharpe across same windows. The -0.92 correlation means inverting STRAT_B provides both positive expected return and diversification benefit. Moving from 50/50 to 75/-25 increases exposure to the positive edge and exploits the negative edge via inversion. Sum of absolute weights = 1.0.",
+  "regime": "STRAT_A positive edge; STRAT_B negative edge, strongly anti-correlated."
+ }
+}

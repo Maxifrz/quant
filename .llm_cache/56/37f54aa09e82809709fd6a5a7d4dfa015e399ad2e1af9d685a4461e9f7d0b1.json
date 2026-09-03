@@ -1,0 +1,22 @@
+{
+ "key": "5637f54aa09e82809709fd6a5a7d4dfa015e399ad2e1af9d685a4461e9f7d0b1",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong 384-bar Sharpe -0.519 but negative return; recent 96-bar Sharpe 8.56 with 13.6% return shows regime change potential.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Strong 384-bar Sharpe 2.37 with 10.8% return; recent 96-bar Sharpe -6.43 shows deterioration but negative correlation diversifies.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.55,
+  "reasoning": "STRAT_B has superior long-term risk-adjusted returns (384-bar Sharpe 2.37 vs -0.52, return 10.8% vs -3.4%). STRAT_A shows exceptional recent 96-bar performance (Sharpe 8.56, return 13.6%) but this window is noisy. The -0.88 correlation provides strong diversification benefit. Current allocation is 100% STRAT_B. Equal weighting captures diversification while limiting turnover. Both strategies have moderate drawdowns (STRAT_A -14.8%, STRAT_B -9.5%). Time in market differs (STRAT_A ~44%, STRAT_B ~32%), suggesting complementary regimes.",
+  "regime": "STRAT_B strong long-term, STRAT_A improving recently; negative correlation (-0.88) enables diversification."
+ }
+}

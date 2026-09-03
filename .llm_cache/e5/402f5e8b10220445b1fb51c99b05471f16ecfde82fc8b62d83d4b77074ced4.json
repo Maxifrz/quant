@@ -1,0 +1,11 @@
+{
+ "key": "e5402f5e8b10220445b1fb51c99b05471f16ecfde82fc8b62d83d4b77074ced4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "VolRegimeTrend",
+  "code": "class VolRegimeTrend(Strategy):\n    name = \"vol_regime_trend\"\n    SHORT_VOL = 10\n    LONG_VOL = 30\n    VOL_RATIO = 1.5\n    MOM_LOOKBACK = 20\n    MOM_THRESHOLD = 1.5\n    warmup_bars = 40\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        short_vol = ta.realised_vol(closes, self.SHORT_VOL)\n        long_vol = ta.realised_vol(closes, self.LONG_VOL)\n        if not (math.isfinite(short_vol) and math.isfinite(long_vol)):\n            return math.nan\n        if short_vol > self.VOL_RATIO * long_vol:\n            return 0.0\n        z = ta.zscore(closes, self.MOM_LOOKBACK)\n        if not math.isfinite(z):\n            return math.nan\n        if z > self.MOM_THRESHOLD:\n            return 1.0\n        if z < -self.MOM_THRESHOLD:\n            return -1.0\n        return 0.0",
+  "name": "vol_regime_trend",
+  "rationale": "The strategy assumes that trends are more reliable when market volatility is low. It measures short‑term realized volatility against a longer‑term baseline; only when short volatility is sufficiently below the long‑term level does it follow the price trend, using a z‑score of the price series as a momentum signal. In high‑volatility regimes the strategy stays flat, avoiding noisy whipsaws. This regime‑filter approach is distinct from pure mean‑reversion or breakout methods and relies only on volatility ratios and standardized price levels, which are robust across assets and time."
+ }
+}

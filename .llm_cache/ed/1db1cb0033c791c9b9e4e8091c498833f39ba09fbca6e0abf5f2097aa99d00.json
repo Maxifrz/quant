@@ -1,0 +1,22 @@
+{
+ "key": "ed1db1cb0033c791c9b9e4e8091c498833f39ba09fbca6e0abf5f2097aa99d00",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (0.993 at 384 bars), low drawdown (-0.5%), and strong hit rates; remains the only strategy with a durable edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative Sharpe across all windows (-0.659 at 384 bars), large drawdown (-32.5%), and low hit rates; no statistical case for allocation or inversion.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_A shows positive annualized Sharpe (0.993 over 384 bars), modest drawdown (-0.5%), and hit rates >55% across windows, indicating a persistent edge. STRAT_B has negative Sharpe at every horizon (-0.659 at 384 bars), a 32.5% drawdown from peak, and hit rates well below 50%, confirming negative expectancy. The -0.91 correlation would normally favor combining them, but STRAT_B adds only risk without return. Inverting STRAT_B is not justified because the long-window Sharpe (-0.659) is not strongly negative enough to overcome transaction costs and estimation error. Current allocation (100% STRAT_A) is optimal; no rebalance needed.",
+  "regime": "STRAT_A in low drawdown with consistent risk-adjusted returns; STRAT_B in deep drawdown with negative expectancy."
+ }
+}

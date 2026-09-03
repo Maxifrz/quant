@@ -1,0 +1,11 @@
+{
+ "key": "de5eeaef1137953ddf94020007836c56b6a6a201404edb827e45c2b4e7db9abe",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "DonchianVolBreakout",
+  "code": "class DonchianVolBreakout(Strategy):\n    name = \"donchian_vol_breakout\"\n    LOOKBACK = 20\n    ATR_LOOKBACK = 14\n    VOL_THRESHOLD = 0.01\n    warmup_bars = 30\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        highs = window.highs()\n        lows = window.lows()\n        upper, lower = ta.donchian(highs, lows, self.LOOKBACK)\n        atr = ta.atr(highs, lows, closes, self.ATR_LOOKBACK)\n        last_close = closes[-1]\n        if not (math.isfinite(upper) and math.isfinite(lower) and math.isfinite(atr) and math.isfinite(last_close)):\n            return math.nan\n        vol_ratio = atr / last_close\n        if vol_ratio < self.VOL_THRESHOLD:\n            return 0.0\n        if last_close > upper:\n            return 1.0\n        if last_close < lower:\n            return -1.0\n        return 0.0",
+  "name": "donchian_vol_breakout",
+  "rationale": "Price breakouts from a Donchian channel signal the start of a new directional move, but many breakouts fail in low‑volatility regimes. By requiring the ATR‑to‑price ratio to exceed a modest threshold, the strategy only acts when there is enough volatility to sustain the move, reducing whipsaws and transaction costs."
+ }
+}

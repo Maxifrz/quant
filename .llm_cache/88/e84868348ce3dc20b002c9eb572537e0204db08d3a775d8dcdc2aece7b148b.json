@@ -1,0 +1,11 @@
+{
+ "key": "88e84868348ce3dc20b002c9eb572537e0204db08d3a775d8dcdc2aece7b148b",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "RocMomentum",
+  "code": "class RocMomentum(Strategy):\n    name = \"roc_momentum\"\n    LOOKBACK = 20\n    THRESHOLD = 0.02\n    warmup_bars = 30\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        if len(closes) <= self.LOOKBACK:\n            return math.nan\n        roc = (closes[-1] - closes[-self.LOOKBACK-1]) / closes[-self.LOOKBACK-1]\n        if not math.isfinite(roc):\n            return math.nan\n        if roc > self.THRESHOLD:\n            return 1.0\n        if roc < -self.THRESHOLD:\n            return -1.0\n        return 0.0",
+  "name": "roc_momentum",
+  "rationale": "Medium‑term price momentum tends to persist because market participants chase recent performance and trend‑following capital reinforces the move. By measuring the rate‑of‑change over a 20‑bar window and entering only when the change exceeds a modest 2 % threshold, the strategy captures sustained directional moves while staying flat during choppy periods, avoiding the high turnover that erodes returns after transaction costs."
+ }
+}

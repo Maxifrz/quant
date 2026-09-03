@@ -1,0 +1,22 @@
+{
+ "key": "1ba864e13487bd5238ea2bc0d171ee1c311236fcf6c9303f2d7e0a62015edfdd",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe-Ratios über alle relevanten Fenster (96: -1.99, 384: -0.45) zeigen keine belastbare positive Kante.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Starke, konsistente Sharpe-Ratios über mittlere (96: 2.42) und lange Fenster (384: 2.21) bei positiver Rendite rechtfertigen volle Allokation.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.9,
+  "reasoning": "STRAT_B liefert über die robusten Fenster 96 und 384 hohe Sharpe-Ratios (>2.0) und positive Returns. STRAT_A ist über dieselben Fenster durchweg negativ (Sharpe -2.0 bis -0.45). Die hohe negative Korrelation (-0.85) würde theoretisch Diversifikation bieten, doch da STRAT_A eine negative Erwartungswerte aufweist, würde jede Beimischung die Portfoliorendite schmälern ohne das Risiko proportional zu senken (kein positives Risikoprämie). Die aktuelle Allokation (0.3/0.7) gewichtet STRAT_A zu hoch. Ein vollständiger Switch auf STRAT_B maximiert die risikoadjustierte Erwartung. Transaktionskosten werden durch die klare Evidenz gerechtfertigt.",
+  "regime": "STRAT_B dominiert mit starkem Trendfolge-Signal; STRAT_A zeigt anhaltende Underperformance."
+ }
+}

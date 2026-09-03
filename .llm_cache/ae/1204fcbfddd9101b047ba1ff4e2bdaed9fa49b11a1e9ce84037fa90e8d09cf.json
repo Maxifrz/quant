@@ -1,0 +1,11 @@
+{
+ "key": "ae1204fcbfddd9101b047ba1ff4e2bdaed9fa49b11a1e9ce84037fa90e8d09cf",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "ATRChannelReversion",
+  "code": "class ATRChannelReversion(Strategy):\n    name = \"atr_channel_reversion\"\n    LOOKBACK = 30\n    MULT = 2.0\n    warmup_bars = 35\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        highs = window.highs()\n        lows = window.lows()\n        sma = ta.sma(closes, self.LOOKBACK)\n        atr = ta.atr(highs, lows, closes, self.LOOKBACK)\n        if not (math.isfinite(sma) and math.isfinite(atr)):\n            return math.nan\n        upper = sma + self.MULT * atr\n        lower = sma - self.MULT * atr\n        last_close = closes[-1]\n        if last_close > upper:\n            return -1.0\n        if last_close < lower:\n            return 1.0\n        return 0.0",
+  "name": "atr_channel_reversion",
+  "rationale": "Prices often revert toward a volatility‑adjusted moving average. By building a channel around the SMA using a multiple of the ATR, the strategy captures mean‑reversion moves that are scaled to current market noise, unlike a fixed‑width Donchian channel. The ATR‑based envelope adapts to regime changes, providing a persistent edge when markets oscillate within a volatility‑defined range."
+ }
+}

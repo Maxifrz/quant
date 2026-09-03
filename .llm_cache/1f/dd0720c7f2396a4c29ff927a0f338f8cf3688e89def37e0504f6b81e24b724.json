@@ -1,0 +1,22 @@
+{
+ "key": "1fdd0720c7f2396a4c29ff927a0f338f8cf3688e89def37e0504f6b81e24b724",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe (0.74 over 384 bars) and low drawdown (-2.6%) warrant core allocation.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Persistently negative Sharpe (-2.23 over 384 bars) and deep drawdown (-28%) justify inversion for diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A shows a consistent positive edge across windows (Sharpe 0.74 on 384 bars, 7.09 on 96 bars) with a modest drawdown of 2.6%. STRAT_B has a deeply negative 384-bar Sharpe (-2.23), a 28% drawdown from peak, and zero time-in-market recently, indicating a broken strategy. The strong negative correlation (-0.76) means inverting STRAT_B provides a genuine hedge. Equal-weighted long/short (0.5 / -0.5) respects gross leverage limit of 1.0 and exploits the negative correlation without overcommitting to either leg.",
+  "regime": "STRAT_A in mild drawdown; STRAT_B deep drawdown, negative edge."
+ }
+}

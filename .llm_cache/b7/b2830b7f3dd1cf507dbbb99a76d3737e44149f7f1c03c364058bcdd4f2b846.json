@@ -1,0 +1,22 @@
+{
+ "key": "b7b2830b7f3dd1cf507dbbb99a76d3737e44149f7f1c03c364058bcdd4f2b846",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar return (-0.01) and low Sharpe (0.291) show no persistent edge; current 0 weight is correct.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Positive 384-bar return (-0.046) with near-zero Sharpe (-0.07) is weak, but STRAT_A is worse; maintaining full allocation avoids turnover costs.",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   }
+  ],
+  "confidence": 0.55,
+  "reasoning": "The 384-bar window is the most reliable for assessing persistent skill. STRAT_A has a negative return (-0.01) with a positive but low Sharpe (0.291). STRAT_B has a negative return (-0.046) and a Sharpe near zero (-0.07). Neither demonstrates a strong positive edge over the long horizon. However, STRAT_A's metrics are slightly less unfavorable. The extreme negative correlation (-0.924) suggests they are near-perfect inverses, meaning holding both cancels returns while doubling costs. Since the portfolio is currently 100% in STRAT_B and switching to STRAT_A offers no statistically significant improvement in long-window risk-adjusted performance, the optimal action is to maintain the current allocation to avoid transaction costs.",
+  "regime": "Insufficient evidence for regime change; one strategy has marginally better long-window risk-adjusted return."
+ }
+}

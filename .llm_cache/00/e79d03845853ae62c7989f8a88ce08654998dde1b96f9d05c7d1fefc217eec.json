@@ -1,0 +1,22 @@
+{
+ "key": "00e79d03845853ae62c7989f8a88ce08654998dde1b96f9d05c7d1fefc217eec",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 384-bar Sharpe (-0.271 vs -2.097) and lower drawdown (-31% vs -17%) indicate a persistent edge over STRAT_B despite recent correlation.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative Sharpe across all windows (24: -24.2, 96: -4.5, 384: -2.1) confirms no durable edge; negative weight not justified as mean-reversion unproven.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_A shows the only non-catastrophic long-window Sharpe (-0.271 at 384 bars) and a positive 96-bar Sharpe (3.24), while STRAT_B is negative everywhere. The -0.795 correlation is a diversification mirage because STRAT_B has no standalone merit. Holding 100% STRAT_A avoids rebalancing costs and captures the only strategy with evidence of a long-term edge, even if currently underwater.",
+  "regime": "STRAT_A in extended drawdown but structurally superior; STRAT_B persistently unprofitable."
+ }
+}

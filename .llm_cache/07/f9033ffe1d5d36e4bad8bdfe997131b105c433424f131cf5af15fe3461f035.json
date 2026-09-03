@@ -1,0 +1,22 @@
+{
+ "key": "07f9033ffe1d5d36e4bad8bdfe997131b105c433424f131cf5af15fe3461f035",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (4.56/1.39/2.52) vs negative for STRAT_B; -0.91 correlation means full allocation to A captures diversification benefit of inverted B.",
+    "strategy_id": "STRAT_A",
+    "weight": 1.0
+   },
+   {
+    "reason": "Consistently negative Sharpe across all windows (-4.56/-0.78/-2.37) and -21.8% drawdown indicate persistent negative edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A shows positive risk-adjusted returns across all timeframes (Sharpe 4.56/1.39/2.52) with minimal drawdown (-0.7%). STRAT_B shows consistently negative Sharpe (-4.56/-0.78/-2.37) and deep drawdown (-21.8%). The -0.91 correlation means STRAT_B is nearly the inverse of STRAT_A. Allocating 100% to STRAT_A captures the positive edge while the negative correlation would have provided diversification if B had positive expectancy. Current 60/40 allocation wastes capital on a negative-edge strategy. No transaction cost justification needed as this corrects a clear misallocation.",
+  "regime": "STRAT_A positive edge, STRAT_B negative edge, strong negative correlation"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "41c1e47cc5b3bf4ed5ea42097641767d8f46cbe5012b8e26a543f88c3399002c",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (-2.68 over 384 bars); inverted weight captures opposite of losing edge.",
+    "strategy_id": "STRAT_A",
+    "weight": -0.5
+   },
+   {
+    "reason": "Less negative Sharpe (-1.55 over 384 bars) and lower vol; negative correlation with STRAT_A improves diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.5
+   }
+  ],
+  "confidence": 0.55,
+  "reasoning": "Maintain current allocation: STRAT_A inverted (-0.5) exploits persistent negative edge; STRAT_B long (0.5) has less negative risk-adjusted return. Strong negative correlation (-0.725) means combined portfolio volatility is reduced. No window shows positive Sharpe for either strategy, so equal-weight long/short split remains justified.",
+  "regime": "Both strategies in drawdown; negative correlation provides hedge."
+ }
+}
