@@ -32,6 +32,7 @@ def names() -> list[str]:
 
 def load_library() -> None:
     """Mitgelieferte Strategien importieren, damit sie sich registrieren."""
+    from qt.strategy import cross_sectional  # noqa: F401
     from qt.strategy.library import (  # noqa: F401
         elliott,
         hashribbon,

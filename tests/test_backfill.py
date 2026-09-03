@@ -21,8 +21,8 @@ def test_nachtragen_erhoeht_den_zaehler_um_die_sieben(tmp_path):
     with _leere_registry(tmp_path) as r:
         assert r.trial_count() == 0
         neu = nachtragen(r)
-        assert len(neu) == len(HYPOTHESEN) == 7
-        assert r.trial_count() == 7
+        assert len(neu) == len(HYPOTHESEN) == 8
+        assert r.trial_count() == 8
 
 
 def test_nachtragen_ist_idempotent(tmp_path):
@@ -34,12 +34,12 @@ def test_nachtragen_ist_idempotent(tmp_path):
     with _leere_registry(tmp_path) as r:
         nachtragen(r)
         assert nachtragen(r) == []
-        assert r.trial_count() == 7
+        assert r.trial_count() == 8
 
 
 def test_dry_run_schreibt_nichts(tmp_path):
     with _leere_registry(tmp_path) as r:
-        assert len(nachtragen(r, dry_run=True)) == 7
+        assert len(nachtragen(r, dry_run=True)) == 8
         assert r.trial_count() == 0
 
 
@@ -73,14 +73,22 @@ def test_kein_sharpe_wird_erfunden(tmp_path):
         assert pd.isna(r.history()["sharpe"]).all()
 
 
-def test_alle_sieben_bibliotheksstrategien_sind_abgedeckt():
-    """Faellt eine achte in die Bibliothek, soll dieser Test daran erinnern."""
+def test_jede_registrierte_strategie_die_je_gerechnet_hat_ist_ein_versuch():
+    """Faellt eine neue in die Bibliothek, soll dieser Test daran erinnern.
+
+    Ausgenommen ist genau, was den Walk-Forward nie erreicht hat: `crossrev`
+    scheitert am Umschlagbudget (19,2x gegen 7), hat also die Daten nie
+    out-of-sample befragt und zaehlt nach ADR-032 nicht.
+    """
     from qt.strategy.registry import load_library, names
 
     load_library()
-    assert len(names()) == len(HYPOTHESEN), (
-        f"Bibliothek hat {len(names())} Strategien, HYPOTHESEN kennt "
-        f"{len(HYPOTHESEN)}. Neue Strategie = neuer Versuch (ADR-005)."
+    ohne_versuch = {"crossrev"}
+    gezaehlt = set(names()) - ohne_versuch
+    assert len(gezaehlt) == len(HYPOTHESEN), (
+        f"{len(gezaehlt)} zaehlbare Strategien, HYPOTHESEN kennt "
+        f"{len(HYPOTHESEN)}. Neue Strategie mit Walk-Forward = neuer "
+        f"Versuch (ADR-005)."
     )
 
 

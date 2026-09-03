@@ -243,6 +243,23 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    > sieben handgeschriebenen Hypothesen nicht und stand bei 8. Er steht
    > jetzt bei **15**.
 2. Research-Loop und eigene Ideen gegen die erweiterte Marktbasis.
+
+   > **Eine neue Strategiefamilie steht seit 2026-09-03 bereit (ADR-058):
+   > Querschnitt statt Timing.** Sie stellt die Märkte gegeneinander, statt
+   > jeden für sich zu betrachten — damit wird die Korrelation von 0,26, die
+   > 26 Einzeltests auf 3,4 effektive zusammenschrumpfen lässt, zu dem, was
+   > herausgerechnet wird, statt zum Verlust.
+   >
+   > `crossmom` (12-1-Momentum, monatlich umgeschichtet) ist die **erste
+   > Strategie des Projekts, die Aktivität und Umschlagbudget besteht** und
+   > bis in einen Walk-Forward kommt: 494 Ausführungen, 4,6× Umschlag — und
+   > dann OOS-Sharpe **−0,24**. Sie scheitert an der Zahl, auf die es ankommt.
+   > Versuchszähler damit **16**.
+   >
+   > Der Vorbehalt gehört dazu: 27 Märkte sind ein dünner Querschnitt, und die
+   > IC-Streuung von 0,40 heißt, dass auch ein echter Effekt hier schwer zu
+   > zeigen wäre. Dieselbe Datenknappheit wie überall, nur an einer anderen
+   > Achse.
    **Offen, und blockiert:** in dieser Umgebung ist kein API-Schlüssel
    gesetzt. Die Kette ist gegen die Stubs end-to-end geprüft; es fehlt der
    Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt die beiden

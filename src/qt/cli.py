@@ -1638,8 +1638,13 @@ def gate_cmd(
     strategy: Annotated[str, typer.Option(help="Strategiename, siehe qt strategies")] = "macross",
     tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
     symbol: Annotated[
-        str, typer.Option(help="Hauptmarkt fuer Umschlag, Walk-Forward und Permutation")
-    ] = "BTC/USD",
+        str | None,
+        typer.Option(
+            help="Hauptmarkt fuer Umschlag, Walk-Forward und Permutation. "
+            "Ohne Angabe: BTC/USD fuer Timing-Strategien, der ganze Store "
+            "fuer Querschnittsstrategien."
+        ),
+    ] = None,
     train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 1000,
     test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 250,
     embargo: Annotated[int, typer.Option(help="Embargo-Bars")] = 20,
@@ -1673,12 +1678,13 @@ def gate_cmd(
         raise typer.Exit(code=1)
 
     maerkte = {sym: to_bars(sym, tf, read_bars(sym, tf)) for sym in namen}
-    haupt = _split(symbol)
+    haupt = _split(symbol) if symbol else None
 
     with ResearchRegistry.open() as registry:
         vorher = registry.trial_count()
 
-    typer.echo(f"\nGate 1: {strategy} @ {tf}, Hauptmarkt {', '.join(haupt)}")
+    beschreibung = ", ".join(haupt) if haupt else "automatisch"
+    typer.echo(f"\nGate 1: {strategy} @ {tf}, Hauptmarkt {beschreibung}")
     typer.echo(f"Versuchszaehler vor diesem Lauf: {vorher}\n")
 
     ergebnis = run_gate(
@@ -1762,6 +1768,71 @@ def trials_cmd(
             )
         except Exception:  # noqa: BLE001 -- reine Zusatzinfo
             pass
+
+
+@app.command("ic")
+def ic_cmd(
+    strategy: Annotated[
+        str, typer.Option(help="Querschnittsstrategie, siehe qt strategies")
+    ] = "crossmom",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    horizon: Annotated[int, typer.Option(help="Vorwaertshorizont in Bars")] = 21,
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Kommagetrennt. Ohne Angabe alle Maerkte des Stores."),
+    ] = None,
+) -> None:
+    """Sagt das Signal die **Reihenfolge** der Maerkte voraus?
+
+    Der Querschnitts-Rank-IC. Er nutzt die Korrelation der Maerkte, statt an
+    ihr zu scheitern: was allen gemeinsam ist, faellt heraus (ADR-058).
+
+    Zwei Zahlen stehen nebeneinander -- der naive t-Wert und der um die
+    Autokorrelation der IC-Reihe korrigierte. Die Differenz ist der Grund,
+    warum es diesen Befehl gibt: fuer 12-1-Momentum ueber diesen Store sind
+    das +4,22 gegen +1,42.
+    """
+    from qt.data.store import available
+    from qt.research.ic import forward_returns, rank_ic
+    from qt.strategy.cross_sectional import (
+        CrossSectionalStrategy,
+        panel_from_store,
+        score_panel,
+    )
+    from qt.strategy.registry import get, load_library
+
+    load_library()
+    klasse = get(strategy)
+    if not issubclass(klasse, CrossSectionalStrategy):
+        typer.echo(
+            f"{strategy} ist keine Querschnittsstrategie. Der Rank IC misst "
+            f"eine Rangfolge ueber Maerkte; eine Timing-Strategie hat keine."
+        )
+        raise typer.Exit(code=1)
+
+    namen = _split(symbols) if symbols else sorted(
+        {sym for sym, timeframe in available() if timeframe == tf}
+    )
+    if not namen:
+        typer.echo(f"Keine Maerkte mit Timeframe {tf} im Store.")
+        raise typer.Exit(code=1)
+
+    schluss = panel_from_store(namen, tf, "close")
+    opens = panel_from_store(namen, tf, "open")
+    if schluss.empty:
+        typer.echo("Panel leer.")
+        raise typer.Exit(code=1)
+
+    strategie = klasse(list(schluss.columns), tf)
+    typer.echo(
+        f"\n{strategy} ueber {schluss.shape[1]} Maerkte, {schluss.shape[0]} Zeitpunkte "
+        f"({schluss.index[0].date()} .. {schluss.index[-1].date()})\n"
+    )
+
+    signal = score_panel(strategie, schluss)
+    ergebnis = rank_ic(signal, forward_returns(opens, horizon), horizont=horizon)
+    typer.echo(ergebnis.table())
+    raise typer.Exit(code=0 if ergebnis.bestanden else 2)
 
 
 # unten aus und startet die CLI, bevor die spaeteren Dekoratoren gelaufen

@@ -5,6 +5,153 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-058 — Querschnitt statt Timing: was aus NVIDIAs Blueprint taugt, und was nicht
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Aus `NVIDIA-AI-Blueprints/quantitative-signal-discovery-agent`
+(Apache-2.0, Stand `9a89d24`) werden **drei Ideen** übernommen und **keine Zeile
+Code**: der Querschnitts-Rank-IC als Kennzahl, ein benanntes Operator-Vokabular,
+und die Aritätsprüfung als billiger Vorfilter. Ihre Auswertungsmethodik wird
+ausdrücklich **nicht** übernommen — sie ist an drei Stellen schwächer als die
+hiesige, und das lässt sich an diesen Daten zeigen.
+
+---
+
+### Warum der Querschnitt überhaupt interessant ist
+
+Alle bisherigen sieben Strategien sind **Timing**-Strategien: ein Markt, eine
+Entscheidung. Über 27 Märkte laufen sie 27-mal getrennt, und weil die Märkte zu
+0,26 korrelieren, sind das 3,4 effektive Tests (ADR-055). **Die Korrelation ist
+dabei reiner Verlust.**
+
+Eine Querschnittsstrategie fragt anders: welche Märkte laufen besser als die
+übrigen? Sie kauft die obere Hälfte, verkauft die untere, ist in Summe neutral.
+Was allen gemeinsam ist — der Krypto-Zyklus, die Aktienrallye — fällt heraus.
+Dieselbe Korrelation, die 26 Einzeltests entwertet, ist hier das, was
+neutralisiert wird.
+
+Diese Familie war vor Phase A nicht möglich: ein Querschnitt aus dreizehn
+Wetten auf dieselbe Sache ist keiner.
+
+---
+
+### Ihr Annahmekriterium, gemessen an unseren Daten
+
+Der Blueprint akzeptiert ein Signal bei `|IC| ≥ 0,02` und `p < 0,05`, wobei
+`t = mittel / (std / √T)` mit T = Zahl der Tage. Das unterstellt, die täglichen
+IC-Werte seien unabhängig.
+
+Sie sind es nicht. Ein Signal mit 252 Tagen Rückschau ändert sich von Tag zu Tag
+kaum, und die Vorwärtsrenditen überlappen sich zu 20 von 21 Tagen. Gemessen an
+`crossmom` über diesen Store:
+
+| | |
+|---|---|
+| mittlerer Rank IC | +0,0307 |
+| Autokorrelation der IC-Reihe | **ρ = +0,750** |
+| Datenpunkte | 2437 |
+| effektive Datenpunkte | **348** |
+| t nach ihrer Rechnung | **+3,75** (p = 0,0002) |
+| t nach Korrektur | **+1,42** (p = 0,157) |
+| **Aufblähung** | **Faktor 2,64** |
+
+**Dasselbe Signal besteht ihr Kriterium und fällt bei ehrlicher Rechnung
+durch.** Die Korrektur ist deshalb kein Schalter: `bestanden` hängt am
+korrigierten Wert, der naive steht nur zum Vergleich daneben.
+
+**Es ist nicht die Formel aus ADR-052.** Dort ging es um den Mittelwert von n
+gleichzeitig beobachteten, korrelierten Reihen: `n/(1+(n−1)ρ̄)`. Hier um den
+Mittelwert **einer** Reihe mit Autokorrelation über die Zeit: `T·(1−ρ)/(1+ρ)`.
+Beide heißen „effektive Stichprobe" und sind verschiedene Größen. Sie zu
+verwechseln wäre derselbe Fehler wie in ADR-055, nur andersherum.
+
+Zur Fairness, gemessen und nicht vermutet: gegen **reines** Rauschen hält ihre
+`|IC| ≥ 0,02`-Schwelle (0 von 20 Läufen angenommen). Der p-Wert ist bei ihnen
+also nicht das bindende Gate. Das bindende Problem ist Selektion, siehe unten.
+
+---
+
+### Was nicht übernommen wird, und warum
+
+| Ihre Stelle | Befund |
+|---|---|
+| `exec(code, namespace)`, Zeile 375 | LLM-Code läuft ungeprüft im Prozess. ADR-029 ist dem um Klassen voraus. |
+| `execute_signal_code` | Wählt bei mehreren Signalfunktionen die mit dem höchsten IC **über die volle Historie** und berichtet dann genau diesen IC. `grep` nach train/test/split findet in `src/` nichts. |
+| `abs(mean_ic)` | Vorzeichenblind. Ein Signal, das das Gegenteil vorhersagt, gilt als gleich gut — verdoppelt die effektive Versuchszahl. |
+| Kostenmodell | Existiert nicht. Nirgends `fee`, `slippage`, `turnover`. Nach ADR-056 ist ein IC ohne Umschlagbudget keine handelbare Aussage. |
+| Optimierungsschleife | `max_iterations: 3 × num_signals: 2`, jede Runde bekommt Feedback aus dem IC der letzten. Sechs Versuche gegen die Testmetrik, ohne DSR, ohne Versuchszähler. |
+
+Zur zweiten Zeile gehört eine eigene Korrektur bei uns: unsere
+Vorwärtsrendite beginnt am **Open t+1**, nicht am Close t. Der Blueprint rechnet
+`close[t+k]/close[t]` — Einstieg zu einem Kurs, den man gerade erst benutzt hat,
+um sich zu entscheiden. Die Umstellung allein senkt den gemessenen IC von
+**0,0369 auf 0,0307**.
+
+---
+
+### Der erste Lauf, und zwei Fehler unterwegs
+
+**Der Panelaufbau hat einen ganzen Lauf gekostet.** Der erste Entwurf verlangte,
+dass alle Symbole einen Bar zum aktuellen Zeitpunkt haben. Die Engine arbeitet
+die Bars eines Zeitpunkts aber **nacheinander** ab — fragt sie das erste Symbol
+zur Zeit T, haben die übrigen ihren T-Bar noch nicht im Store. Die Bedingung war
+für alle außer dem zuletzt bearbeiteten Symbol unerfüllbar, und die Strategie
+machte über die ganze Historie **null Ausführungen**. Kein Test war rot; sie
+handelte einfach nicht.
+
+Gerechnet wird deshalb auf dem letzten Zeitpunkt **vor** `jetzt`, den genug
+Symbole gemeinsam haben — vollständig, weil die Engine ihn abgeschlossen hat.
+Der Preis ist ein Bar Verzögerung, und der löst zugleich das Kalenderproblem:
+Krypto handelt sonntags, ETFs nicht.
+
+**Ohne Umschichtrhythmus ist die Familie von den Kosten erledigt.** Täglich
+umgeschichtet schlägt `crossmom` über 27 Märkte **79,0× sein Eigenkapital pro
+Jahr** um, gegen ein Budget von 7 (ADR-056). Monatlich — 21 Bars, die Frequenz
+der Querschnittsliteratur seit Jegadeesh/Titman 1993 und **keine an diesen Daten
+gewählte Zahl** — sind es 4,6×.
+
+**Gate 1, `crossmom` auf 1d:**
+
+| Kriterium | Wert | verlangt |
+|---|---|---|
+| Ausführungen | 494 | ≥ 20 |
+| Umschlag/EK/Jahr | **4,6×** | ≤ 7× |
+| OOS-Sharpe | **−0,24** | ≥ 0,41 |
+| DSR gegen 16 Versuche | 0,010 | ≥ 0,95 |
+
+**Das ist die erste Strategie des Projekts, die Aktivität und Umschlagbudget
+besteht und bis in einen Walk-Forward kommt.** Sie scheitert dort an der Zahl,
+auf die es ankommt. Der Lauf zählt als Versuch; der Zähler steht auf **16**.
+
+`crossrev` (Kurzfrist-Umkehr, das entgegengesetzte Vorzeichen) bricht bei
+19,2× Umschlag ab und kostet keinen Versuch. Sie bleibt trotzdem in der
+Bibliothek: erst zwei Strategien mit entgegengesetztem Vorzeichen zeigen, dass
+die Mechanik das Vorzeichen überhaupt durchreicht — ihre ICs sind +0,031 und
+−0,014.
+
+---
+
+### Konsequenzen
+
+- **`qt ic`** misst den Querschnitts-Rank-IC und stellt beide t-Werte
+  nebeneinander. Exit 0 nur bei |t_korrigiert| ≥ 1,96.
+- **`qt.research.operators`** — 29 benannte Primitive (`TS_*` über die Zeit,
+  `CS_*` über den Querschnitt) plus `pruefe_aufrufe`, eine Aritätsprüfung
+  **auf dem AST, ohne Ausführung**. Ein Test hält fest, dass dabei nichts
+  läuft — der Unterschied zu ihrer `exec`-Zeile.
+- **Kein Operator schaut nach vorn**, geprüft am Quelltext statt am Vertrauen.
+- **`qt gate` kennt Querschnittsstrategien** und gibt ihnen den ganzen Store
+  statt eines Hauptmarkts.
+- **Versuchszähler 16.** `crossmom` ist eingebucht, `crossrev` nicht — sie hat
+  die Daten nie out-of-sample befragt (ADR-032).
+- **Offen:** 27 Märkte sind ein dünner Querschnitt. Der Blueprint arbeitet mit
+  500 Namen, und die IC-Streuung von 0,40 bei uns gegen deren dichteres Panel
+  ist der Grund, warum hier auch ein echter Effekt schwer zu zeigen wäre. Das
+  ist dieselbe Datenknappheit wie überall in diesem Projekt, nur an einer
+  anderen Achse.
+
+---
+
 ## ADR-057 — Gate 1 ist jetzt ein Programm, und die Buchführung war an drei Stellen falsch
 **Datum:** 2026-09-02
 

@@ -234,7 +234,19 @@ def run_gate(
         return ergebnis
 
     if haupt_symbole is None:
-        haupt_symbole = ["BTC/USD"] if "BTC/USD" in maerkte else [sorted(maerkte)[0]]
+        # Eine Querschnittsstrategie auf einem Markt laufen zu lassen waere
+        # sinnlos: sie bildet eine Rangfolge, und eine Rangfolge ueber einen
+        # Namen ist keine. Sie bekommt den ganzen Store (ADR-058).
+        from qt.strategy.cross_sectional import CrossSectionalStrategy
+
+        if isinstance(strategy_cls, type) and issubclass(
+            strategy_cls, CrossSectionalStrategy
+        ):
+            haupt_symbole = sorted(maerkte)
+        else:
+            haupt_symbole = (
+                ["BTC/USD"] if "BTC/USD" in maerkte else [sorted(maerkte)[0]]
+            )
     haupt_bars = {sym: maerkte[sym] for sym in haupt_symbole if sym in maerkte}
     if not haupt_bars:
         raise ValueError(f"Keine Bars fuer {haupt_symbole} im uebergebenen Store.")

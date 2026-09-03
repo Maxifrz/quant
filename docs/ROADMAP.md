@@ -29,6 +29,7 @@
 > uv run qt data report         # Bestand und Lücken
 > uv run qt trials              # Versuchszähler der DSR — steht bei 15
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
+> uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > ```
 > Gate 1 ist seit ADR-057 ein Programm, keine Prosa. Kein Bestandskandidat
 > kommt derzeit bis zum Walk-Forward — fünf von sieben scheitern am

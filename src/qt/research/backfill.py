@@ -89,6 +89,13 @@ HYPOTHESEN: tuple[Hypothese, ...] = (
         "2026-08-28",
     ),
     Hypothese(
+        "CrossMomentum", "cross_sectional", "ADR-058",
+        "12-1-Momentum im Querschnitt der 27 Maerkte, monatlich umgeschichtet. "
+        "Erste Strategie des Projekts, die Aktivitaet und Umschlagbudget "
+        "besteht -- und im Walk-Forward bei OOS-Sharpe -0,24 landet.",
+        "2026-09-03",
+    ),
+    Hypothese(
         "HashRibbonStrategy", "hashribbon", "ADR-048",
         "Miner-Kapitulation ueber die Hashrate. BTC-spezifisch und nicht von "
         "Zufall zu unterscheiden.",
