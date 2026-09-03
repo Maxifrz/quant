@@ -35,6 +35,70 @@
 > kommt derzeit bis zum Walk-Forward — fünf von sieben scheitern am
 > Umschlagbudget.
 >
+> ### Der nächste Schritt: Phase C, die Suche
+>
+> Die Kette steht, geprüft gegen die Stubs. Was fehlte, war der Zugang — er ist
+> seit 2026-09-03 in den Umgebungsvariablen gesetzt. **Zuerst nachsehen, ob er
+> in dieser Sitzung angekommen ist:**
+>
+> ```bash
+> python3 -c "import os; print({k: bool(os.environ.get(k)) for k in ('NVIDIA_API_KEY','NIM_API_KEY','TIINGO_API_KEY')})"
+> ```
+> Alles `False` heißt: die Sitzung lief schon, bevor die Variablen gesetzt
+> wurden. Sie werden **einmal beim Start** kopiert — dann hilft nur eine neue
+> Sitzung, nicht Warten.
+>
+> **Dann ein einzelner Aufruf, bevor eine ganze Charge Geld kostet.** Das
+> Modell ist Kimi K3 auf NIM, `moonshotai/kimi-k3`:
+>
+> ```bash
+> uv run qt research --generate 1 --provider nim --model moonshotai/kimi-k3 --tf 1d
+> ```
+> Worauf zu achten ist: ADR-041 hält fest, dass die geführte JSON-Dekodierung
+> dieses Endpunkts Zeilenumbrüche verschluckt — deshalb steht sie aus. Das war
+> an Nemotron gemessen. **Ein anderes Modell kann sich anders verhalten**, und
+> der Weg, das zu merken, ist einzeiliger Strategiecode in der Registry. Erst
+> wenn ein Kandidat sauber durchläuft, lohnt die Charge.
+>
+> **Dann die Charge — und ihre Größe ist eine Entscheidung, keine Einstellung.**
+> Jeder gescreente Kandidat hebt den DSR-Nenner dauerhaft, für alle künftigen
+> mit:
+>
+> | Versuche | erwarteter bester Sharpe aus reinem Rauschen |
+> |---|---|
+> | 16 (heute) | 1,80 |
+> | 26 | 2,01 |
+> | 36 | 2,15 |
+> | 66 | 2,38 |
+>
+> Vorschlag: **eine Charge von 10**. Genug, um zu sehen, ob das geschärfte
+> Generator-Briefing (ADR-057) etwas anderes produziert als die acht vom 31.08.,
+> und wenig genug, dass die Latte nicht davonläuft. Erzeugt heißt nicht
+> gescreent: am 31.08. kamen von 20 erzeugten Kandidaten 8 durch Sandbox und
+> Kritik bis zum Walk-Forward. Bei 10 erzeugten landet der Zähler also eher
+> bei 20 als bei 26 — Latte zwischen 1,90 und 2,01.
+>
+> ```bash
+> uv run qt research --generate 10 --screen --provider nim --model moonshotai/kimi-k3 --tf 1d
+> uv run qt trials          # danach: wo steht der Zähler
+> ```
+>
+> **Was ein Kandidat schaffen muss**, bevor er irgendetwas heißt:
+> ```bash
+> uv run qt gate --strategy <name> --tf 1d
+> ```
+> Kein Bestandskandidat kommt derzeit durch. `crossmom` ist der einzige, der
+> bis in einen Walk-Forward reicht, und landet dort bei OOS-Sharpe −0,24
+> (ADR-058).
+>
+> **Tiingo** ist für Phase C nicht nötig — die 13 ETFs liegen im Store. Der
+> Schlüssel wird gebraucht, wenn die Reihen nachgezogen werden sollen:
+> ```bash
+> uv run qt data stocks     # adjustierte Reihen, schreibt mit replace=True
+> ```
+> Adjustierte Kurse werden bei jeder Dividende rückwirkend umgeschrieben; das
+> Abrufdatum steht in der Sidecar-Datei je Reihe (ADR-055).
+>
 > ### Wofür das alles
 >
 > Das Ziel und der Weg dahin stehen in **`docs/ZIEL.md`**: echtes Geld,
