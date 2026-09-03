@@ -34,9 +34,16 @@
 > uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
 > uv run qt paper status --strategy macross --symbols ETH/USD --tf 1d
 > ```
-> Erwartet: „Status: laeuft", und über Wochen hinweg **null Fills** — `macross`
-> handelt rund viermal im Jahr. Steht dort „ANGEHALTEN", hat der Kill-Switch
-> ausgelöst; das ist der einzige Fall, der eine Entscheidung braucht.
+> Erwartet: „Status: laeuft", und **rund vier Fills im Jahr je Konto** —
+> `macross` handelt selten, lange Strecken ohne jeden Fill sind der Normalfall
+> und kein Hinweis auf einen Fehler. Steht dort „ANGEHALTEN", hat der
+> Kill-Switch ausgelöst; das ist der einzige Fall, der eine Entscheidung
+> braucht.
+>
+> Bis hierher stand „über Wochen hinweg **null Fills**". Das war die
+> Beobachtung eines Kontos, das noch nie gehandelt hatte, formuliert als
+> Erwartung — am 2026-09-03 sind beide Konten zum ersten Mal long gegangen,
+> und die Zeile hätte das als Auffälligkeit gelesen.
 >
 > **Auf `Letzter verarbeiteter Bar` schauen, nicht nur auf „laeuft".** Am
 > 2026-09-03 stand dort der 2026-09-02, und im ganzen Repo — auf `main` wie auf

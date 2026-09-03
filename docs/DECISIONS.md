@@ -9,11 +9,13 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 **Datum:** 2026-09-03
 
 **Die Entscheidung:** Jede registrierte Strategie bekommt eine
-Negativkontrolle. Dabei wurden drei Stellen gefunden, an denen die vorhandene
-Kontrolle ein Urteil ausgab, das keines war — und eine vierte im Datenpfad
-darunter, die den Store still um fünf Märkte gekürzt hat.
+Negativkontrolle. Dabei wurden **drei** Stellen gefunden, an denen die
+vorhandene Kontrolle ein Urteil ausgab, das keines war — dazu eine im
+Datenpfad darunter, die den Store still um fünf Märkte kürzte, und eine im
+täglichen Tick, der seinen Zustand auf einen zusammengeführten Zweig schrieb
+und den Fehlschlag als Erfolg meldete.
 
-Alle vier haben dieselbe Form: **etwas fiel aus und sah aus wie ein
+Alle fünf haben dieselbe Form: **etwas fiel aus und sah aus wie ein
 Ergebnis.** Das ist dasselbe Muster wie ADR-051 (ein Konto lief nicht,
 während hier stand, es laufe) und ADR-053 (fünf Funde, kein Test rot) — nur
 jetzt in den Kontrollen selbst, also in der Schicht, die genau das verhindern
@@ -239,6 +241,38 @@ ist.
 
 ---
 
+### Fund 5: der tägliche Tick schrieb auf einen zusammengeführten Zweig
+
+Beim Nachsehen des Laufzeitzustands — der erste Punkt des HIER-WEITER-Blocks —
+stand in beiden Konten der 2026-09-02 als letzter verarbeiteter Bar, bei einem
+Kalendertag 2026-09-03. Kein Commit im Repo, weder auf `main` noch auf dem
+alten Sitzungszweig, schreibt den Kontostand über den 2026-09-02T05:32Z
+hinaus.
+
+Zwei Dinge in `scripts/paper_tick.sh` erklären, warum das niemandem auffiel:
+
+1. `ZWEIG` stand fest auf `claude/llm-quant-algo-planning-f1ohgo`, und dessen
+   Pull Request ist zusammengeführt. `git push -u` legt einen gelöschten Zweig
+   wortlos neu an — der Zustand landet daneben statt dort, wo er gelesen
+   wurde. Jetzt schreibt das Skript auf den Zweig, auf dem sein Checkout
+   steht; ohne Zweig bricht es ab, statt zu raten.
+2. Nach der Push-Schleife stand **unbedingt** `echo "Kontostand gesichert."` —
+   auch wenn alle vier Versuche gescheitert waren. Ein Commit ohne Push
+   überlebt den Container nicht, und die Zeile behauptete das Gegenteil.
+   Jetzt meldet das Skript den Fehlschlag und endet mit Code 1.
+
+Ob die Routine überhaupt feuert, ist damit **nicht** beantwortet — das sagt
+erst der nächste Tag. Der von Hand nachgeholte Tick hat die beiden Konten
+zum ersten Mal überhaupt handeln lassen: BTC zu 77.437,40, ETH zu 2.418,61,
+je 600 Gebühr. Die Order lag seit dem 2026-09-02 vorgemerkt.
+
+Das ist ADR-051 zum dritten Mal, in einer neuen Verkleidung. Die Lehre bleibt
+dieselbe und ist im ROADMAP-Block jetzt ein Befehl: `Letzter verarbeiteter
+Bar` muss von Tag zu Tag weiterwandern; ein „Status: laeuft" allein sagt
+nichts.
+
+---
+
 ### Konsequenzen
 
 - **`qt placebo shuffle` wählt die Kontrolle nach dem Typ der Strategie.**
@@ -251,6 +285,8 @@ ist.
   (ADR-032).
 - **`fetch_ohlcv` unterscheidet die leere Seite vor der Notierung von der am
   Ende der Historie.** Zwei Tests, einer fällt gegen den alten Code durch.
+- **`scripts/paper_tick.sh` schreibt zurück, wo es gelesen hat, und meldet
+  einen gescheiterten Push als Fehlschlag.**
 - **Acht von neun Strategien haben jetzt eine Negativkontrolle, und keine
   besteht sie.** Der Satz aus ZIEL.md — „Nichts im Repo hat je eine
   Negativkontrolle bestanden" — ist damit nicht mehr eine Beobachtung über
