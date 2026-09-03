@@ -235,3 +235,86 @@ def test_duplikate_zaehlen_nicht_als_zu_feine_abstaende(tmp_path):
     report = check("X/USD", "1d", df)
     assert report.duplicates == 1
     assert report.too_fine == 0
+
+
+# --- Die leere Seite vor der Notierung (ADR-059) ----------------------------
+
+
+class _SpaeterGelisteteExchange:
+    """Antwortet wie Coinbase: leere Seite vor der Notierung, dann Bars.
+
+    Nachgemessen am 2026-09-03 gegen `api.exchange.coinbase.com`: SOL/USD mit
+    `since=2019-01-01` liefert eine leere Liste, mit `since=2021-01-01`
+    dagegen 133 Bars ab dem 2021-06-17. Die leere Seite ist damit **nicht**
+    das Ende der Historie, sondern ihr Anfang.
+    """
+
+    timeframes = {"1d": "1d"}
+
+    def __init__(self, gelistet_ab_ms: int, n_bars: int = 5, step_ms: int = 86_400_000):
+        self.gelistet_ab_ms = gelistet_ab_ms
+        self.n_bars = n_bars
+        self.step_ms = step_ms
+        self.aufrufe = 0
+
+    def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None):
+        """Eine **Seite**: [since, since + limit*step), nicht "alles danach".
+
+        Genau das ist die Form, die den Fehler ausloest -- Coinbase setzt
+        `end = start + limit * granularity` und antwortet fuer ein Fenster
+        vor der Notierung mit einer leeren Liste, nicht mit den ersten Bars.
+        """
+        self.aufrufe += 1
+        limit = limit or 300
+        fenster_ende = since + limit * self.step_ms
+        alle = [
+            [self.gelistet_ab_ms + i * self.step_ms, 1.0, 2.0, 0.5, 1.5, 10.0]
+            for i in range(self.n_bars)
+        ]
+        return [bar for bar in alle if since <= bar[0] < fenster_ende]
+
+
+def test_fetch_ohlcv_findet_maerkte_die_spaeter_gelistet_wurden():
+    """Faellt gegen den alten Code durch: der brach bei der ersten leeren Seite ab."""
+    from datetime import datetime, timezone
+
+    from qt.data.ingest import fetch_ohlcv
+
+    gelistet = datetime(2021, 6, 17, tzinfo=timezone.utc)
+    exchange = _SpaeterGelisteteExchange(int(gelistet.timestamp() * 1000))
+
+    df = fetch_ohlcv(
+        exchange,
+        "SOL/USD",
+        "1d",
+        since=datetime(2019, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2021, 7, 1, tzinfo=timezone.utc),
+        rate_limit_ms=0,
+    )
+
+    assert len(df) == 5, "Der Markt existiert -- er faengt nur spaeter an."
+    assert df["ts"].iloc[0] == pd.Timestamp(gelistet)
+
+
+def test_fetch_ohlcv_haelt_am_ende_der_historie_an():
+    """Die Gegenprobe: nach der ersten Zeile bleibt die leere Seite ein Ende."""
+    from datetime import datetime, timezone
+
+    from qt.data.ingest import fetch_ohlcv
+
+    start = datetime(2019, 1, 1, tzinfo=timezone.utc)
+    exchange = _SpaeterGelisteteExchange(int(start.timestamp() * 1000), n_bars=3)
+
+    df = fetch_ohlcv(
+        exchange,
+        "BTC/USD",
+        "1d",
+        since=start,
+        until=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        rate_limit_ms=0,
+    )
+
+    assert len(df) == 3
+    # Zwei Aufrufe: einer mit Bars, einer leer. Ohne den Abbruch liefe die
+    # Schleife bis 2030 weiter -- rund 4000 Anfragen fuer nichts.
+    assert exchange.aufrufe == 2

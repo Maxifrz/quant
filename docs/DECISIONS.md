@@ -5,6 +5,259 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-059 — Negativkontrollen für den Rest: drei Wege, wie eine Kontrolle lügt
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Jede registrierte Strategie bekommt eine
+Negativkontrolle. Dabei wurden drei Stellen gefunden, an denen die vorhandene
+Kontrolle ein Urteil ausgab, das keines war — und eine vierte im Datenpfad
+darunter, die den Store still um fünf Märkte gekürzt hat.
+
+Alle vier haben dieselbe Form: **etwas fiel aus und sah aus wie ein
+Ergebnis.** Das ist dasselbe Muster wie ADR-051 (ein Konto lief nicht,
+während hier stand, es laufe) und ADR-053 (fünf Funde, kein Test rot) — nur
+jetzt in den Kontrollen selbst, also in der Schicht, die genau das verhindern
+soll.
+
+---
+
+### Fund 1: der Store verlor fünf von vierzehn Märkten, ohne es zu sagen
+
+Der Container ist frisch, `/data/*` ist nicht versioniert, also wurden die
+14 Krypto-Märkte aus ADR-050 neu gezogen. Geschrieben wurden **neun**:
+
+```
+$ uv run qt data pull --symbols BTC/USD,...,AVAX/USD --tf 1d --since 2019-01-01
+     ALGO/USD  1d    2,577 Bars      ...  (9 Zeilen)
+```
+
+Fehlend: ADA, DOGE, DOT, SOL, AVAX — exakt die fünf, die ADR-050 mit „ab
+2021" führt. Kein Fehler, keine Warnung, neun Zeilen sehen so vollständig aus
+wie vierzehn.
+
+**Die Ursache, gemessen statt vermutet.** Coinbase beantwortet
+`fetch_ohlcv(since=X, limit=300)` mit dem **Fenster** `[X, X+300 Tage)`, nicht
+mit „alles ab X". Für SOL/USD, gelistet am 2021-06-17:
+
+| `since` | Antwort |
+|---|---|
+| 2019-01-01 | **leere Liste** |
+| 2021-01-01 | 133 Bars ab 2021-06-17 |
+
+`fetch_ohlcv` brach bei der ersten leeren Seite ab — richtig am Ende der
+Historie, falsch davor. Eine leere Seite heißt zweierlei, und der Code kannte
+nur eine Bedeutung.
+
+**Behoben:** vor der ersten Zeile wird der Cursor weitergeschoben statt
+abgebrochen; nach der ersten Zeile bleibt der Abbruch. Zwei Tests, einer
+fällt gegen den alten Code durch. `qt data pull` nennt jetzt außerdem die
+Symbole, die nichts geliefert haben.
+
+**Warum das mehr ist als ein Datenfehler:** `n_eff`, der Querschnitts-Median
+und jede Zahl aus `qt placebo cross` rechnen über die Märkte, *die da sind*.
+Ein stiller Ausfall verwandelt einen unvollständigen Test in einen, der
+vollständig aussieht — genau das, wogegen `cross_market_control` im
+Kommentar argumentiert, eine Ebene tiefer.
+
+---
+
+### Fund 2: die Kontrolle war für pfadabhängige Strategien nicht anwendbar
+
+`qt placebo shuffle --strategy trend` lieferte kein Ergebnis, sondern
+Kalibrierfehler **0,0998** und Exit 1. Die Kalibrierprobe hat also
+funktioniert; nur war die Diagnose unvollständig.
+
+Der Grund ist kein Fehler in einer der beiden Seiten. `signal_series` zeichnet
+**einen durchgehenden Lauf** über die ganze Historie auf. `walk_forward` setzt
+die Strategie **je Fenster neu auf**. Für `macross` ist das gleichgültig — sie
+ist eine reine Funktion ihres Fensters, Abweichung 0,0000 (ADR-054). `trend`
+trägt einen Trailing-Stop über Bars; ihre beiden Fassungen sind verschieden,
+und zwar **bevor** irgendetwas gewürfelt wurde.
+
+**Die Konsequenz war, dass jede zustandsbehaftete Strategie prinzipiell keine
+Kontrolle bekommen konnte** — `trend`, `meanrev`, `crossmom`, `crossrev` und
+`timesfm`, also fünf von neun.
+
+**Behoben durch einen Wechsel des Vergleichspunkts.** Verglichen wird gegen
+den **Abspieler mit den echten Gewichten**, nicht gegen die Strategie: nur er
+ist mit den Ziehungen konstruktionsgleich — gleiche Bauform, gleiche
+Fenstergeometrie, nur ohne Würfel. Der Abstand zur Strategie verschwindet
+nicht, er bekommt einen Namen und steht im Bericht:
+
+```
+  Strategie selbst      +0.158
+  Abspieler (Referenz)  +0.059  Pfadabhaengigkeit 0.0998
+```
+
+Für eine zustandslose Strategie muss diese Zahl null sein; dort ist sie
+weiterhin ein Kalibrierfehler. `macross` liefert unverändert 0,0000, und
+ADR-054 bleibt damit gültig — nachgerechnet: Perzentil 75,5 % bei 200
+Ziehungen gegen 74,3 % bei 1000 in ADR-054.
+
+---
+
+### Fund 3: eine Querschnittsstrategie fiel durch, ohne je gehandelt zu haben
+
+```
+$ uv run qt placebo shuffle --strategy crossmom --symbol BTC/USD --tf 1d
+  Ziehungen mindestens so gut wie die echte: 5 von 5
+  Perzentil der echten Strategie: 0.0%
+DURCHGEFALLEN
+```
+
+Eine Rangfolge über **einen** Namen gibt es nicht (`MIN_NAMEN = 8`), also war
+jedes Gewicht `nan`, jede Rendite null und jede Ziehung null. Null gegen null
+ergibt Perzentil 0 %, und die Kalibrierprobe war zufrieden: beide Seiten
+stimmten überein, weil beide nichts taten.
+
+Drei Änderungen, jede gegen einen eigenen Weg in dieses Ergebnis:
+
+1. `permutation_control` bricht ab, wenn der Abspieler out-of-sample keinen
+   Trade macht oder das Signal durchgehend flach ist.
+2. `qt placebo shuffle` nimmt eine Symbolliste und gibt einer
+   Querschnittsstrategie ohne Angabe **den ganzen Store** — dieselbe Regel,
+   die `qt gate` seit ADR-058 anwendet.
+3. `qt placebo cross` **verweigert** Querschnittsstrategien und nennt den
+   richtigen Befehl. Ein Lauf je Markt einzeln ist bei ihnen keine
+   schwächere Prüfung, sondern gar keine.
+
+---
+
+### Fund 4: die erste Fassung der Querschnittskontrolle hätte bestanden
+
+Eine Querschnittsstrategie behauptet nicht „ich weiß **wann**", sondern „ich
+weiß **welcher Markt**". Die Episoden-Permutation aus ADR-054 ist für sie die
+falsche Kontrolle: sie tauscht je Symbol getrennt und zerstört damit die
+Nettoneutralität, die die Strategie ausmacht.
+
+Die neue Kontrolle würfelt entsprechend die **Zuordnung**. Die erste Fassung
+loste sie je Halteblock neu aus — gleiche Blöcke, gleiches Brutto, gleiches
+Netto, jeden Monat eine neue Zuordnung. Sie sah strenger aus. Das Ergebnis:
+
+```
+  Ziehungen mindestens so gut wie die echte: 0 von 3
+  Perzentil der echten Strategie: 100.0%
+BESTANDEN
+```
+
+**Das wäre die erste bestandene Negativkontrolle in der Geschichte dieses
+Projekts gewesen.** Sie war ein Artefakt, und die Reibungszeile daneben sagt,
+warum:
+
+| | echt | je Ziehung |
+|---|---|---|
+| Trades | 352 | **3.452** |
+| Umsatz | 2,38 Mio. | **29,1 Mio.** |
+
+Die Kontrolle handelte zehnmal so oft und verlor an den Gebühren, nicht an
+der Information. Der Mechanismus ist das Rebalancing-Band (ADR-008): eine
+Rangfolge aus 12-Monats-Momentum wandert langsam, die meisten
+Gewichtsänderungen bleiben unter dem Band und kosten nichts. Eine frei
+ausgeloste Zuordnung springt jedes Mal darüber.
+
+**Ersetzt durch eine Umbenennung der Märkte:** *eine* Permutation für die
+ganze Historie, der komplette Gewichtsverlauf von Markt A geht an `π(A)`.
+Damit bleibt jeder Gewichtssprung erhalten — nach Größe und Zeitpunkt — und
+zufällig ist ausschließlich, welcher Markt gemeint ist. Nachgemessen: 352
+Trades echt gegen Median 291 je Ziehung, 2,38 gegen 1,98 Mio. Umsatz. Der
+Rest der Differenz kommt daher, dass die Märkte verschieden lange Historien
+haben; er geht **zugunsten der Kontrolle**, ein Durchfallen ist damit die
+sichere Richtung.
+
+Der Preis ist Trennschärfe: eine Ziehung ist eine Auslosung, nicht sechzig.
+Dieselbe Grenze wie in ADR-054 — „nicht gezeigt" heißt nicht „gezeigt, dass
+nichts da ist".
+
+**Die Reibungszeile steht jetzt im Bericht statt in einem ADR.** In ADR-054
+war sie Prosa („Die gewürfelten Fassungen zahlen dieselbe Reibung"). Als
+Prosa hätte sie diesen Fund nicht verhindert — als Zeile im Bericht hat sie
+ihn geliefert.
+
+---
+
+### Das Ergebnis: acht Strategien geprüft, acht durchgefallen
+
+*Datenstand 2026-09-03, 27 Märkte, Walk-Forward 1000/250/20, 200 Ziehungen.*
+
+| Strategie | Kontrolle | Ergebnis | Urteil |
+|---|---|---|---|
+| `macross` BTC/USD | Episoden | Perzentil **75,5 %** | durchgefallen |
+| `trend` BTC/USD | Episoden | Perzentil **70,5 %** | durchgefallen |
+| `meanrev` BTC/USD | Episoden | Perzentil **38,5 %** | durchgefallen |
+| `timesfm` BTC/USD | Episoden | Perzentil **66,5 %** | durchgefallen |
+| `crossmom` 27 Märkte | Umbenennung | Perzentil **45,0 %** | durchgefallen |
+| `crossrev` 27 Märkte | Umbenennung | Perzentil **64,5 %** | durchgefallen |
+| `trend` 26 Märkte | Querschnitt | Median-Sharpe **−0,17**, 38 % positiv | durchgefallen |
+| `meanrev` 26 Märkte | Querschnitt | Median-Sharpe **−0,20**, 38 % positiv | durchgefallen |
+
+Die Reibungsprobe hält in allen sechs Permutationsläufen: `macross` 47 Trades
+gegen Median 46, `crossmom` 352 gegen 291, `crossrev` 1.041 gegen 962. Wo die
+Ziehungen abweichen, tun sie es nach unten — sie zahlen weniger Gebühren als
+das Original, das Urteil fällt also in die sichere Richtung.
+
+**Zwei Lücken, ausdrücklich als Lücken:**
+
+`orderflow` hat keine Kontrolle, weil sie Handelsdaten braucht und die aus dem
+in ROADMAP.md genannten Grund nicht im Repo liegen (27,8 MB für 59 Tage).
+Ungeprüft ist nicht bestanden.
+
+`timesfm` hat eine, die kaum etwas zeigt: vier Trades über sieben OOS-Fenster.
+Ein Perzentil aus vier Entscheidungen sagt fast nichts. Der Querschnittslauf
+über 27 Märkte wurde vom Betriebssystem nach 17 Märkten abgebrochen — das
+Modell wird je Markt neu geladen. Beides bleibt so stehen; nach ADR-022 ist
+ein Backtest dieser Strategie ohnehin strukturell nicht vertrauenswürdig, das
+Pretraining kennt die Kursreihen möglicherweise.
+
+**`meanrev` liegt unter dem Median seiner eigenen Ziehungen** (38,5 %): die
+Strategie ist schlechter als ihre zufällig platzierte Fassung. Sie war schon
+vorher als Testinstrument markiert (Phase 1); jetzt steht eine Zahl dabei.
+
+---
+
+### Nebenbefund: die dokumentierte Kennzahl von `macross` reproduziert nicht
+
+Aus einem frisch gezogenen Store, mit denselben Fenstern:
+
+| | ROADMAP (Stand 2026-09-01) | gemessen (Stand 2026-09-03) |
+|---|---|---|
+| `macross` BTC/USD OOS-Sharpe | 0,31 | **0,25** |
+| `macross` ETH/USD OOS-Sharpe | 0,32 | **0,28** |
+
+Die Fenstergeometrie erklärt es nicht: verschiebt man den Anker des
+Walk-Forward um 1 bis 10 Bars, bewegt sich der BTC-Wert zwischen 0,229 und
+0,266 — die Kennzahl ist auf dieser Skala wackelig, aber 0,31 liegt außerhalb.
+Woran die Differenz sonst liegt, ist mit dem heutigen Store nicht
+rekonstruierbar; der alte existiert nicht mehr.
+
+**Festgehalten wird deshalb, was messbar ist:** die Zahl, auf der die
+Paper-Konten und die ganze Begründung aus ADR-035 ruhen, ist aus einer
+frischen Umgebung nicht reproduzierbar, und der Unterschied hat dieselbe
+Größenordnung wie der behauptete Effekt. Das ist die Konvention aus ROADMAP.md
+(„jede Ergebnistabelle nennt ihren Datenstand") in ihrer unangenehmen Form:
+sie hilft nicht nur beim Einordnen, sie zeigt auch, wenn nichts einzuordnen
+ist.
+
+---
+
+### Konsequenzen
+
+- **`qt placebo shuffle` wählt die Kontrolle nach dem Typ der Strategie.**
+  Timing → Lage der Episoden, Querschnitt → Zuordnung der Märkte. Die falsche
+  Kontrolle ist kein schwächerer Test, sondern ein anderer.
+- **Der Bericht führt die Reibung mit.** Trades und Umsatz, echt gegen
+  Ziehungen. Fund 4 ist genau daran aufgefallen.
+- **Kein Lauf hat einen Versuch gekostet.** Negativkontrollen befragen keinen
+  neuen Kandidaten out-of-sample; der Zähler steht unverändert bei 16
+  (ADR-032).
+- **`fetch_ohlcv` unterscheidet die leere Seite vor der Notierung von der am
+  Ende der Historie.** Zwei Tests, einer fällt gegen den alten Code durch.
+- **Acht von neun Strategien haben jetzt eine Negativkontrolle, und keine
+  besteht sie.** Der Satz aus ZIEL.md — „Nichts im Repo hat je eine
+  Negativkontrolle bestanden" — ist damit nicht mehr eine Beobachtung über
+  drei Strategien, sondern über acht.
+
+---
+
 ## ADR-058 — Querschnitt statt Timing: was aus NVIDIAs Blueprint taugt, und was nicht
 **Datum:** 2026-09-03
 

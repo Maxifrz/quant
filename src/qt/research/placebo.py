@@ -61,6 +61,7 @@ from qt.core.events import merge_bar_streams
 from qt.core.types import Bar
 from qt.features.registry import FeatureStore
 from qt.strategy.base import Strategy, clip_weight
+from qt.strategy.cross_sectional import CrossSectionalStrategy
 
 __all__ = [
     "CrossMarketResult",
@@ -70,6 +71,7 @@ __all__ = [
     "correlation_matrix",
     "cross_market_control",
     "permutation_control",
+    "shuffle_cross_section",
     "shuffle_episodes",
     "signal_series",
 ]
@@ -210,6 +212,63 @@ def shuffle_episodes(values: list[float], rng: np.random.Generator) -> list[floa
     return out
 
 
+# ---------------------------------------------------------------------------
+# Die Permutation im Querschnitt
+# ---------------------------------------------------------------------------
+#
+# Fuer eine Timing-Strategie ist die Behauptung "ich weiss **wann**", und die
+# Kontrolle wuerfelt entsprechend die Lage der Episoden. Eine Querschnitts-
+# strategie behauptet etwas anderes: "ich weiss **welcher Markt**". Ihre
+# Kontrolle muss deshalb die Zuordnung wuerfeln, nicht die Zeit.
+#
+# Die Episoden-Permutation auf einen Querschnitt loszulassen waere kein
+# strengerer, sondern ein **kaputter** Test: sie tauscht je Symbol getrennt
+# und zerstoert damit genau die Eigenschaft, die eine Querschnittsstrategie
+# ausmacht -- dass die Gewichte eines Zeitpunkts sich zu null summieren. Die
+# gewuerfelte Fassung haette eine Nettoposition, die die echte nie hat, und
+# der Vergleich liefe gegen eine andere Wette.
+
+
+def _nach_zeit(signals: SignalMap) -> dict[datetime, dict[str, float]]:
+    karte: dict[datetime, dict[str, float]] = {}
+    for (symbol, ts), wert in signals.items():
+        karte.setdefault(ts, {})[symbol] = wert
+    return karte
+
+
+def shuffle_cross_section(signals: SignalMap, rng: np.random.Generator) -> SignalMap:
+    """Die Maerkte umbenennen: **eine** Permutation fuer die ganze Historie.
+
+    Der ganze Gewichtsverlauf von Markt A geht an Markt `pi(A)`. Erhalten
+    bleibt damit alles, was den Preis des Handelns ausmacht -- jede
+    Gewichtsaenderung, ihre Groesse, ihr Zeitpunkt, und je Zeitpunkt Brutto
+    wie Netto. Zufaellig wird ausschliesslich, **welcher** Markt gemeint ist.
+    Genau das ist die Behauptung einer Querschnittsstrategie.
+
+    **Die naheliegende Variante ist gemessen und verworfen.** Zuerst stand
+    hier eine Auslosung je Halteblock: gleiche Zahl der Bloecke, aber jeder
+    Monat eine neue Zuordnung. Sie sieht strenger aus und ist unbrauchbar --
+    `crossmom` handelte echt 352-mal bei 2,4 Mio. Umsatz, die Ziehungen
+    3.452-mal bei 29,1 Mio. Der Grund steckt im Rebalancing-Band (ADR-008):
+    die Rangfolge einer Querschnittsstrategie wandert von Monat zu Monat
+    langsam, die meisten Gewichtsaenderungen bleiben unter dem Band und
+    kosten nichts. Eine frei ausgeloste Zuordnung springt dagegen jedes Mal
+    ueber das Band. Die Kontrolle verlor damit an den Gebuehren statt an der
+    Information -- und `crossmom` haette mit Perzentil 100 % als erste
+    Strategie dieses Projekts eine Negativkontrolle bestanden, ohne dass das
+    Signal etwas dazu beigetragen haette (ADR-059).
+
+    Der Preis dieser Fassung ist Trennschaerfe: eine Ziehung ist **eine**
+    Auslosung, nicht sechzig. Die Verteilung ist entsprechend breit. Das ist
+    dieselbe Grenze wie in ADR-054 -- ein Perzentil unter 95 % heisst "nicht
+    gezeigt", nicht "gezeigt, dass nichts da ist".
+    """
+    alle = sorted({sym for sym, _ in signals})
+    ziel = [alle[i] for i in rng.permutation(len(alle))]
+    zuordnung = dict(zip(alle, ziel, strict=True))
+    return {(zuordnung[sym], ts): wert for (sym, ts), wert in signals.items()}
+
+
 def _shuffled_map(signals: SignalMap, rng: np.random.Generator) -> SignalMap:
     """Je Symbol die Episoden tauschen, Zeitachse unveraendert lassen."""
     out: SignalMap = {}
@@ -224,42 +283,83 @@ def _shuffled_map(signals: SignalMap, rng: np.random.Generator) -> SignalMap:
 
 @dataclass(slots=True)
 class PermutationResult:
-    """Wo liegt die echte Strategie in der Verteilung ihrer gewuerfelten Fassungen?"""
+    """Wo liegt die echte Strategie in der Verteilung ihrer gewuerfelten Fassungen?
+
+    Verglichen wird gegen `kalibriert` und nicht gegen `echt`, und der
+    Unterschied ist nicht kosmetisch. `kalibriert` ist der Abspieler mit den
+    **echten** Gewichten -- dieselbe Bauform wie jede Ziehung, nur ohne
+    Wuerfel. Nur diese beiden Groessen sind konstruktionsgleich.
+
+    Fuer eine zustandslose Strategie fallen beide Zahlen zusammen (`macross`:
+    Abstand 0,0000, ADR-054), und die Wahl ist folgenlos. Fuer eine
+    pfadabhaengige nicht: der Walk-Forward setzt die Strategie in jedem
+    Fenster neu auf, der Abspieler laeuft durch. Wer dort `echt` gegen die
+    Ziehungen haelt, vergleicht zwei Groessen, die sich schon ohne jeden
+    Wuerfel unterscheiden.
+    """
 
     echt: float
     kalibriert: float
     ziehungen: list[float] = field(default_factory=list)
     kennzahl: str = "Sharpe"
     n_windows: int = 0
+    #: Trades und Umsatz des Abspielers mit echten Gewichten.
+    reibung_echt: tuple[int, float] = (0, 0.0)
+    #: Dieselben zwei Zahlen je Ziehung -- die Probe, ob die Kontrolle
+    #: dieselbe Reibung zahlt wie das Original (ADR-054).
+    reibung_ziehungen: list[tuple[int, float]] = field(default_factory=list)
 
     @property
     def perzentil(self) -> float:
-        """Anteil der Ziehungen, die die echte Strategie schlaegt."""
+        """Anteil der Ziehungen, die der Abspieler mit echten Gewichten schlaegt."""
         if not self.ziehungen:
             return float("nan")
-        return float(np.mean([z < self.echt for z in self.ziehungen]))
+        return float(np.mean([z < self.kalibriert for z in self.ziehungen]))
 
     @property
-    def kalibrierfehler(self) -> float:
-        """Abstand zwischen Strategie und Abspieler mit echten Gewichten."""
+    def pfadabhaengigkeit(self) -> float:
+        """Abstand zwischen Strategie und Abspieler mit echten Gewichten.
+
+        Zustandslose Strategie: muss null sein, jede Abweichung ist ein
+        Kalibrierfehler und macht das Ergebnis wertlos. Pfadabhaengige
+        Strategie: das ist der Preis der Fensterschnitte des Walk-Forward --
+        eine Eigenschaft der Strategie, kein Fehler der Kontrolle.
+        """
         return abs(self.echt - self.kalibriert)
 
     def bestanden(self, schwelle: float = 0.95) -> bool:
         return bool(self.perzentil >= schwelle)
 
+    def _reibungszeilen(self) -> list[str]:
+        if not self.reibung_ziehungen:
+            return []
+        trades = np.array([t for t, _ in self.reibung_ziehungen], dtype=float)
+        umsatz = np.array([u for _, u in self.reibung_ziehungen], dtype=float)
+        et, eu = self.reibung_echt
+        return [
+            "",
+            "  Zahlt die Kontrolle dieselbe Reibung? (ADR-054)",
+            f"    Trades   echt {et:>10,}   Ziehungen Median {np.median(trades):>10,.0f}"
+            f"  ({trades.min():.0f}-{trades.max():.0f})",
+            f"    Umsatz   echt {eu:>10,.0f}   Ziehungen Median {np.median(umsatz):>10,.0f}",
+        ]
+
     def table(self) -> str:
         z = np.asarray(self.ziehungen, dtype=float)
-        besser = int((z >= self.echt).sum())
+        besser = int((z >= self.kalibriert).sum())
         zeilen = [
             f"  Kennzahl              {self.kennzahl} ueber {self.n_windows} OOS-Fenster",
-            f"  echte Strategie       {self.echt:+.3f}",
-            f"  Abspieler (Kontrolle) {self.kalibriert:+.3f}  "
-            f"Abweichung {self.kalibrierfehler:.4f}",
+            f"  Strategie selbst      {self.echt:+.3f}",
+            f"  Abspieler (Referenz)  {self.kalibriert:+.3f}  "
+            f"Pfadabhaengigkeit {self.pfadabhaengigkeit:.4f}",
             "",
-            f"  {len(z)} Ziehungen mit getauschten Episodenlaengen:",
+            f"  {len(z)} Ziehungen:",
             f"    Median   {np.median(z):+.3f}",
             f"    p05/p95  {np.quantile(z, 0.05):+.3f} / {np.quantile(z, 0.95):+.3f}",
             f"    Maximum  {z.max():+.3f}",
+        ]
+        zeilen += self._reibungszeilen()
+        zeilen += [
             "",
             f"  Ziehungen mindestens so gut wie die echte: {besser} von {len(z)}",
             f"  Perzentil der echten Strategie: {self.perzentil:.1%}",
@@ -277,17 +377,23 @@ def permutation_control(
     seed: int = 0,
     cfg: BacktestConfig | None = None,
     on_draw: Callable[[int, float], None] | None = None,
+    quer: bool | None = None,
 ) -> PermutationResult:
     """Die Strategie gegen `draws` gewuerfelte Fassungen ihrer selbst.
 
     Ablauf, und die Reihenfolge ist Absicht:
 
     1. Echten Gewichtsverlauf ueber die ganze Historie aufzeichnen.
-    2. **Kalibrieren:** denselben Verlauf durch den Abspieler schicken. Kommt
-       nicht dieselbe Kennzahl heraus, vergleicht der Test zwei verschiedene
-       Dinge -- das Ergebnis wird trotzdem zurueckgegeben, aber mit der
-       Abweichung daneben, damit niemand es ungeprueft liest.
-    3. `draws` Ziehungen mit getauschten Episodenlaengen.
+    2. **Referenz:** denselben Verlauf durch den Abspieler schicken. Diese
+       Zahl, nicht die der Strategie, ist der Vergleichspunkt -- sie ist die
+       einzige, die mit den Ziehungen konstruktionsgleich ist. Der Abstand zur
+       Strategie steht als `pfadabhaengigkeit` daneben.
+    3. `draws` Ziehungen.
+
+    `quer` waehlt, **was** gewuerfelt wird: die Lage der Episoden in der Zeit
+    (Timing-Strategie) oder die Zuordnung der Gewichte zu Maerkten
+    (Querschnittsstrategie). Ohne Angabe entscheidet der Typ der Strategie --
+    die falsche Kontrolle ist kein schwaecherer Test, sondern ein anderer.
 
     Der Warmup des Abspielers wird auf den der Strategie gesetzt, damit alle
     Laeufe **dieselbe** Fenstergeometrie sehen.
@@ -299,6 +405,8 @@ def permutation_control(
     warmup = probe.warmup_bars
     timeframe = probe.timeframe
     symbols = list(probe.symbols)
+    if quer is None:
+        quer = isinstance(probe, CrossSectionalStrategy)
 
     echt = walk_forward(
         make_strategy, bars, train_bars=train_bars, test_bars=test_bars,
@@ -311,6 +419,17 @@ def permutation_control(
             "Die Strategie hat ueber die ganze Historie kein einziges Signal "
             "geliefert -- es gibt nichts zu permutieren."
         )
+    if not any(wert == wert and wert != 0.0 for wert in signale.values()):
+        # Ohne diese Zeile beantwortet die Kontrolle eine Frage, die niemand
+        # gestellt hat: null gegen null ist Perzentil 0 %, und das las sich
+        # bis ADR-059 wie ein Durchfallen. Eine Querschnittsstrategie auf
+        # einem einzelnen Markt landet genau hier.
+        raise InsufficientDataError(
+            "Die Strategie war ueber die ganze Historie flach oder ohne "
+            "Meinung -- es gibt nichts zu permutieren. Bei einer "
+            "Querschnittsstrategie heisst das meist: zu wenige Maerkte "
+            "uebergeben."
+        )
 
     def _lauf(karte: SignalMap):
         return walk_forward(
@@ -321,21 +440,35 @@ def permutation_control(
             embargo_bars=embargo_bars, cfg=cfg,
         )
 
-    kalibriert = _lauf(signale).metrics.sharpe
+    referenz = _lauf(signale)
+    if referenz.metrics.n_trades == 0:
+        raise InsufficientDataError(
+            "Der Abspieler hat out-of-sample keinen einzigen Trade gemacht -- "
+            "ein Vergleich gegen Ziehungen waere null gegen null."
+        )
 
+    mischen = shuffle_cross_section if quer else _shuffled_map
     rng = np.random.default_rng(seed)
     ziehungen: list[float] = []
+    reibung: list[tuple[int, float]] = []
     for i in range(draws):
-        wert = _lauf(_shuffled_map(signale, rng)).metrics.sharpe
-        ziehungen.append(float(wert))
+        ergebnis = _lauf(mischen(signale, rng))
+        wert = float(ergebnis.metrics.sharpe)
+        ziehungen.append(wert)
+        reibung.append((int(ergebnis.metrics.n_trades), float(ergebnis.metrics.turnover)))
         if on_draw is not None:
-            on_draw(i + 1, float(wert))
+            on_draw(i + 1, wert)
 
     return PermutationResult(
         echt=float(echt.metrics.sharpe),
-        kalibriert=float(kalibriert),
+        kalibriert=float(referenz.metrics.sharpe),
         ziehungen=ziehungen,
         n_windows=echt.n_windows,
+        reibung_echt=(
+            int(referenz.metrics.n_trades),
+            float(referenz.metrics.turnover),
+        ),
+        reibung_ziehungen=reibung,
     )
 
 

@@ -29,6 +29,7 @@ from qt.research.placebo import (
     cross_market_control,
     mean_pairwise_correlation,
     permutation_control,
+    shuffle_cross_section,
     shuffle_episodes,
     signal_series,
 )
@@ -199,8 +200,9 @@ def test_die_kontrolle_meldet_kalibrierung_und_verteilung():
         _macross, bars, train_bars=250, test_bars=120, embargo_bars=10,
         draws=12, seed=7,
     )
-    assert ergebnis.kalibrierfehler < 1e-9, (
-        "der Abspieler bildet die Strategie nicht ab -- Vergleich ungueltig"
+    assert ergebnis.pfadabhaengigkeit < 1e-9, (
+        "macross ist zustandslos -- Abspieler und Strategie muessen "
+        "bitgleich sein, sonst ist der Vergleich ungueltig"
     )
     assert len(ergebnis.ziehungen) == 12
     assert 0.0 <= ergebnis.perzentil <= 1.0
@@ -377,3 +379,173 @@ def test_bei_unkorrelierten_maerkten_stimmen_beide_schaetzer_ueberein():
     )
     assert ergebnis.unabhaengige_richtungen == pytest.approx(6.0, abs=0.6)
     assert ergebnis.effektive_maerkte == pytest.approx(6.0, abs=0.6)
+
+
+# ---------------------------------------------------------------------------
+# Die Permutation im Querschnitt (ADR-059)
+# ---------------------------------------------------------------------------
+
+
+def _quer_signale(n_ts: int = 120, n_sym: int = 6, halten: int = 20, seed: int = 1):
+    """Ein Querschnitts-Gewichtsverlauf mit **traeger** Rangfolge.
+
+    Die Traegheit ist nicht Beiwerk, sie ist der Punkt: eine Rangfolge aus
+    12-Monats-Momentum wandert von Monat zu Monat langsam, und genau deshalb
+    bleiben die meisten Gewichtsaenderungen unter dem Rebalancing-Band
+    (ADR-008) und kosten nichts. Ein Testfall mit frisch gewuerfelten
+    Gewichten je Termin haette diese Eigenschaft nicht -- und koennte die
+    beiden Bauformen der Kontrolle nicht auseinanderhalten.
+    """
+    from datetime import datetime, timezone
+
+    rng = np.random.default_rng(seed)
+    symbole = [f"S{i}" for i in range(n_sym)]
+    start = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    signale = {}
+    roh = rng.normal(size=n_sym)
+    gewichte = list(roh - roh.mean())
+    for i in range(n_ts):
+        if i and i % halten == 0:
+            roh = np.array(gewichte) + rng.normal(scale=0.05, size=n_sym)
+            gewichte = list(roh - roh.mean())
+        ts = start + timedelta(days=i)
+        for sym, w in zip(symbole, gewichte, strict=True):
+            signale[(sym, ts)] = float(w)
+    return signale
+
+
+def _gewichtsspruenge(karte):
+    """Alle Gewichtsaenderungen je Marktslot, der Groesse nach sortiert."""
+    je_symbol = {}
+    for (sym, ts), wert in karte.items():
+        je_symbol.setdefault(sym, []).append((ts, wert))
+    spruenge = []
+    for reihe in je_symbol.values():
+        reihe.sort()
+        spruenge += [
+            round(abs(b - a), 9)
+            for (_, a), (_, b) in zip(reihe, reihe[1:], strict=False)
+            if a != b
+        ]
+    return sorted(spruenge)
+
+
+def test_die_querschnitts_permutation_erhaelt_brutto_netto_und_die_gewichte():
+    """Je Zeitpunkt darf sich **nur** aendern, welcher Markt was bekommt."""
+    signale = _quer_signale()
+    getauscht = shuffle_cross_section(signale, np.random.default_rng(0))
+
+    assert set(getauscht) == set(signale), "kein Markt darf verschwinden"
+
+    nach_zeit = {}
+    for (sym, ts), wert in signale.items():
+        nach_zeit.setdefault(ts, []).append(wert)
+    neu_zeit = {}
+    for (sym, ts), wert in getauscht.items():
+        neu_zeit.setdefault(ts, []).append(wert)
+
+    for ts, werte in nach_zeit.items():
+        assert sorted(werte) == pytest.approx(sorted(neu_zeit[ts])), (
+            "die Menge der Gewichte eines Zeitpunkts muss dieselbe bleiben"
+        )
+        assert sum(werte) == pytest.approx(sum(neu_zeit[ts])), "Netto"
+        assert sum(abs(w) for w in werte) == pytest.approx(
+            sum(abs(w) for w in neu_zeit[ts])
+        ), "Brutto"
+
+
+def test_die_querschnitts_permutation_verschiebt_wirklich_etwas():
+    signale = _quer_signale()
+    getauscht = shuffle_cross_section(signale, np.random.default_rng(0))
+    assert any(getauscht[k] != v for k, v in signale.items()), (
+        "eine Permutation, die nichts bewegt, laesst jede Strategie bestehen"
+    )
+
+
+def _auslosung_je_block(signals, rng, halten=20):
+    """Die **verworfene** Bauform: jeder Umschichtungstermin lost neu aus.
+
+    Steht hier und nicht in `qt.research.placebo`, weil sie nicht benutzt
+    werden soll -- nur bewiesen, dass sie kaputt ist (ADR-059).
+    """
+    karte = {}
+    for (sym, ts), wert in signals.items():
+        karte.setdefault(ts, {})[sym] = wert
+    stempel = sorted(karte)
+    alle = sorted({sym for sym, _ in signals})
+    out, ordnung = {}, None
+    for i, ts in enumerate(stempel):
+        if i % halten == 0:
+            ordnung = dict(zip(alle, rng.permutation(len(alle)), strict=True))
+        ziel = sorted(alle, key=lambda sym: ordnung[sym])
+        zuordnung = dict(zip(alle, ziel, strict=True))
+        for sym, wert in karte[ts].items():
+            out[(zuordnung[sym], ts)] = wert
+    return out
+
+
+def test_die_querschnitts_permutation_erhaelt_die_gewichtsspruenge():
+    """Der Test, der die erste Fassung dieser Kontrolle gekippt hat.
+
+    Brutto und Netto erhaelt die Auslosung je Block genauso. Die Reibung
+    nicht: das Rebalancing-Band (ADR-008) laesst kleine Gewichtsaenderungen
+    liegen, und eine traege Rangfolge produziert fast nur kleine. Eine frei
+    ausgeloste Zuordnung springt dagegen jedes Mal weit.
+
+    Gemessen an `crossmom` ueber 27 Maerkte: 352 Trades und 2,4 Mio. Umsatz
+    echt gegen 3.452 und 29,1 Mio. je Ziehung -- Perzentil 100 %, gewonnen an
+    den Gebuehren der Kontrolle statt an der eigenen Information.
+    """
+    signale = _quer_signale()
+    echt = _gewichtsspruenge(signale)
+
+    umbenannt = _gewichtsspruenge(
+        shuffle_cross_section(signale, np.random.default_rng(4))
+    )
+    assert umbenannt == pytest.approx(echt), (
+        "die Umbenennung gibt jedem Markt einen ganzen Verlauf -- die "
+        "Spruenge muessen dieselben bleiben"
+    )
+
+    je_block = _gewichtsspruenge(
+        _auslosung_je_block(signale, np.random.default_rng(4))
+    )
+    assert sum(je_block) > 3 * sum(echt), (
+        "die verworfene Bauform muss hier auffallen, sonst prueft dieser "
+        "Test nichts"
+    )
+
+
+def test_die_kontrolle_waehlt_die_querschnitts_permutation_selbst():
+    """Die falsche Kontrolle ist kein schwaecherer Test, sondern ein anderer."""
+    import inspect
+
+    from qt.research.placebo import permutation_control
+    from qt.strategy.cross_sectional import CrossSectionalStrategy
+
+    quelle = inspect.getsource(permutation_control)
+    assert "isinstance(probe, CrossSectionalStrategy)" in quelle
+    assert issubclass(get("crossmom"), CrossSectionalStrategy)
+
+
+def test_eine_strategie_ohne_position_ist_nicht_auswertbar():
+    """Null gegen null ist kein Durchfallen -- es ist gar kein Vergleich.
+
+    Bis ADR-059 lieferte `qt placebo shuffle --strategy crossmom
+    --symbol BTC/USD` genau das: eine Rangfolge ueber einen Namen gibt es
+    nicht, alle Gewichte sind `nan`, und die Kontrolle meldete mit ernster
+    Miene "Perzentil 0,0 % -- DURCHGEFALLEN".
+    """
+    from qt.backtest.walkforward import InsufficientDataError
+
+    bars = _bars(700)
+    flach = {(b.symbol, b.ts): 0.0 for b in bars}
+
+    def mach():
+        return PlaybackStrategy(["BTC/USD"], "1d", signals=flach, warmup_bars=22)
+
+    with pytest.raises(InsufficientDataError, match="flach oder ohne"):
+        permutation_control(
+            mach, {"BTC/USD": bars}, train_bars=250, test_bars=120,
+            embargo_bars=10, draws=3,
+        )

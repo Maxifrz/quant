@@ -10,7 +10,22 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-ZWEIG="claude/llm-quant-algo-planning-f1ohgo"
+# Der Zweig, auf dem dieser Checkout steht -- **kein fester Name**. Bis
+# ADR-059 stand hier `claude/llm-quant-algo-planning-f1ohgo`, und dessen Pull
+# Request ist laengst zusammengefuehrt. Jeder Tick schrieb den Kontostand
+# damit auf einen Zweig, den niemand mehr zusammenfuehrt: `git push -u` legt
+# ihn wortlos neu an, der Zustand landet daneben statt in `main`, und nichts
+# davon sieht nach einem Fehler aus.
+#
+# Zurueckschreiben, wo gelesen wurde, ist die einzige Regel, die sich selbst
+# konsistent haelt: der Zustand, den der naechste Tick vorfindet, ist der,
+# den dieser hinterlassen hat.
+ZWEIG="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$ZWEIG" = "HEAD" ]; then
+  echo "!! Loser HEAD -- ohne Zweig gibt es keinen Ort, an dem der Kontostand"
+  echo "   ueberlebt. Erst auschecken, dann ticken."
+  exit 1
+fi
 KONTEN=("BTC/USD" "ETH/USD")
 gemeldet=0
 
@@ -43,9 +58,23 @@ im Datenverzeichnis, das sich nicht rekonstruieren laesst.
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01Mv9TxGF52xLNLFA7qmQTmM"
 
+gesichert=1
 for warte in 2 4 8 16; do
-  git push -u origin "$ZWEIG" && break
+  if git push -u origin "$ZWEIG"; then
+    gesichert=0
+    break
+  fi
   sleep "$warte"
 done
-echo "Kontostand gesichert."
+
+# Bis ADR-059 stand hier unbedingt "Kontostand gesichert." -- auch wenn alle
+# vier Versuche gescheitert waren. Ein Commit ohne Push ueberlebt den
+# Container nicht, und die Zeile behauptete das Gegenteil.
+if [ "$gesichert" -ne 0 ]; then
+  echo "!! Vier Push-Versuche auf ${ZWEIG} gescheitert -- der Commit liegt nur"
+  echo "   lokal und ist mit dem Container weg. Das ist der einzige Zustand"
+  echo "   im Datenverzeichnis, der sich nicht rekonstruieren laesst."
+  exit 1
+fi
+echo "Kontostand auf ${ZWEIG} gesichert."
 exit "$gemeldet"

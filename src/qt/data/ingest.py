@@ -48,9 +48,15 @@ def fetch_ohlcv(
 ) -> pd.DataFrame:
     """Nativen Timeframe paginiert abholen.
 
-    Laeuft vorwaerts von `since`. Bricht ab, wenn die Exchange nichts Neues
-    mehr liefert -- ohne diesen Abbruch dreht die Schleife am Ende der
-    Historie endlos.
+    Laeuft vorwaerts von `since`. Am Ende der Historie liefert die Exchange
+    eine leere Seite und die Schleife bricht ab -- ohne diesen Abbruch drehte
+    sie dort endlos.
+
+    **Vor** der ersten Zeile bedeutet dieselbe leere Seite etwas anderes: der
+    Markt war zu diesem Zeitpunkt noch nicht notiert. Dort wird der Cursor
+    weitergeschoben statt abgebrochen. Der Unterschied ist nicht theoretisch
+    -- er hat fuenf der vierzehn dokumentierten Krypto-Maerkte gekostet
+    (ADR-059).
     """
     if timeframe not in exchange.timeframes:
         raise ValueError(
@@ -65,14 +71,22 @@ def fetch_ohlcv(
     rows: list[list] = []
     while cursor < end_ms:
         batch = exchange.fetch_ohlcv(symbol, timeframe, since=cursor, limit=CHUNK)
-        if not batch:
-            break
 
         # Nur echt neue Bars behalten: manche Exchanges liefern den
         # `since`-Bar erneut mit, was sonst zu einer Endlosschleife fuehrt.
         batch = [b for b in batch if b[0] >= cursor]
+
         if not batch:
-            break
+            # Eine leere Seite heisst zweierlei, und die Unterscheidung ist
+            # der ganze Punkt (ADR-059): **nach** der ersten Zeile ist sie das
+            # Ende der Historie, **davor** nur ein Zeitraum vor der Notierung.
+            # Wer in beiden Faellen abbricht, verliert jeden Markt, der
+            # spaeter gelistet wurde als `since` -- und zwar lautlos.
+            if rows:
+                break
+            cursor += CHUNK * step_ms
+            time.sleep(rate_limit_ms / 1000)
+            continue
 
         rows.extend(batch)
         last_ts = batch[-1][0]

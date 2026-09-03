@@ -1,6 +1,6 @@
 # Das Ziel, und was bis dahin fehlt
 
-Stand 2026-09-02. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
+Stand 2026-09-03. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
 
 ---
 
@@ -38,7 +38,7 @@ kein Scheitern. Siehe *Abbruchbedingung* unten.
 
 ## Warum genau dieses Ziel — die Arithmetik, die alles diktiert
 
-Sieben Hypothesen geprüft, sieben gescheitert. Der Grund ist in keinem einzigen
+Acht Hypothesen geprüft, acht gescheitert. Der Grund ist in keinem einzigen
 Fall gewesen, dass die Idee dumm war. Er ist immer derselbe: **es gibt zu wenig
 unabhängige Evidenz, um irgendetwas zu zeigen.**
 
@@ -55,10 +55,12 @@ Bei 7,7 Jahren Historie:
 | 5,0 | 0,33 | + Aktien, FX, Rohstoffe |
 | 8,0 | 0,26 | vier echte Anlageklassen |
 
-**`macross` hat 0,31.** Um das auf einer einzelnen Reihe zu zeigen, bräuchte es
-**46 Jahre**. Deshalb ist es an der Permutationskontrolle gescheitert (ADR-054),
-und deshalb wäre es an jeder anderen auch gescheitert. Nicht weil es schlecht
-ist, sondern weil die Datenlage die Frage nicht beantworten kann.
+**`macross` hat 0,31** — und auf einem am 2026-09-03 frisch gezogenen Store nur
+noch **0,25** (ADR-059). Um 0,31 auf einer einzelnen Reihe zu zeigen, bräuchte
+es **46 Jahre**; für 0,25 nach derselben Rechnung rund **71**. Deshalb ist es an
+der Permutationskontrolle gescheitert (ADR-054), und deshalb wäre es an jeder
+anderen auch gescheitert. Nicht weil es schlecht ist, sondern weil die
+Datenlage die Frage nicht beantworten kann.
 
 Zwei Wege führen aus dieser Zeile heraus, und nur zwei:
 
@@ -260,11 +262,17 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    > IC-Streuung von 0,40 heißt, dass auch ein echter Effekt hier schwer zu
    > zeigen wäre. Dieselbe Datenknappheit wie überall, nur an einer anderen
    > Achse.
-   **Offen, und blockiert:** in dieser Umgebung ist kein API-Schlüssel
-   gesetzt. Die Kette ist gegen die Stubs end-to-end geprüft; es fehlt der
-   Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt die beiden
-   harten Grenzen inzwischen — vorher lief es gegen eine Wand, die es nicht
-   sah.
+   **Nicht mehr blockiert, und das ist neu.** Dieser Absatz stand hier als
+   „in dieser Umgebung ist kein API-Schlüssel gesetzt". Am 2026-09-03 ist
+   `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
+   durch (ADR-059). Die Kette war ohnehin gegen die Stubs end-to-end geprüft;
+   es fehlte der Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt
+   die beiden harten Grenzen inzwischen — vorher lief es gegen eine Wand, die
+   es nicht sah.
+
+   Nachsehen statt annehmen: `env | grep NVIDIA_API_KEY`, und
+   `uv run qt alloc ... --stub` nennt in der Telemetriezeile die Zahl der
+   Aufrufe, die ein echter Lauf kosten würde (derzeit 20).
 3. **Jeder Kandidat durchläuft die volle Kette, in dieser Reihenfolge:**
    Sandbox → Kritik → Walk-Forward → DSR → `qt placebo shuffle` →
    `qt placebo cross`. Die Kontrollen stehen jetzt als Befehl bereit
@@ -318,15 +326,20 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei **15** und vergisst nichts (ADR-032, ADR-057).
+Versuchszähler steht bei **16** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
 
 ---
 
 ## Der ehrliche Erwartungswert
 
-Sieben Hypothesen, sieben gescheitert. Nichts im Repo hat je eine
-Negativkontrolle bestanden. Es gibt keinen Grund anzunehmen, dass eine
+Acht Hypothesen, acht gescheitert. Nichts im Repo hat je eine
+Negativkontrolle bestanden — und seit ADR-059 ist das keine Beobachtung über
+drei Strategien mehr, sondern über acht: `macross`, `trend`, `meanrev`,
+`timesfm`, `crossmom` und `crossrev` liegen zwischen Perzentil 38 % und 76 %
+ihrer eigenen gewürfelten Fassungen, gefordert waren 95 %; `elliott` und
+`hashribbon` sind schon vorher gefallen. Ungeprüft ist allein `orderflow`,
+und ungeprüft ist nicht bestanden. Es gibt keinen Grund anzunehmen, dass eine
 verbreiterte Datenbasis daran etwas ändert — sie macht nur die *Frage*
 entscheidbar, die bisher offenbleiben musste.
 
