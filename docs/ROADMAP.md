@@ -151,10 +151,13 @@
 >    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
 >    die Datenlage, sondern ein Signal.
 > 3. **`orderflow` eine Kontrolle geben oder die Strategie streichen.** Sie ist
->    die letzte ohne, und der Grund ist ein Speicherproblem, kein
->    methodisches: 27,8 MB für 59 nutzbare Tage, ein Jahr wären rund 170 MB,
->    und GitHub lehnt Dateien über 100 MB ab. Eine Strategie in der Bibliothek,
->    die sich nicht prüfen lässt, ist eine offene Rechnung.
+>    die letzte ohne. Der Grund war hier als Speicherproblem geführt und ist
+>    keines: Kraken liefert Trades ab 2019 auf Zuruf, sie sind reproduzierbar
+>    und gehören damit unter `/data/*` wie die Bars (ADR-063). Was bleibt, ist
+>    ein Preis — 19 Anfragen je Tag Historie, für sieben Walk-Forward-Fenster
+>    auf 4h rund **drei Stunden je Sitzung**. Der Abzug läuft seit ADR-063
+>    durch; vorher war er quadratisch in seiner eigenen Ausgabe und deshalb
+>    praktisch nicht machbar.
 > 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
 >    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
@@ -169,12 +172,26 @@
 > Daten — was fehlt, ist ein zweites Testfenster, und das liefert nur eine
 > breitere Datenbasis oder Vorwärtszeit.
 >
-> **Order-Flow bleibt herabgestuft, und zwar aus einem gemessenen Grund.** Der
-> Punkt stand hier lange auf Platz 2 mit der Begründung, er brauche „dieselbe
-> Sicherungslogik wie der Paper-Zustand". Das geht nicht auf: der Paper-Zustand
-> sind 2 KB JSON, die Trades sind 27,8 MB für 59 nutzbare Tage. Dazu lebt Order
-> Flow auf 4h, und ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede*
-> getestete Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen.
+> **Order-Flow bleibt herabgestuft — die Begründung dafür war aber falsch.**
+> Hier stand, ein Jahr Trades wären „rund 170 MB, und GitHub lehnt Dateien über
+> 100 MB ab". Gemessen sind es 1,26 MB am Tag, also 460 MB im Jahr, und die
+> 100-MB-Grenze fiele schon am Tag 79. Beides ist gleichgültig: die Daten
+> gehören gar nicht ins Repository, weil Kraken sie auf Zuruf nachliefert
+> (ADR-063).
+>
+> Das eigentliche Hindernis war ein anderes und stand nirgends: `write_trades`
+> schrieb die ganze Datei bei jedem Anhängen neu — rund **84 GB geschriebene
+> Bytes für 460 MB Ergebnis**. Behoben durch Tagesteile; ein abgeschlossener
+> Tag wird nie wieder angefasst.
+>
+> Was übrig bleibt und die Herabstufung trägt: Order Flow lebt auf 4h, und
+> ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede* getestete
+> Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen — Gate 1 lässt seit
+> ADR-056 ohnehin nur 1d oder gröber zu.
+>
+> **Ein falscher Grund für eine richtige Entscheidung ist keine harmlose
+> Ungenauigkeit.** Er wird zitiert, und irgendwann trifft jemand auf seiner
+> Grundlage eine andere Entscheidung.
 >
 > **Was ausdrücklich nicht empfohlen wird:** noch eine Strategie-Idee. Nicht
 > weil Ideen schlecht wären, sondern weil dieses Projekt gerade achtmal

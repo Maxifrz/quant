@@ -8,6 +8,7 @@ und die Strategie muss auch ohne es voll funktionsfaehig sein (ADR-022).
 
 from __future__ import annotations
 
+import sys
 import warnings
 
 import numpy as np
@@ -249,9 +250,23 @@ def test_deterministic_across_runs():
 # ---------------------------------------------------------------------------
 
 
-def test_missing_package_warns_once_and_holds_last_weight():
+def test_missing_package_warns_once_and_holds_last_weight(monkeypatch):
     """Ohne installiertes `timesfm` faellt der Default-Forecaster zurueck --
-    mit genau einer Warnung, nicht einer pro Bar, und ohne Absturz."""
+    mit genau einer Warnung, nicht einer pro Bar, und ohne Absturz.
+
+    **Das Fehlen wird erzwungen, nicht vorausgesetzt.** Bis 2026-09-03 stand
+    hier nur `_strategy(None)` und die Annahme, das Paket sei nicht da. In
+    einer Umgebung mit `timesfm` lud der Test daraufhin einen
+    mehrere-hundert-MB-Checkpoint von huggingface.co, warnte nie -- und fiel
+    mit `assert 0 == 1` durch. Ein Test, dessen Ergebnis davon abhaengt, was
+    zufaellig installiert ist, prueft die Umgebung und nicht den Code.
+
+    `sys.modules["timesfm"] = None` laesst `import timesfm` mit `ImportError`
+    scheitern, egal ob das Paket vorhanden ist. Damit laeuft genau der Pfad,
+    den dieser Test meint -- und er laeuft ohne Netz.
+    """
+    monkeypatch.setitem(sys.modules, "timesfm", None)
+
     s = _strategy(None, forecast_every=8)  # Default-Forecaster: echtes TimesFM
     bars = _bars(300)
 
@@ -261,6 +276,9 @@ def test_missing_package_warns_once_and_holds_last_weight():
 
     runtime_warnings = [w for w in caught if issubclass(w.category, RuntimeWarning)]
     assert len(runtime_warnings) == 1
+    assert "uv sync --extra timesfm" in str(runtime_warnings[0].message), (
+        "die Warnung soll sagen, wie man es behebt"
+    )
     assert result.n_trades == 0
     assert s.telemetry.failures > 0
 
