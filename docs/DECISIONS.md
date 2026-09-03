@@ -5,6 +5,126 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-067 — Die Gegenrichtung geprüft: wo machen wir uns schlechter, als wir sind?
+**Datum:** 2026-09-03
+
+**Der Anlass:** ADR-066 endet mit einem unbequemen Satz — der Fehler fiel nur
+auf, weil er die Zahlen **zu gut** aussehen ließ, und einer in der
+Gegenrichtung wäre niemandem aufgefallen. Dieses ADR ist die Suche danach.
+
+**Das Ergebnis vorweg:** vier Stellen exakt gegen von Hand gerechnete Werte
+geprüft, keine Abweichung. Drei kleine pessimistische Effekte gefunden, alle
+ohne Wirkung auf eine Schlussfolgerung. Und ein Befund in der **anderen**
+Richtung, der größer ist als alles Pessimistische zusammen.
+
+---
+
+### Was geprüft wurde und stimmt
+
+**Kosten je Round-Trip.** Ein Konto, konstanter Kurs, genau ein Rein und ein
+Raus:
+
+```
+Modell:     130.0 bps
+Gemessen:   130.0 bps   (Gebuehr 1.200 + Slippage 100 auf 100.000)
+Abweichung: +0.0 bps
+```
+
+**Ordergrößen.** `rebalance_order` bildet `delta = ziel_menge − ist_menge`.
+Gebühren fallen auf die *Differenz* an, nicht auf das Zielgewicht — der
+naheliegendste Weg zu sechsfach zu hohen Kosten ist nicht beschritten.
+
+**Annualisierung bei fremden Handelskalendern.** Die Sorge aus ADR-055: eine
+Aktienreihe mit 252 Handelstagen, annualisiert mit 365, hätte eine um Faktor
+1,20 zu hohe Vola und einen entsprechend zu niedrigen Sharpe.
+
+| Reihe | Perioden/Jahr gemessen | Sharpe von Hand | Sharpe laut System |
+|---|---|---|---|
+| nur Börsentage | 260,9 | +0,112 | +0,114 |
+| alle Tage | 365,2 | +0,135 | +0,135 |
+
+`observed_periods_per_year` misst die **tatsächliche** Bar-Dichte statt sie
+aus dem Timeframe zu raten. Die 1,5 % Abweichung oben sind mein synthetischer
+Kalender ohne Feiertage — und sie gehen nach oben, nicht nach unten.
+
+**Gebühren im Walk-Forward.** `n_trades`, `turnover` und `fees_paid` eines
+Fensters kommen alle aus derselben, auf das Testfenster **gefilterten**
+Fill-Liste. Kein Doppelzählen von Warmup-Gebühren.
+
+### Drei kleine pessimistische Effekte
+
+**1. Erzwungene Wiedereinstiege an den Fenstergrenzen.** Der Walk-Forward
+setzt die Strategie je Fenster neu auf; sie startet flach und muss ihre
+Position neu kaufen. Gemessen an `macross`: **3 von 47 Trades** (6 %) liegen
+im ersten Bar eines Testfensters.
+
+Der Effekt ist kleiner als die Zahl vermuten lässt, weil dieselbe Grenze auch
+den *Ausstieg* der Vorperiode verschluckt — die offene Position verschwindet
+mit dem Fenster, ohne Gebühr. Ein zusätzlicher Einstieg gegen einen
+gesparten Ausstieg hebt sich weitgehend auf.
+
+**2. Die angenommene halbe Spanne von 2 bps ist vermutlich zu hoch.** Und
+hier ist ein zweiter Fehlschlag festzuhalten: ich habe zweimal versucht, sie
+aus 1,48 Mio. Tick-Daten mit Aggressor-Seite zu messen, und beide Schätzer
+haben Artefakte geliefert.
+
+| Schätzer | Ergebnis | warum unbrauchbar |
+|---|---|---|
+| Preisabstand bei Seitenwechsel | Median 0,014 bps | von der Tickgröße dominiert |
+| Kauf- minus Verkaufsmittel je Minute | Mittelwert **−0,13 bps** | negative Spannen — er misst Kursdrift |
+
+Eine negative Spanne gibt es nicht. **ADR-056 ist damit bestätigt und nicht
+widerlegt:** die Spanne ist auch mit Tickdaten nicht sauber messbar, sie
+braucht Quotes.
+
+Was sich sagen lässt: das 90-%-Quantil der Minutenschätzung liegt bei 0,8 bps
+*voller* Spanne, die Annahme im Modell entspricht 4 bps. Sie ist also
+wahrscheinlich um 2 bis 3 bps zu teuer — auf einen Round-Trip von 130. Der
+Unterschied macht **3 %** der Kosten aus; bei `macross` mit 8,8× Umschlag sind
+das rund 0,004 Sharpe.
+
+**3. Der Versuchszähler ist absichtlich zu hoch.** ADR-057 hat die sieben
+handgeschriebenen Hypothesen nachgetragen, obwohl ADR-032 formal nur
+abgeschlossenes Screening zählt. Das ist eine bewusste Entscheidung in die
+strengere Richtung, im Modul begründet: „Eine Korrektur der Buchführung, die
+das eigene Ergebnis verbessert, wäre verdächtig; diese verschlechtert es."
+Bleibt so.
+
+### Der Befund in der anderen Richtung
+
+`metrics.sharpe` zieht **keinen risikofreien Zins ab**. Bei 4 bis 5 % Zins und
+44 % Jahresvolatilität überschätzt das den Sharpe um rund **0,10** — knapp ein
+Drittel der Gate-1-Schwelle von 0,33.
+
+Es ist nicht schlicht falsch, und das ist der Grund, warum es hier als offene
+Frage steht und nicht als Korrektur:
+
+* **Für die Nachweisbarkeit ist es richtig.** DSR und Permutationskontrolle
+  fragen, ob der Mittelwert von **null** verschieden ist. Die 0,33 aus
+  ADR-061 ist eine Nachweisgrenze aus `t ≥ 2`, keine ökonomische Hürde — sie
+  ist gegen dieselbe Größe definiert, die gemessen wird.
+* **Für die Frage „lohnt sich das?" ist es falsch.** Eine Strategie mit
+  Sharpe 0,33 gegen null kann gegen Tagesgeld bei null liegen. Das Ziel in
+  `docs/ZIEL.md` ist ein ökonomisches („echtes Geld, 12 Monate, besserer
+  Calmar als Buy-and-Hold"), und dort gehört der Zins hinein.
+* **Der Vergleich bleibt fair,** solange Buy-and-Hold genauso gerechnet wird —
+  und das wird es.
+
+**Nicht geändert, weil die Änderung jede dokumentierte Zahl im Repo bewegen
+würde** und die Entscheidung davon abhängt, welche der beiden Fragen eine
+Kennzahl beantworten soll. Das gehört vorab entschieden, nicht nebenbei.
+
+### Was das über den Audit selbst sagt
+
+Vier exakte Treffer und drei Effekte unter einem Prozent sind ein
+beruhigendes Ergebnis — und ein begrenztes. Geprüft wurde, wo ich **vermutet**
+habe, dass ein Pessimismus sitzt. ADR-066 ist nicht durch Suchen gefunden
+worden, sondern weil ein Ergebnis auffällig gut war; die Gegenrichtung hat
+diesen Alarm nicht. Ein Fehler, der alles gleichmäßig um zehn Prozent
+schlechter macht, sähe genau wie dieses Projekt aus.
+
+---
+
 ## ADR-066 — Ein ruiniertes Konto meldete Sharpe +8,65
 **Datum:** 2026-09-03
 

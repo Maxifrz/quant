@@ -447,3 +447,75 @@ def test_ein_etf_zahlt_ueber_zwanzigmal_weniger_als_ein_krypto_taker():
     from qt.core.config import COINBASE_TAKER, US_ETF_COSTS
 
     assert round_trip_bps(COINBASE_TAKER) > 20 * round_trip_bps(US_ETF_COSTS)
+
+
+# ---------------------------------------------------------------------------
+# Der Audit gegen pessimistische Verzerrungen (ADR-067)
+# ---------------------------------------------------------------------------
+
+
+def test_ein_round_trip_kostet_genau_was_das_modell_sagt():
+    """Haelt die Zahl fest, gegen die ADR-067 geprueft hat.
+
+    Der naheliegendste Weg zu systematisch zu schlechten Ergebnissen waere,
+    Gebuehren auf das **Zielgewicht** statt auf die Differenz zu rechnen, oder
+    Spanne und Slippage doppelt anzusetzen. Beides faellt hier auf: ein Konto,
+    konstanter Kurs, genau ein Rein und ein Raus muss exakt den Round-Trip
+    des Kostenmodells verlieren -- keinen Basispunkt mehr.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from qt.backtest.costs import round_trip_bps
+    from qt.backtest.engine import run_backtest
+    from qt.core.config import BacktestConfig
+    from qt.core.types import Bar
+    from qt.strategy.base import Strategy
+
+    cfg = BacktestConfig()
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        Bar("X/USD", "1d", t0 + timedelta(days=i), 100.0, 100.0, 100.0, 100.0, 1e9)
+        for i in range(10)
+    ]
+
+    class EinRoundTrip(Strategy):
+        name = "rt"
+
+        @property
+        def warmup_bars(self) -> int:
+            return 1
+
+        def on_bar(self, symbol, store):
+            n = len(store.window(symbol, self.timeframe))
+            return 1.0 if 2 <= n <= 4 else 0.0
+
+    r = run_backtest(EinRoundTrip(["X/USD"], "1d"), {"X/USD": bars}, cfg)
+    ek = r.equity["equity"]
+    verlust_bps = (1 - ek.iloc[-1] / ek.iloc[0]) * 10_000
+
+    assert len(r.fills) == 2, "genau ein Rein und ein Raus"
+    assert verlust_bps == pytest.approx(round_trip_bps(cfg.costs), abs=0.1)
+
+
+def test_der_handelskalender_wird_gemessen_und_nicht_geraten():
+    """Eine Aktienreihe mit 365 zu annualisieren waere Faktor 1,20 zu viel Vola.
+
+    Damit saehe jede ETF-Strategie um denselben Faktor schlechter aus, als sie
+    ist -- genau die Sorte Fehler, die niemandem auffaellt, weil sie in die
+    unangenehme Richtung zeigt (ADR-055, geprueft in ADR-067).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from qt.backtest.metrics import compute, observed_periods_per_year
+
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2020-01-01", periods=2520, tz="UTC")
+    r = rng.normal(0.0004, 0.01, len(idx))
+    eq = pd.Series(100_000 * np.cumprod(1 + r), index=idx)
+
+    py = observed_periods_per_year(eq.index, 365)
+    assert 250 < py < 265, f"Boersentage muessen ~261 ergeben, nicht {py:.0f}"
+
+    von_hand = r.mean() / r.std(ddof=1) * np.sqrt(py)
+    assert compute(eq, "1d").sharpe == pytest.approx(von_hand, rel=0.01)
