@@ -153,15 +153,24 @@ Das ist kein Argument, sie abzuschalten — sie kosten nichts und fangen
 Katastrophen. Es ist ein Argument dagegen, sie für den Beweis zu halten. Sie
 sind eine Plausibilitätsprüfung, kein Gate.
 
-### 5. Der Live-Pfad *(das kleinste Stück, deshalb zuletzt)*
+### 5. Der Live-Pfad ✅ *(gebaut 2026-09-03, ADR-062 — und unverdrahtet)*
 
-Nicht gebaut: `qt.live.broker_ccxt` (echte Orders), `qt.live.reconcile`
+~~Nicht gebaut: `qt.live.broker_ccxt` (echte Orders), `qt.live.reconcile`
 (Soll-gegen-Ist, braucht die zweite Quelle), Positionsgrößen-Logik für echtes
-Kapital, Börsen-Keys und ihre Verwahrung.
+Kapital, Börsen-Keys und ihre Verwahrung.~~ Alles vier existiert, mit 30
+Tests, von denen keiner Netz braucht.
 
-Das ist Ingenieursarbeit ohne offene Fragen — ein bis zwei Arbeitsblöcke. Es
-steht zuletzt, weil es das Ziel nicht näher bringt: ein Live-Pfad ohne
-validierten Edge ist ein Weg, schneller Geld zu verlieren.
+**`qt live tick` ist trotzdem nicht verdrahtet, und das ist der Punkt.** Der
+Satz unten gilt unverändert: ein Live-Pfad ohne validierten Edge ist ein Weg,
+schneller Geld zu verlieren. Neun Strategien geprüft, keine hat eine
+Negativkontrolle bestanden. Was zum Handeln fehlt, ist kein Code mehr,
+sondern Gate 1.
+
+Gebaut wurde er trotzdem, weil er Fragen stellt, die kein Kursverlauf
+enthält — Mindestordergrößen, Rundungsraster, was eine Börse als Fill
+zurückmeldet. Eine davon ist beantwortet: bei Coinbase greift die
+Mindestordergröße erst unterhalb von rund 100 USD Kontogröße, der Effekt ist
+also echt und klein (`qt live groesse`).
 
 ---
 
@@ -338,9 +347,18 @@ und Ausführung sich verhalten wie im Backtest. Divergenz hier ist ein Stopp.
 
 ### Phase E — Live mit Minimalkapital
 
-`broker_ccxt`, `reconcile`, Positionsgrößen, harte Limits. Startkapital so
-klein, dass ein Totalverlust folgenlos ist. Ab dem ersten Fill läuft die Uhr
-für das Ziel oben.
+~~`broker_ccxt`, `reconcile`, Positionsgrößen, harte Limits.~~ **Gebaut am
+2026-09-03 (ADR-062)** — mit zwei unabhängigen Schaltern, ohne die nichts
+gesendet wird, und ohne einen Befehl, der den lokalen Zustand an den
+Börsenstand angleicht.
+
+Startkapital so klein, dass ein Totalverlust folgenlos ist. Ab dem ersten
+Fill läuft die Uhr für das Ziel oben.
+
+**Der erste Fill setzt Gate 1 voraus.** `qt live tick` beendet sich bis dahin
+mit Exit 1 und nennt den Grund. Wer scharf schalten will, braucht
+`scharf=True` im Aufruf **und** `QT_LIVE_SCHARF=ja` in der Umgebung — beides
+gleichzeitig passiert nicht aus Versehen.
 
 ---
 

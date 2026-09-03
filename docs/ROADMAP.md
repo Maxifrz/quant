@@ -555,8 +555,32 @@ uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
 uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
 ```
 
-## ⬜ Phase 7 — Live (separate Entscheidung)
+## 🟡 Phase 7 — Live (gebaut, unverdrahtet — die Entscheidung steht noch aus)
 
-Erst wenn Phase 6 über Wochen sauber läuft. Exchange-Keys, `qt.live.broker_ccxt`,
-Mini-Kapital, harte Positionslimits. Das ist eine eigene Entscheidung mit echtem
-Geld — keine Fortsetzung der Bauarbeit.
+- `qt.live.broker_ccxt` — echte Orders, entschärft per Default. Scharf nur mit
+  **zwei** unabhängigen Schaltern: `scharf=True` im Aufruf *und*
+  `QT_LIVE_SCHARF=ja` in der Umgebung. Harte Grenzen je Order, je Position,
+  brutto und je Tick — geprüft im Broker selbst, nicht nur oben im Aufrufpfad,
+  und **geworfen statt gekappt**.
+- `qt.live.sizing` — Zielgewicht zu Ordermenge, gegen die Grenzen der Börse.
+  Was darunter fällt, wird nicht ungenau ausgeführt, sondern gar nicht — mit
+  Grund im Ergebnis statt als stille Null.
+- `qt.live.reconcile` — Soll gegen Ist. Seit ADR-037 aufgeschoben, weil es
+  ohne zweite Quelle keinen Gegenstand hatte; den gibt es jetzt. **Meldet nur**
+  — es gibt keinen Befehl, der den lokalen Zustand nachzieht, und ein Test
+  hält das fest.
+- `Zugang` — Schlüssel aus der Umgebung, in keinem `repr`, nirgends
+  gespeichert.
+
+**Vorführen:**
+```bash
+uv run qt live status      # Kontostand von der Boerse, liest nur
+uv run qt live groesse     # was von einem Zielgewicht bei diesem Kapital bleibt
+uv run qt live reconcile   # lokaler Zustand gegen Boersenbestand
+```
+
+**`qt live tick` ist absichtlich nicht verdrahtet** und endet mit Exit 1. Was
+fehlt, ist kein Code, sondern ein Kandidat, der Gate 1 besteht — neun
+Strategien geprüft, keine hat eine Negativkontrolle bestanden (ADR-059,
+ADR-062). Das bleibt eine eigene Entscheidung mit echtem Geld, keine
+Fortsetzung der Bauarbeit.

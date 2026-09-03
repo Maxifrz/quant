@@ -23,6 +23,11 @@ placebo_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(placebo_app, name="placebo")
+live_app = typer.Typer(
+    help="Echtes Geld: lesen, abgleichen, und nur mit zwei Schaltern handeln",
+    no_args_is_help=True,
+)
+app.add_typer(live_app, name="live")
 
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
@@ -1911,3 +1916,200 @@ def ic_cmd(
 # Fehlermeldung (ADR-053).
 if __name__ == "__main__":
     app()
+
+
+# ---------------------------------------------------------------------------
+# Phase E -- der Live-Pfad (ADR-062)
+# ---------------------------------------------------------------------------
+
+
+def _live_exchange(exchange_id: str):
+    """Boerse mit Zugang aus der Umgebung.
+
+    Die Schluessel werden hier gelesen und nirgends gespeichert. Ein
+    fehlender Schluessel ist ein Abbruch mit Namen der Variablen -- nicht ein
+    stiller Fallback auf den oeffentlichen Zugang, der dann beim Lesen
+    funktioniert und beim Handeln scheitert.
+    """
+    import ccxt
+
+    from qt.live.broker_ccxt import Zugang
+
+    zugang = Zugang.aus_umgebung()
+    exchange = getattr(ccxt, exchange_id)(
+        {
+            "enableRateLimit": True,
+            "apiKey": zugang.key,
+            "secret": zugang.secret,
+            **({"password": zugang.password} if zugang.password else {}),
+        }
+    )
+    exchange.session.trust_env = True
+    return exchange
+
+
+@live_app.command("status")
+def live_status(
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    quote: Annotated[str, typer.Option(help="Waehrung des Guthabens")] = "USD",
+) -> None:
+    """Was die Boerse ueber das Konto sagt. Liest nur.
+
+    Der erste Befehl, den man mit echten Schluesseln laufen laesst -- und der
+    einzige, der ohne jede Sicherung auskommt, weil er nichts veraendern kann.
+    """
+    from qt.live.broker_ccxt import CcxtBroker, Limits
+
+    namen = _split(symbols)
+    broker = CcxtBroker(
+        _live_exchange(exchange_id), limits=Limits(erlaubte_symbole=frozenset(namen))
+    )
+
+    typer.echo(f"Konto auf {exchange_id}")
+    typer.echo(f"  Guthaben {quote}: {broker.guthaben(quote):,.2f}")
+    positionen = broker.positionen()
+    if not positionen:
+        typer.echo("  Positionen: keine")
+    for sym, pos in sorted(positionen.items()):
+        typer.echo(f"  {sym:<12} {pos.qty:.8f}")
+
+    typer.echo(
+        f"\n  Scharf: nein -- es fehlt {broker.warum_nicht_scharf()}."
+        if not broker.scharf
+        else "\n  Scharf: JA -- dieser Zugang kann Orders senden."
+    )
+
+
+@live_app.command("reconcile")
+def live_reconcile(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+    quote: Annotated[str, typer.Option(help="Waehrung des Guthabens")] = "USD",
+    toleranz: Annotated[float, typer.Option(help="Relative Toleranz")] = 0.001,
+) -> None:
+    """Lokalen Zustand gegen den Boersenbestand halten.
+
+    **Meldet nur.** Es gibt hier bewusst keine Option, die den lokalen Zustand
+    nachzieht: eine Abweichung heisst, dass eine Annahme falsch war, und wer
+    sie wegschreibt, faehrt mit demselben Fehler weiter -- nur unsichtbar
+    (ADR-062).
+
+    Exit 0 wenn beide Quellen im Rahmen der Toleranz stimmen, sonst 2.
+    """
+    from qt.live.broker_ccxt import CcxtBroker, Limits
+    from qt.live.reconcile import reconcile
+    from qt.live.state import PaperState, state_path
+
+    namen = _split(symbols)
+    pfad = state_path(strategy, namen, tf)
+    if not pfad.exists():
+        typer.echo(
+            f"Kein lokaler Zustand unter {pfad}. Ohne Soll gibt es nichts "
+            "abzugleichen."
+        )
+        raise typer.Exit(code=1)
+
+    state = PaperState.load(pfad)
+    if state is None:
+        typer.echo(f"Zustand unter {pfad} ist nicht lesbar.")
+        raise typer.Exit(code=1)
+    soll = {sym: pos.qty for sym, pos in state.positions_as_objects().items()}
+    soll.update({sym: soll.get(sym, 0.0) for sym in namen})
+
+    broker = CcxtBroker(
+        _live_exchange(exchange_id), limits=Limits(erlaubte_symbole=frozenset(namen))
+    )
+    ist = {sym: pos.qty for sym, pos in broker.positionen().items()}
+
+    bericht = reconcile(
+        soll_positionen=soll,
+        ist_positionen=ist,
+        soll_guthaben=state.cash,
+        ist_guthaben=broker.guthaben(quote),
+        toleranz=toleranz,
+    )
+    typer.echo("")
+    typer.echo(bericht.table())
+    raise typer.Exit(code=0 if bericht.ok else 2)
+
+
+@live_app.command("groesse")
+def live_groesse(
+    symbol: Annotated[str, typer.Option(help="Ein Symbol")] = "BTC/USD",
+    gewicht: Annotated[float, typer.Option(help="Zielgewicht, -1 bis 1")] = 1.0,
+    kapital: Annotated[float, typer.Option(help="Eigenkapital in Quote-Waehrung")] = 500.0,
+    preis: Annotated[float, typer.Option(help="Preis; 0 = von der Boerse holen")] = 0.0,
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+) -> None:
+    """Was von einem Zielgewicht bei diesem Kapital uebrig bleibt.
+
+    Der Befehl beantwortet die Frage, die vor dem ersten echten Euro steht:
+    **kann dieses Konto die Strategie ueberhaupt handeln?** Bei
+    Minimalkapital wirkt die Mindestordergroesse der Boerse wie ein zweites
+    Rebalancing-Band, das im Backtest nicht vorkommt (ADR-062).
+    """
+    import ccxt
+
+    from qt.live.sizing import Marktgrenzen, menge_fuer_zielgewicht
+
+    exchange = getattr(ccxt, exchange_id)({"enableRateLimit": True})
+    exchange.session.trust_env = True
+    exchange.load_markets()
+    if symbol not in exchange.markets:
+        typer.echo(f"{symbol} gibt es auf {exchange_id} nicht.")
+        raise typer.Exit(code=1)
+
+    grenzen = Marktgrenzen.aus_ccxt(exchange.markets[symbol])
+    if preis <= 0:
+        preis = float(exchange.fetch_ticker(symbol)["last"])
+
+    typer.echo(f"{symbol} auf {exchange_id}, Preis {preis:,.2f}")
+    typer.echo(
+        f"  Mindestmenge   {grenzen.min_menge}\n"
+        f"  Mindestgegenwert {grenzen.min_gegenwert}\n"
+        f"  Mengenraster   {grenzen.schritt}"
+    )
+    typer.echo("")
+    typer.echo(f"  {'Kapital':>12}{'Zielmenge':>16}{'bestellbar':>16}   Grund")
+    typer.echo("  " + "-" * 74)
+    for k in sorted({kapital, 100.0, 500.0, 1_000.0, 10_000.0, 100_000.0}):
+        ergebnis = menge_fuer_zielgewicht(
+            gewicht, 0.0, preis, k, grenzen=grenzen, band=0.0
+        )
+        ziel = gewicht * k / preis
+        typer.echo(
+            f"  {k:>12,.0f}{ziel:>16.8f}{ergebnis.menge:>16.8f}   {ergebnis.grund}"
+        )
+
+
+@live_app.command("tick")
+def live_tick() -> None:
+    """Ein Tick mit echtem Geld. Noch nicht verdrahtet -- und das ist der Punkt.
+
+    Der Live-Pfad ist gebaut: Broker, Ordergroessen, Abgleich, Grenzen, alles
+    mit Tests. Was fehlt, ist **kein Code**, sondern die Bedingung aus
+    `docs/ZIEL.md`: ein Kandidat, der Gate 1 besteht. Bisher hat keine der
+    neun Strategien auch nur eine Negativkontrolle bestanden (ADR-059).
+
+    Diesen Befehl zu verdrahten, bevor das der Fall ist, hiesse, das
+    Abbruchkriterium des Projekts zu umgehen -- und zwar mit echtem Geld.
+    """
+    typer.echo(
+        "Nicht verdrahtet, und zwar absichtlich (ADR-062).\n"
+        "\n"
+        "Der Live-Pfad ist vollstaendig gebaut und geprueft:\n"
+        "  qt live status      Kontostand von der Boerse, liest nur\n"
+        "  qt live reconcile   lokaler Zustand gegen Boersenbestand\n"
+        "  qt live groesse     was von einem Zielgewicht bei diesem Kapital bleibt\n"
+        "\n"
+        "Was fehlt, ist kein Code, sondern ein Kandidat, der Gate 1 besteht:\n"
+        "  uv run qt gate --strategy <name> --tf 1d\n"
+        "\n"
+        "Neun Strategien geprueft, keine hat eine Negativkontrolle bestanden.\n"
+        "Ein Live-Pfad ohne validierten Edge ist ein Weg, schneller Geld zu\n"
+        "verlieren (docs/ZIEL.md)."
+    )
+    raise typer.Exit(code=1)

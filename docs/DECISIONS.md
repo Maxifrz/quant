@@ -5,6 +5,162 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-062 — Der Live-Pfad ist gebaut und bleibt unverdrahtet
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** `qt.live.broker_ccxt`, `qt.live.sizing` und
+`qt.live.reconcile` existieren, mit Tests. `qt live tick` ist **absichtlich
+nicht verdrahtet** und beendet sich mit Exit 1 und einer Begründung. Was zum
+Handeln fehlt, ist kein Code mehr, sondern die Bedingung aus `docs/ZIEL.md`:
+ein Kandidat, der Gate 1 besteht.
+
+---
+
+### Warum überhaupt bauen, wenn nichts handeln darf
+
+`docs/ZIEL.md` sortiert den Live-Pfad ausdrücklich ans Ende: „ein Live-Pfad
+ohne validierten Edge ist ein Weg, schneller Geld zu verlieren." Der Satz gilt
+weiter, und er wird durch dieses ADR nicht abgeschwächt.
+
+Trotzdem ist die Arbeit nicht verfrüht, und zwar aus einem messbaren Grund:
+**der Live-Pfad stellt Fragen, die der Backtest nicht stellt** — Mindest-
+ordergrößen, Rundungsraster, was eine Börse als Fill zurückmeldet, was
+passiert, wenn eine Order abgelehnt wird. Jede dieser Fragen kann eine
+Strategie unbrauchbar machen, und keine davon steht in einem Kursverlauf.
+Eine davon ist unten schon beantwortet, und die Antwort ist kleiner als
+erwartet.
+
+Was hier **nicht** passiert ist: eine echte Order. Kein Schlüssel wurde
+benutzt, nichts wurde gesendet. Die einzigen Netzzugriffe waren öffentliche
+Marktdaten.
+
+---
+
+### Die zwei Schalter
+
+Scharf ist der Broker nur, wenn **beides** gilt:
+
+```python
+CcxtBroker(..., scharf=True)     # im Aufruf
+QT_LIVE_SCHARF=ja                # in der Umgebung
+```
+
+Zwei unabhängige Schalter, weil ein einzelner zu leicht aus Versehen steht:
+ein vergessener Default im Code, eine geerbte Umgebungsvariable in einer
+Routine. Der Wert ist `ja` und nicht `1` oder `true` — die beiden stehen zu
+leicht irgendwo herum.
+
+Ein unscharfer Broker **liest** normal (Kontostand, Positionen, Marktgrenzen)
+und wirft bei jedem Sendeversuch `NichtScharf` — mit der Order im Text, damit
+ein Trockenlauf zeigt, was passiert wäre. Der Test dazu prüft nicht nur, dass
+geworfen wurde, sondern dass die Fake-Börse **nichts empfangen** hat; bei
+einer Sicherung ist das der Unterschied zwischen geprüft und angenommen.
+
+### Die Grenzen liegen im Broker, nicht nur darüber
+
+`Limits` wird in `broker_ccxt` geprüft, obwohl die Risk-Engine oben im
+Aufrufpfad schon Caps hat. Eine Grenze, die nur an einer Stelle steht,
+schützt genau so lange, wie dieser Pfad der einzige ist — und ADR-053 hat
+gezeigt, wie leise ein zweiter Pfad entsteht.
+
+Verletzungen werden **geworfen, nicht gekappt.** Eine still zurechtgestutzte
+Order ist eine Order, die niemand so gewollt hat, und der Kontostand danach
+passt zu keiner Absicht. Die Defaults sind klein (100 je Order, 500 je
+Position, 1000 brutto): wer mit echtem Geld anfängt, soll die Zahl bewusst
+hochsetzen müssen.
+
+### Was von der Börse kommt, bleibt von der Börse
+
+Der Fill wird aus der Antwort gebaut — Preis, Menge, Gebühr. Das Kostenmodell
+aus ADR-056 wird hier **nicht** angewandt: es war die Schätzung, die diese
+Zahlen vorhersagen sollte, und sie jetzt darüberzulegen hieße, die Prüfung zu
+verhindern, für die der Live-Pfad da ist.
+
+Fehlt in der Antwort der Durchschnittspreis, wird **nicht** der letzte bekannte
+Kurs eingesetzt. Dann stünde im Konto eine Zahl, die nicht von der Börse kommt
+und trotzdem so aussieht. Stattdessen: `OrderAbgelehnt` mit dem Hinweis auf
+`qt live reconcile`.
+
+### `reconcile` meldet und korrigiert nicht
+
+ADR-037 hat dieses Modul mit einer Begründung ausgelassen, die bis heute galt:
+ein Abgleich braucht zwei unabhängige Quellen. Mit `broker_ccxt` gibt es die
+zweite, also gibt es jetzt den Abgleich.
+
+Es gibt **keine** Funktion, die den lokalen Zustand nachzieht, und ein Test
+hält das fest (er verbietet die Namen `angleichen`, `sync`, `fix`, `apply`).
+Eine Abweichung heißt, dass eine Annahme falsch war — eine Order kam nicht
+durch, eine Teilfüllung wurde übersehen, eine Gebühr wurde in der
+Basiswährung abgezogen. Wer den Zustand nachzieht, löscht die Spur und fährt
+mit demselben Fehler weiter, nur unsichtbar. Der fehlende Befehl ist die
+Sicherung, wie bei der Promotion im Research-Loop (ADR-032).
+
+Zwei Details, die aus dem Nachdenken über den schlimmsten Fall kommen:
+
+* Verglichen wird über die **Vereinigung** beider Symbolmengen, nicht über
+  die des Solls. Der gefährlichste Fall ist die Position, die es lokal gar
+  nicht gibt — eine Order, die durchkam, obwohl sie als abgelehnt verbucht
+  wurde. Wer nur über das Soll iteriert, sieht genau die nicht.
+* Die relative Abweichung bezieht sich auf die **größere** der beiden Mengen.
+  Auf `soll` bezogen bräche sie bei soll = 0 und ist = 0,3 — wieder genau im
+  interessantesten Fall.
+
+---
+
+### Der eine Befund, und er ist kleiner als die Überschrift verspricht
+
+Eine Börse hat Mindestordergrößen. Was darunter fällt, wird nicht ungenau
+ausgeführt, sondern **gar nicht** — die Mindestordergröße wirkt also wie ein
+zweites Rebalancing-Band, das kein Backtest modelliert.
+
+Die erste Fassung dieses Absatzes stand hier als „bei Minimalkapital handelt
+dieselbe Strategie anders". Das ist zu stark, und der Test dazu ist an
+gewählten statt gemessenen Zahlen durchgefallen. Gemessen über
+`qt live groesse` gegen `api.exchange.coinbase.com`, BTC/USD, 2026-09-03:
+
+| | |
+|---|---|
+| Mindestmenge | **keine** |
+| Mindestgegenwert | **1 USD** |
+| Mengenraster | 1e-8 |
+
+Eine Anpassung fällt damit erst aus, wenn ihr Gegenwert unter einem Dollar
+liegt — bei einem Prozent Rebalancing-Band also unterhalb von rund **100 USD**
+Kontogröße. Der Mechanismus ist echt, seine Reichweite ist klein, und beides
+steht jetzt als Test da: einer zeigt den Mechanismus an gewählten Zahlen, der
+zweite pinnt die gemessene Wirklichkeit fest.
+
+Das ist dieselbe Lehre wie ADR-056, wo ein Satz über 4h überall zitiert wurde,
+als gälte er allgemein. Ein Befund ohne seinen Geltungsbereich ist eine
+Behauptung, die auf ihre Widerlegung wartet.
+
+---
+
+### Was fehlt, und was ausdrücklich nicht fehlt
+
+**Nicht mehr offen:** `broker_ccxt`, `sizing`, `reconcile`, harte
+Positionslimits, Schlüsselverwahrung (`Zugang` liest aus der Umgebung, zeigt
+den Schlüssel in keinem `repr` und schreibt ihn nirgends hin). 30 Tests, keiner
+braucht Netz.
+
+**Offen und bewusst offen:**
+
+* **`qt live tick` ist nicht verdrahtet.** Neun Strategien geprüft, keine hat
+  eine Negativkontrolle bestanden (ADR-059). Diesen Befehl zu verdrahten,
+  bevor Gate 1 fällt, hieße das Abbruchkriterium des Projekts zu umgehen —
+  mit echtem Geld.
+* **Kein echter Schlüssel wurde je benutzt.** `qt live status` und
+  `qt live reconcile` sind gegen die Fake-Börse geprüft, nicht gegen eine
+  echte. Der erste Lauf mit echten Schlüsseln wird Dinge finden; das ist der
+  Zweck von `status` als erstem Befehl.
+* **Teilfüllungen** werden als ein Fill verbucht, wenn die Börse sie so
+  meldet. Ob das reicht, entscheidet der erste echte Fill.
+* Die **Slippage gegen den erwarteten Kurs** wird nicht in den Fill
+  geschrieben. Sie ist eine Größe des Abgleichs zwischen Erwartung und
+  Ausführung und gehört nicht in eine Zahl, die von der Börse kommt.
+
+---
+
 ## ADR-061 — Phase A bestanden: n_eff 5,1, und die Schwelle sinkt deshalb auf 0,33
 **Datum:** 2026-09-03
 
