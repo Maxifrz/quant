@@ -23,6 +23,11 @@ placebo_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(placebo_app, name="placebo")
+live_app = typer.Typer(
+    help="Echtes Geld: lesen, abgleichen, und nur mit zwei Schaltern handeln",
+    no_args_is_help=True,
+)
+app.add_typer(live_app, name="live")
 
 DEFAULT_SYMBOLS = "BTC/USD,ETH/USD"
 DEFAULT_TIMEFRAMES = "1h,4h,1d"
@@ -155,6 +160,20 @@ def data_pull(
         raise typer.Exit(code=1)
     for (symbol, timeframe), n in sorted(written.items()):
         typer.echo(f"  {symbol:>10} {timeframe:>3}  {n:>7,} Bars")
+
+    # Ein Symbol, das nichts geliefert hat, wurde bis ADR-059 einfach nicht
+    # gedruckt. Neun Zeilen sehen aber genauso vollstaendig aus wie vierzehn,
+    # solange niemand nachzaehlt -- und der Store ist die Grundlage jeder
+    # Zahl in diesem Projekt.
+    leer = sorted(
+        f"{sym} {tfr}"
+        for sym in _split(symbols)
+        for tfr in _split(tf)
+        if (sym, tfr) not in written
+    )
+    if leer:
+        typer.echo(f"\n  !! ohne Bars: {', '.join(leer)}")
+
     typer.echo("\nJetzt pruefen: qt data report")
 
 
@@ -1319,7 +1338,13 @@ def paper_reset(
 @placebo_app.command("shuffle")
 def placebo_shuffle(
     strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
-    symbol: Annotated[str, typer.Option(help="Ein Symbol")] = "BTC/USD",
+    symbol: Annotated[
+        str | None,
+        typer.Option(
+            help="Kommagetrennt. Ohne Angabe: BTC/USD fuer Timing-Strategien, "
+            "der ganze Store fuer Querschnittsstrategien."
+        ),
+    ] = None,
     tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
     train: Annotated[int, typer.Option(help="Train-Fenster in Bars")] = 1000,
     test: Annotated[int, typer.Option(help="Test-Fenster in Bars")] = 250,
@@ -1334,46 +1359,81 @@ def placebo_shuffle(
 ) -> None:
     """Die Strategie gegen gewuerfelte Fassungen ihrer selbst.
 
-    Die Episodenlaengen des echten Gewichtsverlaufs werden untereinander
-    getauscht: gleiche Zeit im Markt, gleiche Trade-Zahl, gleiche Gebuehren --
-    nur die **Lage** in der Zeit ist zufaellig. Genau das ist die Groesse, die
-    eine Strategie behauptet zu koennen.
+    **Timing-Strategie:** die Episodenlaengen des echten Gewichtsverlaufs
+    werden untereinander getauscht -- gleiche Zeit im Markt, gleiche
+    Trade-Zahl, gleiche Gebuehren, nur die **Lage** in der Zeit ist zufaellig.
 
-    Der Vergleich gilt nur, wenn der Abspieler mit den echten Gewichten
-    dieselbe Kennzahl liefert wie die Strategie. Diese Kalibrierung steht mit
-    im Bericht; ist die Abweichung nicht winzig, ist das Ergebnis wertlos.
+    **Querschnittsstrategie:** je Halteblock wird neu ausgelost, **welcher**
+    Markt welches Gewicht bekommt -- gleiches Brutto, gleiches Netto, gleiche
+    Haltedauer. Die Zuordnung ist dort die Behauptung, nicht der Zeitpunkt,
+    und die Kontrolle richtet sich danach (ADR-059).
+
+    Verglichen wird gegen den Abspieler mit den echten Gewichten, nicht gegen
+    die Strategie selbst: nur er ist mit den Ziehungen konstruktionsgleich.
+    Der Abstand zwischen beiden steht als **Pfadabhaengigkeit** im Bericht.
+    Bei einer zustandslosen Strategie muss er null sein.
     """
-    from qt.data.store import read_bars, to_bars
+    from qt.backtest.walkforward import InsufficientDataError
+    from qt.core.config import BacktestConfig, costs_for_symbols
+    from qt.data.store import available, read_bars, to_bars
     from qt.research.placebo import permutation_control
+    from qt.strategy.cross_sectional import CrossSectionalStrategy
     from qt.strategy.registry import get, load_library
 
     load_library()
-    bars = {symbol: to_bars(symbol, tf, read_bars(symbol, tf, start=since, end=until))}
+    klasse = get(strategy)
+    quer = isinstance(klasse, type) and issubclass(klasse, CrossSectionalStrategy)
 
-    typer.echo(f"{strategy} auf {symbol} @ {tf}, {draws} Ziehungen ...")
+    if symbol is not None:
+        namen = _split(symbol)
+    elif quer:
+        namen = sorted({sym for sym, timeframe in available() if timeframe == tf})
+    else:
+        namen = ["BTC/USD"]
+    if not namen:
+        typer.echo(f"Keine Maerkte mit Timeframe {tf} im Store.")
+        raise typer.Exit(code=1)
+
+    bars = {
+        sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
+        for sym in namen
+    }
+    # Ohne das zahlen die ETFs den Krypto-Taker (ADR-056).
+    cfg = BacktestConfig(costs_by_symbol=costs_for_symbols(namen))
+
+    wobei = "Querschnitt" if quer else "Timing"
+    typer.echo(
+        f"{strategy} auf {len(namen)} Markt/Maerkten @ {tf}, "
+        f"{draws} Ziehungen ({wobei}) ..."
+    )
     fortschritt = max(1, draws // 10)
 
     def melden(i: int, wert: float) -> None:
         if i % fortschritt == 0:
             typer.echo(f"  {i}/{draws}")
 
-    ergebnis = permutation_control(
-        lambda: get(strategy)([symbol], tf),
-        bars, train_bars=train, test_bars=test, embargo_bars=embargo,
-        draws=draws, seed=seed, on_draw=melden,
-    )
+    try:
+        ergebnis = permutation_control(
+            lambda: klasse(namen, tf),
+            bars, train_bars=train, test_bars=test, embargo_bars=embargo,
+            draws=draws, seed=seed, on_draw=melden, cfg=cfg,
+        )
+    except InsufficientDataError as exc:
+        typer.echo(f"\nNicht auswertbar: {exc}")
+        raise typer.Exit(code=1) from None
 
     typer.echo("")
     typer.echo(ergebnis.table())
 
-    if ergebnis.kalibrierfehler > 1e-6:
+    if ergebnis.pfadabhaengigkeit > 1e-6:
         typer.echo(
-            f"\n  !! Kalibrierfehler {ergebnis.kalibrierfehler:.2e} -- der "
-            "Abspieler bildet die Strategie nicht ab.\n"
-            "     Das Ergebnis vergleicht zwei verschiedene Dinge und ist "
-            "nicht auswertbar."
+            f"\n  Hinweis: Pfadabhaengigkeit {ergebnis.pfadabhaengigkeit:.3f} -- "
+            "die Strategie traegt Zustand ueber Bars.\n"
+            "  Der Walk-Forward setzt sie je Fenster neu auf, der Abspieler "
+            "laeuft durch. Verglichen\n"
+            "  wird deshalb gegen den Abspieler; die Ziehungen sind mit ihm "
+            "konstruktionsgleich."
         )
-        raise typer.Exit(code=1)
 
     if ergebnis.bestanden(threshold):
         typer.echo(
@@ -1416,9 +1476,25 @@ def placebo_cross(
     from qt.core.config import BacktestConfig, costs_for_symbols
     from qt.data.store import available, read_bars, to_bars
     from qt.research.placebo import cross_market_control
+    from qt.strategy.cross_sectional import CrossSectionalStrategy
     from qt.strategy.registry import get, load_library
 
     load_library()
+    klasse = get(strategy)
+    if isinstance(klasse, type) and issubclass(klasse, CrossSectionalStrategy):
+        # Sonst laeuft eine Rangfolge ueber einen einzigen Namen -- sie
+        # liefert nichts, jeder Markt meldet Sharpe 0, und der Median darueber
+        # sieht aus wie ein Ergebnis (ADR-059).
+        typer.echo(
+            f"{strategy} ist eine Querschnittsstrategie: sie **braucht** alle\n"
+            "Maerkte gleichzeitig. Ein Lauf je Markt einzeln ist keine "
+            "schwaechere Pruefung,\n"
+            "sondern gar keine. Ihre Negativkontrolle ist die Umbenennung "
+            "der Maerkte:\n"
+            f"  qt placebo shuffle --strategy {strategy} --tf {tf}"
+        )
+        raise typer.Exit(code=1)
+
     if symbols is not None:
         namen = _split(symbols)
     else:
@@ -1437,7 +1513,7 @@ def placebo_cross(
         typer.echo(f"  {lauf.symbol:<12} {stand}")
 
     ergebnis = cross_market_control(
-        get(strategy), maerkte, tf, train_bars=train, test_bars=test,
+        klasse, maerkte, tf, train_bars=train, test_bars=test,
         embargo_bars=embargo, on_market=melden, cfg=cfg,
     )
 
@@ -1840,3 +1916,200 @@ def ic_cmd(
 # Fehlermeldung (ADR-053).
 if __name__ == "__main__":
     app()
+
+
+# ---------------------------------------------------------------------------
+# Phase E -- der Live-Pfad (ADR-062)
+# ---------------------------------------------------------------------------
+
+
+def _live_exchange(exchange_id: str):
+    """Boerse mit Zugang aus der Umgebung.
+
+    Die Schluessel werden hier gelesen und nirgends gespeichert. Ein
+    fehlender Schluessel ist ein Abbruch mit Namen der Variablen -- nicht ein
+    stiller Fallback auf den oeffentlichen Zugang, der dann beim Lesen
+    funktioniert und beim Handeln scheitert.
+    """
+    import ccxt
+
+    from qt.live.broker_ccxt import Zugang
+
+    zugang = Zugang.aus_umgebung()
+    exchange = getattr(ccxt, exchange_id)(
+        {
+            "enableRateLimit": True,
+            "apiKey": zugang.key,
+            "secret": zugang.secret,
+            **({"password": zugang.password} if zugang.password else {}),
+        }
+    )
+    exchange.session.trust_env = True
+    return exchange
+
+
+@live_app.command("status")
+def live_status(
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    quote: Annotated[str, typer.Option(help="Waehrung des Guthabens")] = "USD",
+) -> None:
+    """Was die Boerse ueber das Konto sagt. Liest nur.
+
+    Der erste Befehl, den man mit echten Schluesseln laufen laesst -- und der
+    einzige, der ohne jede Sicherung auskommt, weil er nichts veraendern kann.
+    """
+    from qt.live.broker_ccxt import CcxtBroker, Limits
+
+    namen = _split(symbols)
+    broker = CcxtBroker(
+        _live_exchange(exchange_id), limits=Limits(erlaubte_symbole=frozenset(namen))
+    )
+
+    typer.echo(f"Konto auf {exchange_id}")
+    typer.echo(f"  Guthaben {quote}: {broker.guthaben(quote):,.2f}")
+    positionen = broker.positionen()
+    if not positionen:
+        typer.echo("  Positionen: keine")
+    for sym, pos in sorted(positionen.items()):
+        typer.echo(f"  {sym:<12} {pos.qty:.8f}")
+
+    typer.echo(
+        f"\n  Scharf: nein -- es fehlt {broker.warum_nicht_scharf()}."
+        if not broker.scharf
+        else "\n  Scharf: JA -- dieser Zugang kann Orders senden."
+    )
+
+
+@live_app.command("reconcile")
+def live_reconcile(
+    strategy: Annotated[str, typer.Option(help="Strategiename")] = "macross",
+    symbols: Annotated[str, typer.Option(help="Kommagetrennt")] = "BTC/USD",
+    tf: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+    quote: Annotated[str, typer.Option(help="Waehrung des Guthabens")] = "USD",
+    toleranz: Annotated[float, typer.Option(help="Relative Toleranz")] = 0.001,
+) -> None:
+    """Lokalen Zustand gegen den Boersenbestand halten.
+
+    **Meldet nur.** Es gibt hier bewusst keine Option, die den lokalen Zustand
+    nachzieht: eine Abweichung heisst, dass eine Annahme falsch war, und wer
+    sie wegschreibt, faehrt mit demselben Fehler weiter -- nur unsichtbar
+    (ADR-062).
+
+    Exit 0 wenn beide Quellen im Rahmen der Toleranz stimmen, sonst 2.
+    """
+    from qt.live.broker_ccxt import CcxtBroker, Limits
+    from qt.live.reconcile import reconcile
+    from qt.live.state import PaperState, state_path
+
+    namen = _split(symbols)
+    pfad = state_path(strategy, namen, tf)
+    if not pfad.exists():
+        typer.echo(
+            f"Kein lokaler Zustand unter {pfad}. Ohne Soll gibt es nichts "
+            "abzugleichen."
+        )
+        raise typer.Exit(code=1)
+
+    state = PaperState.load(pfad)
+    if state is None:
+        typer.echo(f"Zustand unter {pfad} ist nicht lesbar.")
+        raise typer.Exit(code=1)
+    soll = {sym: pos.qty for sym, pos in state.positions_as_objects().items()}
+    soll.update({sym: soll.get(sym, 0.0) for sym in namen})
+
+    broker = CcxtBroker(
+        _live_exchange(exchange_id), limits=Limits(erlaubte_symbole=frozenset(namen))
+    )
+    ist = {sym: pos.qty for sym, pos in broker.positionen().items()}
+
+    bericht = reconcile(
+        soll_positionen=soll,
+        ist_positionen=ist,
+        soll_guthaben=state.cash,
+        ist_guthaben=broker.guthaben(quote),
+        toleranz=toleranz,
+    )
+    typer.echo("")
+    typer.echo(bericht.table())
+    raise typer.Exit(code=0 if bericht.ok else 2)
+
+
+@live_app.command("groesse")
+def live_groesse(
+    symbol: Annotated[str, typer.Option(help="Ein Symbol")] = "BTC/USD",
+    gewicht: Annotated[float, typer.Option(help="Zielgewicht, -1 bis 1")] = 1.0,
+    kapital: Annotated[float, typer.Option(help="Eigenkapital in Quote-Waehrung")] = 500.0,
+    preis: Annotated[float, typer.Option(help="Preis; 0 = von der Boerse holen")] = 0.0,
+    exchange_id: Annotated[str, typer.Option("--exchange", help="ccxt-Exchange-ID")] = "coinbaseexchange",
+) -> None:
+    """Was von einem Zielgewicht bei diesem Kapital uebrig bleibt.
+
+    Der Befehl beantwortet die Frage, die vor dem ersten echten Euro steht:
+    **kann dieses Konto die Strategie ueberhaupt handeln?** Bei
+    Minimalkapital wirkt die Mindestordergroesse der Boerse wie ein zweites
+    Rebalancing-Band, das im Backtest nicht vorkommt (ADR-062).
+    """
+    import ccxt
+
+    from qt.live.sizing import Marktgrenzen, menge_fuer_zielgewicht
+
+    exchange = getattr(ccxt, exchange_id)({"enableRateLimit": True})
+    exchange.session.trust_env = True
+    exchange.load_markets()
+    if symbol not in exchange.markets:
+        typer.echo(f"{symbol} gibt es auf {exchange_id} nicht.")
+        raise typer.Exit(code=1)
+
+    grenzen = Marktgrenzen.aus_ccxt(exchange.markets[symbol])
+    if preis <= 0:
+        preis = float(exchange.fetch_ticker(symbol)["last"])
+
+    typer.echo(f"{symbol} auf {exchange_id}, Preis {preis:,.2f}")
+    typer.echo(
+        f"  Mindestmenge   {grenzen.min_menge}\n"
+        f"  Mindestgegenwert {grenzen.min_gegenwert}\n"
+        f"  Mengenraster   {grenzen.schritt}"
+    )
+    typer.echo("")
+    typer.echo(f"  {'Kapital':>12}{'Zielmenge':>16}{'bestellbar':>16}   Grund")
+    typer.echo("  " + "-" * 74)
+    for k in sorted({kapital, 100.0, 500.0, 1_000.0, 10_000.0, 100_000.0}):
+        ergebnis = menge_fuer_zielgewicht(
+            gewicht, 0.0, preis, k, grenzen=grenzen, band=0.0
+        )
+        ziel = gewicht * k / preis
+        typer.echo(
+            f"  {k:>12,.0f}{ziel:>16.8f}{ergebnis.menge:>16.8f}   {ergebnis.grund}"
+        )
+
+
+@live_app.command("tick")
+def live_tick() -> None:
+    """Ein Tick mit echtem Geld. Noch nicht verdrahtet -- und das ist der Punkt.
+
+    Der Live-Pfad ist gebaut: Broker, Ordergroessen, Abgleich, Grenzen, alles
+    mit Tests. Was fehlt, ist **kein Code**, sondern die Bedingung aus
+    `docs/ZIEL.md`: ein Kandidat, der Gate 1 besteht. Bisher hat keine der
+    neun Strategien auch nur eine Negativkontrolle bestanden (ADR-059).
+
+    Diesen Befehl zu verdrahten, bevor das der Fall ist, hiesse, das
+    Abbruchkriterium des Projekts zu umgehen -- und zwar mit echtem Geld.
+    """
+    typer.echo(
+        "Nicht verdrahtet, und zwar absichtlich (ADR-062).\n"
+        "\n"
+        "Der Live-Pfad ist vollstaendig gebaut und geprueft:\n"
+        "  qt live status      Kontostand von der Boerse, liest nur\n"
+        "  qt live reconcile   lokaler Zustand gegen Boersenbestand\n"
+        "  qt live groesse     was von einem Zielgewicht bei diesem Kapital bleibt\n"
+        "\n"
+        "Was fehlt, ist kein Code, sondern ein Kandidat, der Gate 1 besteht:\n"
+        "  uv run qt gate --strategy <name> --tf 1d\n"
+        "\n"
+        "Neun Strategien geprueft, keine hat eine Negativkontrolle bestanden.\n"
+        "Ein Live-Pfad ohne validierten Edge ist ein Weg, schneller Geld zu\n"
+        "verlieren (docs/ZIEL.md)."
+    )
+    raise typer.Exit(code=1)

@@ -1,0 +1,27 @@
+{
+ "key": "83fd1285c76ba4237dcba2e0d2c02e0bf3d55ddb5a138b17b67e5068c95dd009",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Consistent positive Sharpe across all windows (1.41 at 384-bar), lowest max drawdown (-21.7%), and negative correlation to STRAT_B provides diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.35
+   },
+   {
+    "reason": "Persistently negative 384-bar Sharpe (-1.34) and large drawdown (-66.8%) indicate structural edge reversal; strong negative correlation to STRAT_C amplifies diversification when inverted.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.35
+   },
+   {
+    "reason": "Positive 384-bar Sharpe (1.145) and modest drawdown (-19.8%); negative correlation to STRAT_B (-0.844) means long C + short B captures spread while reducing portfolio volatility.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "Allocate to strategies with positive 384-bar Sharpe (A: 1.414, C: 1.145) and invert the only strategy with negative long-horizon Sharpe (B: -1.344). The -0.844 correlation between B and C means short B + long C creates a low-volatility spread position. STRAT_A adds further diversification with -0.473 correlation to B and only 0.381 to C. Total gross exposure 1.0 respects risk budget. Current allocation (A:0.2, B:-0.15, C:0.4) underweights the A/B spread and overweights C alone; rebalancing toward equal-risk contributions across the two independent risk factors (A vs B/C spread) improves Sharpe per unit of gross exposure.",
+  "regime": "Strat B in structural drawdown; A and C show positive long-horizon edge with complementary correlations"
+ }
+}

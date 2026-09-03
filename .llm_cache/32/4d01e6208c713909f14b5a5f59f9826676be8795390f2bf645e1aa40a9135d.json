@@ -1,0 +1,27 @@
+{
+ "key": "324d01e6208c713909f14b5a5f59f9826676be8795390f2bf645e1aa40a9135d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-window Sharpe 0.679 and return 0.229 positive; currently 72 bars from peak with -24.6% drawdown suggests recovery potential.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "Long-window Sharpe -0.307 and return -0.226 negative; 158 bars from peak with -45.7% drawdown shows persistent underperformance. Negative weight inverts the losing edge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.15
+   },
+   {
+    "reason": "Long-window Sharpe 0.722 and return 0.217 positive; 72 bars from peak with -21.4% drawdown similar to STRAT_A.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.2
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "Strategies A and C show positive long-window (384-bar) Sharpe (~0.68-0.72) and returns (~0.22-0.23), indicating a persistent edge. Strategy B shows negative long-window Sharpe (-0.307) and return (-0.226) with a deep drawdown (-45.7%) over 158 bars, justifying inversion to capture the negative edge. A and C are positively correlated (0.531), so combined weight capped at 0.4 for diversification. B is negatively correlated with both (-0.55 with A, -0.71 with C), so the -0.15 inverted position provides natural hedging. Sum of absolute weights = 0.55, leaving 0.45 cash buffer. Moved from current (A:0.35, B:-0.35, C:0.3) by reducing B's inverted size (long-window edge weaker than 96-window suggested) and balancing A/C.",
+  "regime": "Mixed regime: A/C recovering from drawdown, B in deep drawdown with negative long-term edge."
+ }
+}

@@ -1,6 +1,6 @@
 # Das Ziel, und was bis dahin fehlt
 
-Stand 2026-09-02. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
+Stand 2026-09-03. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
 
 ---
 
@@ -38,7 +38,7 @@ kein Scheitern. Siehe *Abbruchbedingung* unten.
 
 ## Warum genau dieses Ziel — die Arithmetik, die alles diktiert
 
-Sieben Hypothesen geprüft, sieben gescheitert. Der Grund ist in keinem einzigen
+Neun Hypothesen geprüft, neun gescheitert. Der Grund ist in keinem einzigen
 Fall gewesen, dass die Idee dumm war. Er ist immer derselbe: **es gibt zu wenig
 unabhängige Evidenz, um irgendetwas zu zeigen.**
 
@@ -50,25 +50,33 @@ Bei 7,7 Jahren Historie:
 |---|---|---|
 | 1,0 | 0,84 | ein einzelner Markt |
 | **1,4** | **0,67** | 13 Krypto-Märkte, ρ = 0,67 |
-| **3,4** | **0,41** | **heute: + 13 ETFs, ρ = 0,26 (ADR-055)** |
+| 3,4 | 0,41 | + 13 ETFs, ρ = 0,26 (ADR-055) |
 | 3,0 | 0,44 | + Aktien |
-| 5,0 | 0,33 | + Aktien, FX, Rohstoffe |
+| **5,1** | **0,33** | **heute: + 12 Reihen, ρ = 0,18 (ADR-061)** |
 | 8,0 | 0,26 | vier echte Anlageklassen |
 
-**`macross` hat 0,31.** Um das auf einer einzelnen Reihe zu zeigen, bräuchte es
-**46 Jahre**. Deshalb ist es an der Permutationskontrolle gescheitert (ADR-054),
-und deshalb wäre es an jeder anderen auch gescheitert. Nicht weil es schlecht
-ist, sondern weil die Datenlage die Frage nicht beantworten kann.
+**`macross` hat 0,31** — und auf einem am 2026-09-03 frisch gezogenen Store nur
+noch **0,25** (ADR-059). Um 0,31 auf einer einzelnen Reihe zu zeigen, bräuchte
+es **46 Jahre**; für 0,25 nach derselben Rechnung rund **71**. Deshalb ist es an
+der Permutationskontrolle gescheitert (ADR-054), und deshalb wäre es an jeder
+anderen auch gescheitert. Nicht weil es schlecht ist, sondern weil die
+Datenlage die Frage nicht beantworten kann.
 
 Zwei Wege führen aus dieser Zeile heraus, und nur zwei:
 
-1. **Einen deutlich stärkeren Edge finden** (Sharpe ≥ 0,67 statt 0,31).
+1. **Einen deutlich stärkeren Edge finden** (Sharpe ≥ 0,33 statt 0,25).
 2. **Die Zahl unabhängiger Märkte erhöhen**, damit schwächere Edges beweisbar
    werden.
 
 Weg 2 ist rechenbar, planbar und in Wochen erledigt. Weg 1 ist Hoffnung. Der
 Plan unten geht deshalb zuerst Weg 2 — und macht Weg 1 danach überhaupt erst
 entscheidbar.
+
+> **Weg 2 ist am 2026-09-03 zu Ende gegangen (ADR-061).** n_eff steht bei
+> 5,1, die Nachweisgrenze bei 0,33. Damit ist der billige Hebel gezogen: von
+> 5 auf 8 effektive Märkte brächte nur noch 0,33 → 0,26, und dafür fehlen die
+> Anlageklassen. **Ab hier bleibt Weg 1** — und `macross` liegt mit 0,25
+> weiterhin darunter.
 
 ---
 
@@ -145,23 +153,32 @@ Das ist kein Argument, sie abzuschalten — sie kosten nichts und fangen
 Katastrophen. Es ist ein Argument dagegen, sie für den Beweis zu halten. Sie
 sind eine Plausibilitätsprüfung, kein Gate.
 
-### 5. Der Live-Pfad *(das kleinste Stück, deshalb zuletzt)*
+### 5. Der Live-Pfad ✅ *(gebaut 2026-09-03, ADR-062 — und unverdrahtet)*
 
-Nicht gebaut: `qt.live.broker_ccxt` (echte Orders), `qt.live.reconcile`
+~~Nicht gebaut: `qt.live.broker_ccxt` (echte Orders), `qt.live.reconcile`
 (Soll-gegen-Ist, braucht die zweite Quelle), Positionsgrößen-Logik für echtes
-Kapital, Börsen-Keys und ihre Verwahrung.
+Kapital, Börsen-Keys und ihre Verwahrung.~~ Alles vier existiert, mit 30
+Tests, von denen keiner Netz braucht.
 
-Das ist Ingenieursarbeit ohne offene Fragen — ein bis zwei Arbeitsblöcke. Es
-steht zuletzt, weil es das Ziel nicht näher bringt: ein Live-Pfad ohne
-validierten Edge ist ein Weg, schneller Geld zu verlieren.
+**`qt live tick` ist trotzdem nicht verdrahtet, und das ist der Punkt.** Der
+Satz unten gilt unverändert: ein Live-Pfad ohne validierten Edge ist ein Weg,
+schneller Geld zu verlieren. Neun Strategien geprüft, keine hat eine
+Negativkontrolle bestanden. Was zum Handeln fehlt, ist kein Code mehr,
+sondern Gate 1.
+
+Gebaut wurde er trotzdem, weil er Fragen stellt, die kein Kursverlauf
+enthält — Mindestordergrößen, Rundungsraster, was eine Börse als Fill
+zurückmeldet. Eine davon ist beantwortet: bei Coinbase greift die
+Mindestordergröße erst unterhalb von rund 100 USD Kontogröße, der Effekt ist
+also echt und klein (`qt live groesse`).
 
 ---
 
 ## Die Durchführung
 
-### Phase A — Datenbasis verbreitern *(2–3 Arbeitsblöcke)*
+### Phase A — Datenbasis verbreitern ✅ *(erledigt 2026-09-03, ADR-061)*
 
-Ziel: **n_eff von 1,4 auf mindestens 4.**
+Ziel: **n_eff von 1,4 auf mindestens 4.** Erreicht: **5,1.**
 
 1. Zweite Datenquelle für Nicht-Krypto anbinden. Der Schnitt existiert schon:
    `qt.data.ingest` ist quellenagnostisch, `qt.data.store` kennt nur Symbole.
@@ -182,6 +199,27 @@ Ziel: **n_eff von 1,4 auf mindestens 4.**
 > Konsequenz für Gate 1: **Mindest-Sharpe 0,41** statt der erhofften 0,33.
 > Um auf 4 zu kommen, fehlt eine Anlageklasse, die mit keiner vorhandenen
 > läuft — Volatilität, Zinsdifferenzen, Einzelwerte außerhalb der Indizes.
+
+> **Zweiter Anlauf am 2026-09-03 — bestanden (ADR-061).** Zwölf Reihen, nach
+> genau diesem Kriterium ausgesucht statt nach Anlageklasse allein: ρ̄ fällt
+> von 0,26 auf **0,18**, n_eff steigt auf **5,1** über 38 prüfbare Märkte.
+>
+> Der Unterschied zum ersten Anlauf ist die Frage, die gestellt wurde. Dort:
+> „welche Anlageklassen fehlen?" Hier: „welche Reihen laufen mit dem Bestand
+> **nicht** mit?" Die Rechnung sagt, warum das der richtige Hebel ist —
+> `n/(1+(n−1)ρ̄)` hängt fast nur an ρ̄; von 30 auf 60 Märkte zu verdoppeln
+> lockert die Anforderung an ρ̄ um 0,012.
+>
+> Der Korb stand **vor** der Messung fest, mit vier Ausschlussregeln gegen den
+> bequemen Weg — keine inversen Produkte (`SH` wäre −SPY: Korrelation −1, null
+> Information), keine Geldmarktnähe, Historie bis 2021-09-30, nur Long. Zwei
+> der zwölf (`VNQ`, `EWJ`) **verschlechtern** n_eff und sind trotzdem drin.
+> Klassenweise weggelassen bleibt das Ergebnis über 4,48; es hängt an keiner
+> einzelnen Reihe.
+>
+> Konsequenz für Gate 1: **Mindest-Sharpe 0,33.** Kein Kandidat gewinnt
+> dadurch — `macross` bricht weiter beim Umschlag ab, `crossmom` steht bei
+> −0,08.
 
 *Fallstrick, vorab benannt und inzwischen beseitigt:* Nicht-Krypto handelt
 nicht 24/7. `bars_per_year` und `find_gaps` unterstellten durchgehend Krypto —
@@ -260,16 +298,25 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    > IC-Streuung von 0,40 heißt, dass auch ein echter Effekt hier schwer zu
    > zeigen wäre. Dieselbe Datenknappheit wie überall, nur an einer anderen
    > Achse.
-   **Offen, und blockiert:** in dieser Umgebung ist kein API-Schlüssel
-   gesetzt. Die Kette ist gegen die Stubs end-to-end geprüft; es fehlt der
-   Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt die beiden
-   harten Grenzen inzwischen — vorher lief es gegen eine Wand, die es nicht
-   sah.
+   **Nicht mehr blockiert, und das ist neu.** Dieser Absatz stand hier als
+   „in dieser Umgebung ist kein API-Schlüssel gesetzt". Am 2026-09-03 ist
+   `NVIDIA_API_KEY` gesetzt, und ein vollständiger Gate-Lauf über
+   `--provider nim` ist durchgelaufen — 20 Aufrufe, ohne einen einzigen
+   Rückfall, und mit Sharpe −1,50 durchgefallen (ADR-060). Die Kette war
+   ohnehin gegen die Stubs end-to-end geprüft; es fehlte der Zugang, nicht die
+   Verdrahtung. Das Generator-Briefing kennt
+   die beiden harten Grenzen inzwischen — vorher lief es gegen eine Wand, die
+   es nicht sah.
+
+   Nachsehen statt annehmen: `env | grep NVIDIA_API_KEY`, und
+   `uv run qt alloc ... --stub` nennt in der Telemetriezeile die Zahl der
+   Aufrufe, die ein echter Lauf kosten würde (derzeit 20).
 3. **Jeder Kandidat durchläuft die volle Kette, in dieser Reihenfolge:**
    Sandbox → Kritik → Walk-Forward → DSR → `qt placebo shuffle` →
-   `qt placebo cross`. Die Kontrollen stehen jetzt als Befehl bereit
-   (ADR-054), sie kosten 0,09 s je Durchlauf — es gibt keinen Grund mehr,
-   sie ans Ende zu schieben.
+   `qt placebo cross`. Die Kontrollen stehen als Befehl bereit (ADR-054) und
+   decken seit ADR-059 auch pfadabhängige und Querschnittsstrategien ab —
+   `shuffle` wählt die passende Fassung selbst, `cross` verweigert die
+   unpassende. Es gibt keinen Grund mehr, sie ans Ende zu schieben.
 
 ### Gate 1 — 2027-03-01
 
@@ -277,7 +324,7 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
 | | Kriterium |
 |---|---|
-| OOS-Sharpe | ≥ der in Phase A abgeleiteten Schwelle |
+| OOS-Sharpe | ≥ **0,33** — die aus n_eff 5,1 abgeleitete Schwelle (ADR-061) |
 | DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler |
 | Permutation | Perzentil ≥ 95 % (`qt placebo shuffle`) |
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |
@@ -300,9 +347,18 @@ und Ausführung sich verhalten wie im Backtest. Divergenz hier ist ein Stopp.
 
 ### Phase E — Live mit Minimalkapital
 
-`broker_ccxt`, `reconcile`, Positionsgrößen, harte Limits. Startkapital so
-klein, dass ein Totalverlust folgenlos ist. Ab dem ersten Fill läuft die Uhr
-für das Ziel oben.
+~~`broker_ccxt`, `reconcile`, Positionsgrößen, harte Limits.~~ **Gebaut am
+2026-09-03 (ADR-062)** — mit zwei unabhängigen Schaltern, ohne die nichts
+gesendet wird, und ohne einen Befehl, der den lokalen Zustand an den
+Börsenstand angleicht.
+
+Startkapital so klein, dass ein Totalverlust folgenlos ist. Ab dem ersten
+Fill läuft die Uhr für das Ziel oben.
+
+**Der erste Fill setzt Gate 1 voraus.** `qt live tick` beendet sich bis dahin
+mit Exit 1 und nennt den Grund. Wer scharf schalten will, braucht
+`scharf=True` im Aufruf **und** `QT_LIVE_SCHARF=ja` in der Umgebung — beides
+gleichzeitig passiert nicht aus Versehen.
 
 ---
 
@@ -318,15 +374,20 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei **15** und vergisst nichts (ADR-032, ADR-057).
+Versuchszähler steht bei **16** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
 
 ---
 
 ## Der ehrliche Erwartungswert
 
-Sieben Hypothesen, sieben gescheitert. Nichts im Repo hat je eine
-Negativkontrolle bestanden. Es gibt keinen Grund anzunehmen, dass eine
+Neun Hypothesen, neun gescheitert. Nichts im Repo hat je eine
+Negativkontrolle bestanden — und seit ADR-059 ist das keine Beobachtung über
+drei Strategien mehr, sondern über acht: `macross`, `trend`, `meanrev`,
+`timesfm`, `crossmom` und `crossrev` liegen zwischen Perzentil 38 % und 76 %
+ihrer eigenen gewürfelten Fassungen, gefordert waren 95 %; `elliott` und
+`hashribbon` sind schon vorher gefallen. Ungeprüft ist allein `orderflow`,
+und ungeprüft ist nicht bestanden. Es gibt keinen Grund anzunehmen, dass eine
 verbreiterte Datenbasis daran etwas ändert — sie macht nur die *Frage*
 entscheidbar, die bisher offenbleiben musste.
 

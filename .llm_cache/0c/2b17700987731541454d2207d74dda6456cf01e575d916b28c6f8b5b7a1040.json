@@ -1,0 +1,27 @@
+{
+ "key": "0c2b17700987731541454d2207d74dda6456cf01e575d916b28c6f8b5b7a1040",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong long-term Sharpe 2.098 (384 bars) and 3.406 (96 bars); negative correlation to B improves diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Long-term Sharpe -1.76 (384) and -3.29 (96) show persistent negative edge; negative weight captures reverse signal.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.1
+   },
+   {
+    "reason": "Positive long-term Sharpe 1.17 (384) and low correlation to A (0.43); moderate weight balances risk.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_A shows consistent positive edge across medium/long windows with high Sharpe. STRAT_B exhibits strong negative long-term Sharpe, justifying a small inverse allocation. STRAT_C offers modest positive long-term Sharpe and diversification benefit vs A (corr 0.43) and B (corr -0.87). Current allocation overweighted B (-0.2) despite poor long-term metrics; reducing B to -0.1 and shifting to A/C improves risk-adjusted return. Gross leverage 1.0 maintained.",
+  "regime": "Mixed trends; STRAT_A trending, STRAT_B mean-reverting, STRAT_C choppy."
+ }
+}

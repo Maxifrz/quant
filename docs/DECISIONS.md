@@ -5,6 +5,709 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-062 — Der Live-Pfad ist gebaut und bleibt unverdrahtet
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** `qt.live.broker_ccxt`, `qt.live.sizing` und
+`qt.live.reconcile` existieren, mit Tests. `qt live tick` ist **absichtlich
+nicht verdrahtet** und beendet sich mit Exit 1 und einer Begründung. Was zum
+Handeln fehlt, ist kein Code mehr, sondern die Bedingung aus `docs/ZIEL.md`:
+ein Kandidat, der Gate 1 besteht.
+
+---
+
+### Warum überhaupt bauen, wenn nichts handeln darf
+
+`docs/ZIEL.md` sortiert den Live-Pfad ausdrücklich ans Ende: „ein Live-Pfad
+ohne validierten Edge ist ein Weg, schneller Geld zu verlieren." Der Satz gilt
+weiter, und er wird durch dieses ADR nicht abgeschwächt.
+
+Trotzdem ist die Arbeit nicht verfrüht, und zwar aus einem messbaren Grund:
+**der Live-Pfad stellt Fragen, die der Backtest nicht stellt** — Mindest-
+ordergrößen, Rundungsraster, was eine Börse als Fill zurückmeldet, was
+passiert, wenn eine Order abgelehnt wird. Jede dieser Fragen kann eine
+Strategie unbrauchbar machen, und keine davon steht in einem Kursverlauf.
+Eine davon ist unten schon beantwortet, und die Antwort ist kleiner als
+erwartet.
+
+Was hier **nicht** passiert ist: eine echte Order. Kein Schlüssel wurde
+benutzt, nichts wurde gesendet. Die einzigen Netzzugriffe waren öffentliche
+Marktdaten.
+
+---
+
+### Die zwei Schalter
+
+Scharf ist der Broker nur, wenn **beides** gilt:
+
+```python
+CcxtBroker(..., scharf=True)     # im Aufruf
+QT_LIVE_SCHARF=ja                # in der Umgebung
+```
+
+Zwei unabhängige Schalter, weil ein einzelner zu leicht aus Versehen steht:
+ein vergessener Default im Code, eine geerbte Umgebungsvariable in einer
+Routine. Der Wert ist `ja` und nicht `1` oder `true` — die beiden stehen zu
+leicht irgendwo herum.
+
+Ein unscharfer Broker **liest** normal (Kontostand, Positionen, Marktgrenzen)
+und wirft bei jedem Sendeversuch `NichtScharf` — mit der Order im Text, damit
+ein Trockenlauf zeigt, was passiert wäre. Der Test dazu prüft nicht nur, dass
+geworfen wurde, sondern dass die Fake-Börse **nichts empfangen** hat; bei
+einer Sicherung ist das der Unterschied zwischen geprüft und angenommen.
+
+### Die Grenzen liegen im Broker, nicht nur darüber
+
+`Limits` wird in `broker_ccxt` geprüft, obwohl die Risk-Engine oben im
+Aufrufpfad schon Caps hat. Eine Grenze, die nur an einer Stelle steht,
+schützt genau so lange, wie dieser Pfad der einzige ist — und ADR-053 hat
+gezeigt, wie leise ein zweiter Pfad entsteht.
+
+Verletzungen werden **geworfen, nicht gekappt.** Eine still zurechtgestutzte
+Order ist eine Order, die niemand so gewollt hat, und der Kontostand danach
+passt zu keiner Absicht. Die Defaults sind klein (100 je Order, 500 je
+Position, 1000 brutto): wer mit echtem Geld anfängt, soll die Zahl bewusst
+hochsetzen müssen.
+
+### Was von der Börse kommt, bleibt von der Börse
+
+Der Fill wird aus der Antwort gebaut — Preis, Menge, Gebühr. Das Kostenmodell
+aus ADR-056 wird hier **nicht** angewandt: es war die Schätzung, die diese
+Zahlen vorhersagen sollte, und sie jetzt darüberzulegen hieße, die Prüfung zu
+verhindern, für die der Live-Pfad da ist.
+
+Fehlt in der Antwort der Durchschnittspreis, wird **nicht** der letzte bekannte
+Kurs eingesetzt. Dann stünde im Konto eine Zahl, die nicht von der Börse kommt
+und trotzdem so aussieht. Stattdessen: `OrderAbgelehnt` mit dem Hinweis auf
+`qt live reconcile`.
+
+### `reconcile` meldet und korrigiert nicht
+
+ADR-037 hat dieses Modul mit einer Begründung ausgelassen, die bis heute galt:
+ein Abgleich braucht zwei unabhängige Quellen. Mit `broker_ccxt` gibt es die
+zweite, also gibt es jetzt den Abgleich.
+
+Es gibt **keine** Funktion, die den lokalen Zustand nachzieht, und ein Test
+hält das fest (er verbietet die Namen `angleichen`, `sync`, `fix`, `apply`).
+Eine Abweichung heißt, dass eine Annahme falsch war — eine Order kam nicht
+durch, eine Teilfüllung wurde übersehen, eine Gebühr wurde in der
+Basiswährung abgezogen. Wer den Zustand nachzieht, löscht die Spur und fährt
+mit demselben Fehler weiter, nur unsichtbar. Der fehlende Befehl ist die
+Sicherung, wie bei der Promotion im Research-Loop (ADR-032).
+
+Zwei Details, die aus dem Nachdenken über den schlimmsten Fall kommen:
+
+* Verglichen wird über die **Vereinigung** beider Symbolmengen, nicht über
+  die des Solls. Der gefährlichste Fall ist die Position, die es lokal gar
+  nicht gibt — eine Order, die durchkam, obwohl sie als abgelehnt verbucht
+  wurde. Wer nur über das Soll iteriert, sieht genau die nicht.
+* Die relative Abweichung bezieht sich auf die **größere** der beiden Mengen.
+  Auf `soll` bezogen bräche sie bei soll = 0 und ist = 0,3 — wieder genau im
+  interessantesten Fall.
+
+---
+
+### Der eine Befund, und er ist kleiner als die Überschrift verspricht
+
+Eine Börse hat Mindestordergrößen. Was darunter fällt, wird nicht ungenau
+ausgeführt, sondern **gar nicht** — die Mindestordergröße wirkt also wie ein
+zweites Rebalancing-Band, das kein Backtest modelliert.
+
+Die erste Fassung dieses Absatzes stand hier als „bei Minimalkapital handelt
+dieselbe Strategie anders". Das ist zu stark, und der Test dazu ist an
+gewählten statt gemessenen Zahlen durchgefallen. Gemessen über
+`qt live groesse` gegen `api.exchange.coinbase.com`, BTC/USD, 2026-09-03:
+
+| | |
+|---|---|
+| Mindestmenge | **keine** |
+| Mindestgegenwert | **1 USD** |
+| Mengenraster | 1e-8 |
+
+Eine Anpassung fällt damit erst aus, wenn ihr Gegenwert unter einem Dollar
+liegt — bei einem Prozent Rebalancing-Band also unterhalb von rund **100 USD**
+Kontogröße. Der Mechanismus ist echt, seine Reichweite ist klein, und beides
+steht jetzt als Test da: einer zeigt den Mechanismus an gewählten Zahlen, der
+zweite pinnt die gemessene Wirklichkeit fest.
+
+Das ist dieselbe Lehre wie ADR-056, wo ein Satz über 4h überall zitiert wurde,
+als gälte er allgemein. Ein Befund ohne seinen Geltungsbereich ist eine
+Behauptung, die auf ihre Widerlegung wartet.
+
+---
+
+### Was fehlt, und was ausdrücklich nicht fehlt
+
+**Nicht mehr offen:** `broker_ccxt`, `sizing`, `reconcile`, harte
+Positionslimits, Schlüsselverwahrung (`Zugang` liest aus der Umgebung, zeigt
+den Schlüssel in keinem `repr` und schreibt ihn nirgends hin). 30 Tests, keiner
+braucht Netz.
+
+**Offen und bewusst offen:**
+
+* **`qt live tick` ist nicht verdrahtet.** Neun Strategien geprüft, keine hat
+  eine Negativkontrolle bestanden (ADR-059). Diesen Befehl zu verdrahten,
+  bevor Gate 1 fällt, hieße das Abbruchkriterium des Projekts zu umgehen —
+  mit echtem Geld.
+* **Kein echter Schlüssel wurde je benutzt.** `qt live status` und
+  `qt live reconcile` sind gegen die Fake-Börse geprüft, nicht gegen eine
+  echte. Der erste Lauf mit echten Schlüsseln wird Dinge finden; das ist der
+  Zweck von `status` als erstem Befehl.
+* **Teilfüllungen** werden als ein Fill verbucht, wenn die Börse sie so
+  meldet. Ob das reicht, entscheidet der erste echte Fill.
+* Die **Slippage gegen den erwarteten Kurs** wird nicht in den Fill
+  geschrieben. Sie ist eine Größe des Abgleichs zwischen Erwartung und
+  Ausführung und gehört nicht in eine Zahl, die von der Börse kommt.
+
+---
+
+## ADR-061 — Phase A bestanden: n_eff 5,1, und die Schwelle sinkt deshalb auf 0,33
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Zwölf Reihen aus Anlageklassen, die der Bestand nicht
+hatte, heben die effektive Marktzahl von 3,4 auf **5,1**. Das vorab gesetzte
+Kriterium aus `docs/ZIEL.md` Phase A (n_eff ≥ 4) ist damit erfüllt, und die
+daraus abgeleitete Nachweisgrenze `MIN_SHARPE` sinkt von 0,41 auf **0,33**.
+
+---
+
+### Warum mehr vom Gleichen nicht geholfen hätte
+
+`n_eff = n/(1+(n−1)·ρ̄)` hängt fast nur an der **mittleren paarweisen
+Korrelation**, kaum an der Zahl der Märkte. Ausgerechnet:
+
+| Märkte | ρ̄ für n_eff ≥ 4 |
+|---|---|
+| 30 | ≤ 0,224 |
+| 38 | ≤ 0,230 |
+| 60 | ≤ 0,236 |
+
+Von 30 auf 60 Märkte zu verdoppeln lockert die Anforderung um 0,012. Der
+Bestand lag bei ρ̄ = 0,264. Gebraucht wurden also nicht *mehr* Reihen, sondern
+Reihen, die mit dem Vorhandenen **nicht mitlaufen**.
+
+### Der Korb stand vor der ersten Messung
+
+Das ist der Teil, der zählt. Wer Kandidaten durchprobiert, bis n_eff über 4
+steht, hat die Kennzahl optimiert und nicht die Evidenz verbreitert — genau
+der Fehler, den ADR-055 an sich selbst dokumentiert, als dort ein anderer
+Schätzer gesucht wurde, nachdem 3,4 das Kriterium verfehlte.
+
+Vier Regeln, festgelegt vor dem ersten Ziehen, die den bequemen Weg
+ausschließen:
+
+1. **Keine inversen, keine gehebelten Produkte.** `SH` ist rechnerisch −SPY.
+   Es hätte Korrelation −1 zum Bestand, drückte ρ̄ kräftig — und trüge **null**
+   neue Information. Die Formel ist so zu schlagen, ohne dass ein einziger
+   Standardfehler kleiner wird.
+2. **Keine Geldmarktnähe.** `BIL` und Verwandte haben kaum Varianz und damit
+   Korrelation nahe null zu allem. Derselbe Trick, nur leiser. Ein Markt ohne
+   Bewegung ist kein Test.
+3. **Historie mindestens bis 2021-09-30** — der Anfang des gemeinsamen
+   Fensters (AVAX). Eine kürzere Reihe verkürzt die Korrelationsmatrix für
+   alle.
+4. **Nur physisch oder über Futures hinterlegte Long-Instrumente.**
+
+Übrig bleiben die drei Lücken, die `docs/ZIEL.md` selbst benennt
+(Volatilität, Zinsdifferenzen, Einzelwerte), plus eine vierte, die dort fehlt:
+Gold, Silber, Rohöl und ein breiter Korb waren da — **Agrarrohstoffe** nicht.
+Deren Treiber ist das Wetter, und das schert sich nicht um Notenbanken.
+
+| Klasse | Ticker |
+|---|---|
+| Volatilität | VIXY |
+| Anleihen | SHY, TIP, MUB |
+| Rohstoffe | DBA, CORN, WEAT, SOYB, UNG, CPER |
+| Immobilien | VNQ |
+| Aktien | EWJ |
+
+**Einzelwerte bleiben draußen, obwohl ZIEL.md sie nennt.** Es gibt keine
+neutrale Regel, fünf Namen aus viertausend zu wählen — und diese Wahl ließe
+sich hinterher auf n_eff hin treffen. Dazu trägt sie nicht: ein
+US-Großunternehmen läuft zu 0,5 bis 0,7 mit SPY und höbe ρ̄, statt es zu
+senken. Für Nebenwerte gälte die Vermutung aus ZIEL.md eher — deren
+Liquidität steht aber der Kostenannahme aus ADR-056 entgegen.
+
+### Das Ergebnis, und die Gegenprobe dazu
+
+```
+uv run qt placebo cross --strategy macross --tf 1d
+  Median-Sharpe ueber 38 Maerkte: +0.09
+  mittlere paarweise Korrelation der Maerkte: 0.18
+  -> effektiv 5.1 unabhaengige Maerkte (ADR-052), nicht 38
+```
+
+Eine einzelne Reihe darf das Ergebnis nicht tragen — `VIXY` ist der
+naheliegende Verdacht, weil implizite Volatilität in der Praxis überwiegend
+eine Gegenbewegung zu Aktien ist. Klassenweise weggelassen:
+
+| Auswahl | n | ρ̄ | n_eff |
+|---|---|---|---|
+| alle 38 | 38 | 0,176 | **5,07** |
+| ohne VIXY | 37 | 0,199 | 4,53 |
+| ohne Agrar | 34 | 0,200 | 4,48 |
+| ohne die neuen Anleihen | 35 | 0,185 | 4,80 |
+| ohne UNG + CPER | 36 | 0,183 | 4,86 |
+| **ohne VNQ + EWJ** | 36 | 0,171 | **5,15** |
+| Bestand vor diesem ADR | 26 | 0,264 | 3,42 |
+
+**Keine einzelne Klasse trägt das Ergebnis** — die schlechteste Auslassung
+landet bei 4,48, immer noch über dem Kriterium. Und die vorletzte Zeile ist
+der Beleg, dass der Korb nicht auf die Zahl hin gewählt wurde: `VNQ` und
+`EWJ` laufen mit Aktien mit und **verschlechtern** n_eff. Sie sind drin, weil
+Immobilien und Japan eigene Anlageklassen sind, nicht weil sie helfen.
+
+### Die Schwelle sinkt — und warum das kein Torpfostenverschieben ist
+
+`MIN_SHARPE` in `qt.research.gate` geht von 0,41 auf 0,33. Das ist die
+gefährliche Richtung, deshalb die drei Bedingungen, unter denen es zulässig
+ist, alle nachprüfbar:
+
+* **Die Regel stand vorher.** ZIEL.md Phase C.1: „Mindest-Sharpe aus Phase A
+  ableiten und **vorab** als ADR festschreiben." Die Schwelle ist eine
+  Funktion von n_eff, keine freie Zahl.
+* **Gesenkt hat sie die Datenlage, nicht ein verfehltes Ergebnis.** Der
+  Standardfehler ist wirklich kleiner geworden.
+* **Kein Kandidat gewinnt dadurch.** Nachgerechnet nach der Senkung:
+
+| | vor Phase A | nach Phase A |
+|---|---|---|
+| `macross` | Umschlag 8,8× > 7× | **unverändert 8,8×**, bricht vor dem Sharpe ab |
+| `crossmom` OOS-Sharpe | −0,24 | **−0,08**, verlangt ≥ 0,33 |
+| `crossmom` Umschlag | 4,6× | **3,0×** |
+| `crossmom` DSR | 0,010 | 0,023, verlangt ≥ 0,95 |
+
+Die Senkung rettet nichts, was vorher gescheitert ist. Sie dürfte es sonst
+auch nicht.
+
+### Was die breitere Basis tatsächlich bewegt hat
+
+`crossmom` ist die Strategie, für die der Querschnitt gebaut wurde, und sie
+reagiert in genau der Richtung, die der Plan vorhergesagt hat:
+
+| | 27 Märkte (ADR-058) | 39 Märkte |
+|---|---|---|
+| mittlerer Rank IC | +0,0307 | **+0,0346** |
+| effektive Datenpunkte | 348 | **413** |
+| t korrigiert | +1,42 | **+1,87** (p = 0,062) |
+| Umschlag/EK/Jahr | 4,6× | **3,0×** |
+| OOS-Sharpe | −0,24 | **−0,08** |
+
+Jede Zeile geht in die richtige Richtung, und **keine** kommt über ihre
+Schwelle. `|t| ≥ 1,96` ist verfehlt, der Sharpe ist negativ. Das ist der
+ehrliche Zwischenstand: die Datenbasis war ein echter Hebel, und sie reicht
+trotzdem nicht.
+
+### Nebenfund: das Gate meldete eine Nebenwirkung, die es nicht hat
+
+Der `crossmom`-Lauf schrieb: „Dieser Lauf zaehlt als Versuch. Zaehler danach:
+17 (ADR-032)." `qt trials` sagte danach unverändert **16**.
+
+Beides stimmte für sich: das Gate rechnet die DSR gegen `trial_count() + 1`,
+schreibt aber bewusst nichts in die Registry (ADR-057). Nur die Meldung
+behauptete den dauerhaften Effekt. Bei einer Zahl, die das gesamte
+Overfitting-Budget des Projekts trägt, ist das die schlechteste Stelle für
+eine falsche Zusage — sie lässt künftige DSR-Rechnungen zu optimistisch
+aussehen, und niemand sieht nach, weil die Meldung ja das Gegenteil sagte.
+Behoben, mit einem Test, der gegen den alten Text durchfällt.
+
+### Konsequenzen
+
+- **n_eff 5,1** statt 3,4; ρ̄ 0,18 statt 0,26; 38 prüfbare Märkte statt 26.
+- **`MIN_SHARPE` 0,33.** Der Test in `tests/test_gate1.py` hält die Zahl fest,
+  damit ihre Änderung zwei Diffs kostet statt keinen.
+- **Phase A in ZIEL.md ist erledigt**, beim zweiten Anlauf und mit der
+  Begründung, warum der erste zu kurz griff: dort wurden Anlageklassen
+  hinzugefügt, hier wurden sie danach ausgesucht, ob sie mit dem Bestand
+  mitlaufen.
+- **Der Versuchszähler steht unverändert bei 16.** Kein Lauf dieses ADRs hat
+  einen gekostet.
+- **Offen bleibt die Grenze der Kennzahl selbst:** n_eff misst die
+  Korrelationsstruktur, nicht die Güte der Reihen. 38 Märkte mit ρ̄ = 0,18
+  sind kein Beweis, dass sich in ihnen etwas finden lässt — nur, dass ein
+  Fund dort eher zeigbar wäre.
+
+---
+
+## ADR-060 — Der LLM-Allokator, drittes Mal, mit einem fairen Korb: −1,50
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Der Einwand aus dem ROADMAP-Block ist ausgeräumt, und er
+rettet den Allokator nicht. Er bekommt keinen vierten Lauf, solange sich an
+den Daten nichts ändert.
+
+### Der Einwand, der geprüft werden musste
+
+ADR-045 und ADR-046 haben den LLM-Allokator zweimal am Gate aus ADR-004
+scheitern lassen. Der ROADMAP-Block führte dagegen einen Vorbehalt, und der war
+berechtigt:
+
+> Alle bisherigen Läufe verteilten `trend` und `meanrev` auf 4h — beide
+> verlieren dort dreistellig. Ein Allokator kann nicht verteilen, was nicht da
+> ist.
+
+Ein Allokator, der nur zwischen zwei Verlustquellen wählen darf, wird
+zwangsläufig schlecht aussehen. Der faire Test gibt ihm etwas, das gewinnt.
+`macross` auf 1d ist die einzige Strategie des Projekts mit positiver
+OOS-Kennzahl.
+
+### Der Lauf
+
+```bash
+NVIDIA_API_KEY=... uv run qt alloc --compare-baselines \
+    --strategies macross,trend,meanrev --tf 1d \
+    --allocate-every 24 --effort low --provider nim
+```
+
+20 Aufrufe, keiner aus dem Cache, rund eine halbe Stunde. **Der Blocker aus
+`docs/ZIEL.md` Phase C.2 („in dieser Umgebung ist kein API-Schlüssel gesetzt")
+gilt in dieser Umgebung nicht mehr** — die Kette läuft gegen echte Modelle
+durch.
+
+| Allokator | Sharpe | Rendite | MaxDD | Zeit i. M. | Umsatz | Trades |
+|---|---|---|---|---|---|---|
+| **llm** | **−1,50** | −16,1 % | −16,4 % | 25,0 % | 507.926 | 28 |
+| equal_weight | 0,00 | −0,5 % | −9,2 % | 74,4 % | 1.053.279 | 72 |
+| vol_parity | **+0,58** | +8,0 % | −10,4 % | 84,0 % | 1.164.209 | 79 |
+| best_single | −1,72 | −9,4 % | −9,4 % | 5,8 % | 213.814 | 8 |
+
+Durchgefallen an vier Kriterien gleichzeitig, darunter dem absoluten: der
+Kandidat verdient out-of-sample kein Geld, unabhängig von jeder Baseline.
+
+### Was der Lauf ausschließt, und was nicht
+
+**Ausgeschlossen ist die bequeme Erklärung.** Die Telemetrie sagt: 20 Aufrufe,
+**0 Rückfälle auf Gleichgewichtung, 0 halluzinierte Labels, 0 bewusste
+Ausstiege**. Das Modell hat also sauber geantwortet, in gültigem Schema, mit
+gültigen Strategienamen — es hat schlecht verteilt. ADR-018 (jeder Fehler wird
+zu Gleichgewichtung) hat nichts zu tun gehabt; wäre der Allokator
+zusammengebrochen, stünde hier die Gleichgewichtungszeile.
+
+**Wie er verliert, ist die interessante Zeile.** Zeit im Markt 25,0 % gegen
+74,4 % bei Gleichgewichtung. Der Allokator hat sich weitgehend
+herausgehalten — und lag damit in einem Fenster falsch, in dem
+Dabeibleiben die bessere Wahl war. Genau deshalb gibt es die Untergrenze aus
+ADR-016: wer ein Viertel der Zeit investiert ist, beantwortet eine andere
+Frage als die Baselines, und ein Vergleich der Sharpes wäre dann kein
+Vergleich.
+
+**Nicht ausgeschlossen ist Zufall.** Es ist **ein** OOS-Fenster. Das Gate sagt
+das selbst („ein Vorsprung, der nicht in der Mehrheit der Fenster steht, ist
+eine Zufallsstichprobe"), und der Satz gilt in beide Richtungen: ein Rückstand
+in einem Fenster ist auch keiner. Mit 2.803 Tagesbars und der
+Fenstergeometrie 2000/24/500 gibt es kein zweites — mehr Fenster brauchen
+mehr Kalenderzeit oder mehr Märkte, nicht mehr Aufrufe.
+
+### Konsequenz
+
+Der Punkt „Gate mit `macross` im Korb" verschwindet aus der Liste im
+ROADMAP-Block: er ist gelaufen. Die Zeile über den LLM-Allokator lautet jetzt
+**dreimal geprüft, dreimal gescheitert**, und beim dritten Mal ohne die Ausrede
+des schlechten Korbs.
+
+Ein vierter Lauf wäre eine weitere Konfiguration auf denselben Daten. Was
+fehlt, ist kein besserer Prompt, sondern ein zweites Testfenster — und das
+liefert nur eine breitere Datenbasis (ADR-055) oder Vorwärtszeit.
+
+**Der Cache liegt im Repo.** Die 20 Einträge dieses Laufs sind per
+`git add -f` aufgenommen, wie es die Konvention in `.gitignore` für einen
+teuren Lauf vorsieht — ein Nachvollziehen kostet damit null Aufrufe statt
+zwanzig. Vorher geprüft statt der Zusage geglaubt: keine der zwanzig Dateien
+enthält einen Schlüssel, einen Symbolnamen oder ein Datum. Die Anonymisierung
+aus ADR-003/017 hält also nicht nur im Briefing, sondern auch in dem, was
+davon liegen bleibt.
+
+---
+
+## ADR-059 — Negativkontrollen für den Rest: drei Wege, wie eine Kontrolle lügt
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Jede registrierte Strategie bekommt eine
+Negativkontrolle. Dabei wurden **drei** Stellen gefunden, an denen die
+vorhandene Kontrolle ein Urteil ausgab, das keines war — dazu eine im
+Datenpfad darunter, die den Store still um fünf Märkte kürzte, und eine im
+täglichen Tick, der seinen Zustand auf einen zusammengeführten Zweig schrieb
+und den Fehlschlag als Erfolg meldete.
+
+Alle fünf haben dieselbe Form: **etwas fiel aus und sah aus wie ein
+Ergebnis.** Das ist dasselbe Muster wie ADR-051 (ein Konto lief nicht,
+während hier stand, es laufe) und ADR-053 (fünf Funde, kein Test rot) — nur
+jetzt in den Kontrollen selbst, also in der Schicht, die genau das verhindern
+soll.
+
+---
+
+### Fund 1: der Store verlor fünf von vierzehn Märkten, ohne es zu sagen
+
+Der Container ist frisch, `/data/*` ist nicht versioniert, also wurden die
+14 Krypto-Märkte aus ADR-050 neu gezogen. Geschrieben wurden **neun**:
+
+```
+$ uv run qt data pull --symbols BTC/USD,...,AVAX/USD --tf 1d --since 2019-01-01
+     ALGO/USD  1d    2,577 Bars      ...  (9 Zeilen)
+```
+
+Fehlend: ADA, DOGE, DOT, SOL, AVAX — exakt die fünf, die ADR-050 mit „ab
+2021" führt. Kein Fehler, keine Warnung, neun Zeilen sehen so vollständig aus
+wie vierzehn.
+
+**Die Ursache, gemessen statt vermutet.** Coinbase beantwortet
+`fetch_ohlcv(since=X, limit=300)` mit dem **Fenster** `[X, X+300 Tage)`, nicht
+mit „alles ab X". Für SOL/USD, gelistet am 2021-06-17:
+
+| `since` | Antwort |
+|---|---|
+| 2019-01-01 | **leere Liste** |
+| 2021-01-01 | 133 Bars ab 2021-06-17 |
+
+`fetch_ohlcv` brach bei der ersten leeren Seite ab — richtig am Ende der
+Historie, falsch davor. Eine leere Seite heißt zweierlei, und der Code kannte
+nur eine Bedeutung.
+
+**Behoben:** vor der ersten Zeile wird der Cursor weitergeschoben statt
+abgebrochen; nach der ersten Zeile bleibt der Abbruch. Zwei Tests, einer
+fällt gegen den alten Code durch. `qt data pull` nennt jetzt außerdem die
+Symbole, die nichts geliefert haben.
+
+**Warum das mehr ist als ein Datenfehler:** `n_eff`, der Querschnitts-Median
+und jede Zahl aus `qt placebo cross` rechnen über die Märkte, *die da sind*.
+Ein stiller Ausfall verwandelt einen unvollständigen Test in einen, der
+vollständig aussieht — genau das, wogegen `cross_market_control` im
+Kommentar argumentiert, eine Ebene tiefer.
+
+---
+
+### Fund 2: die Kontrolle war für pfadabhängige Strategien nicht anwendbar
+
+`qt placebo shuffle --strategy trend` lieferte kein Ergebnis, sondern
+Kalibrierfehler **0,0998** und Exit 1. Die Kalibrierprobe hat also
+funktioniert; nur war die Diagnose unvollständig.
+
+Der Grund ist kein Fehler in einer der beiden Seiten. `signal_series` zeichnet
+**einen durchgehenden Lauf** über die ganze Historie auf. `walk_forward` setzt
+die Strategie **je Fenster neu auf**. Für `macross` ist das gleichgültig — sie
+ist eine reine Funktion ihres Fensters, Abweichung 0,0000 (ADR-054). `trend`
+trägt einen Trailing-Stop über Bars; ihre beiden Fassungen sind verschieden,
+und zwar **bevor** irgendetwas gewürfelt wurde.
+
+**Die Konsequenz war, dass jede zustandsbehaftete Strategie prinzipiell keine
+Kontrolle bekommen konnte** — `trend`, `meanrev`, `crossmom`, `crossrev` und
+`timesfm`, also fünf von neun.
+
+**Behoben durch einen Wechsel des Vergleichspunkts.** Verglichen wird gegen
+den **Abspieler mit den echten Gewichten**, nicht gegen die Strategie: nur er
+ist mit den Ziehungen konstruktionsgleich — gleiche Bauform, gleiche
+Fenstergeometrie, nur ohne Würfel. Der Abstand zur Strategie verschwindet
+nicht, er bekommt einen Namen und steht im Bericht:
+
+```
+  Strategie selbst      +0.158
+  Abspieler (Referenz)  +0.059  Pfadabhaengigkeit 0.0998
+```
+
+Für eine zustandslose Strategie muss diese Zahl null sein; dort ist sie
+weiterhin ein Kalibrierfehler. `macross` liefert unverändert 0,0000, und
+ADR-054 bleibt damit gültig — nachgerechnet: Perzentil 75,5 % bei 200
+Ziehungen gegen 74,3 % bei 1000 in ADR-054.
+
+---
+
+### Fund 3: eine Querschnittsstrategie fiel durch, ohne je gehandelt zu haben
+
+```
+$ uv run qt placebo shuffle --strategy crossmom --symbol BTC/USD --tf 1d
+  Ziehungen mindestens so gut wie die echte: 5 von 5
+  Perzentil der echten Strategie: 0.0%
+DURCHGEFALLEN
+```
+
+Eine Rangfolge über **einen** Namen gibt es nicht (`MIN_NAMEN = 8`), also war
+jedes Gewicht `nan`, jede Rendite null und jede Ziehung null. Null gegen null
+ergibt Perzentil 0 %, und die Kalibrierprobe war zufrieden: beide Seiten
+stimmten überein, weil beide nichts taten.
+
+Drei Änderungen, jede gegen einen eigenen Weg in dieses Ergebnis:
+
+1. `permutation_control` bricht ab, wenn der Abspieler out-of-sample keinen
+   Trade macht oder das Signal durchgehend flach ist.
+2. `qt placebo shuffle` nimmt eine Symbolliste und gibt einer
+   Querschnittsstrategie ohne Angabe **den ganzen Store** — dieselbe Regel,
+   die `qt gate` seit ADR-058 anwendet.
+3. `qt placebo cross` **verweigert** Querschnittsstrategien und nennt den
+   richtigen Befehl. Ein Lauf je Markt einzeln ist bei ihnen keine
+   schwächere Prüfung, sondern gar keine.
+
+---
+
+### Fund 4: die erste Fassung der Querschnittskontrolle hätte bestanden
+
+Eine Querschnittsstrategie behauptet nicht „ich weiß **wann**", sondern „ich
+weiß **welcher Markt**". Die Episoden-Permutation aus ADR-054 ist für sie die
+falsche Kontrolle: sie tauscht je Symbol getrennt und zerstört damit die
+Nettoneutralität, die die Strategie ausmacht.
+
+Die neue Kontrolle würfelt entsprechend die **Zuordnung**. Die erste Fassung
+loste sie je Halteblock neu aus — gleiche Blöcke, gleiches Brutto, gleiches
+Netto, jeden Monat eine neue Zuordnung. Sie sah strenger aus. Das Ergebnis:
+
+```
+  Ziehungen mindestens so gut wie die echte: 0 von 3
+  Perzentil der echten Strategie: 100.0%
+BESTANDEN
+```
+
+**Das wäre die erste bestandene Negativkontrolle in der Geschichte dieses
+Projekts gewesen.** Sie war ein Artefakt, und die Reibungszeile daneben sagt,
+warum:
+
+| | echt | je Ziehung |
+|---|---|---|
+| Trades | 352 | **3.452** |
+| Umsatz | 2,38 Mio. | **29,1 Mio.** |
+
+Die Kontrolle handelte zehnmal so oft und verlor an den Gebühren, nicht an
+der Information. Der Mechanismus ist das Rebalancing-Band (ADR-008): eine
+Rangfolge aus 12-Monats-Momentum wandert langsam, die meisten
+Gewichtsänderungen bleiben unter dem Band und kosten nichts. Eine frei
+ausgeloste Zuordnung springt jedes Mal darüber.
+
+**Ersetzt durch eine Umbenennung der Märkte:** *eine* Permutation für die
+ganze Historie, der komplette Gewichtsverlauf von Markt A geht an `π(A)`.
+Damit bleibt jeder Gewichtssprung erhalten — nach Größe und Zeitpunkt — und
+zufällig ist ausschließlich, welcher Markt gemeint ist. Nachgemessen: 352
+Trades echt gegen Median 291 je Ziehung, 2,38 gegen 1,98 Mio. Umsatz. Der
+Rest der Differenz kommt daher, dass die Märkte verschieden lange Historien
+haben; er geht **zugunsten der Kontrolle**, ein Durchfallen ist damit die
+sichere Richtung.
+
+Der Preis ist Trennschärfe: eine Ziehung ist eine Auslosung, nicht sechzig.
+Dieselbe Grenze wie in ADR-054 — „nicht gezeigt" heißt nicht „gezeigt, dass
+nichts da ist".
+
+**Die Reibungszeile steht jetzt im Bericht statt in einem ADR.** In ADR-054
+war sie Prosa („Die gewürfelten Fassungen zahlen dieselbe Reibung"). Als
+Prosa hätte sie diesen Fund nicht verhindert — als Zeile im Bericht hat sie
+ihn geliefert.
+
+---
+
+### Das Ergebnis: acht Strategien geprüft, acht durchgefallen
+
+*Datenstand 2026-09-03, 27 Märkte, Walk-Forward 1000/250/20, 200 Ziehungen.*
+
+| Strategie | Kontrolle | Ergebnis | Urteil |
+|---|---|---|---|
+| `macross` BTC/USD | Episoden | Perzentil **75,5 %** | durchgefallen |
+| `trend` BTC/USD | Episoden | Perzentil **70,5 %** | durchgefallen |
+| `meanrev` BTC/USD | Episoden | Perzentil **38,5 %** | durchgefallen |
+| `timesfm` BTC/USD | Episoden | Perzentil **66,5 %** | durchgefallen |
+| `crossmom` 27 Märkte | Umbenennung | Perzentil **45,0 %** | durchgefallen |
+| `crossrev` 27 Märkte | Umbenennung | Perzentil **64,5 %** | durchgefallen |
+| `trend` 26 Märkte | Querschnitt | Median-Sharpe **−0,17**, 38 % positiv | durchgefallen |
+| `meanrev` 26 Märkte | Querschnitt | Median-Sharpe **−0,20**, 38 % positiv | durchgefallen |
+
+Die Reibungsprobe hält in allen sechs Permutationsläufen: `macross` 47 Trades
+gegen Median 46, `crossmom` 352 gegen 291, `crossrev` 1.041 gegen 962. Wo die
+Ziehungen abweichen, tun sie es nach unten — sie zahlen weniger Gebühren als
+das Original, das Urteil fällt also in die sichere Richtung.
+
+**Zwei Lücken, ausdrücklich als Lücken:**
+
+`orderflow` hat keine Kontrolle, weil sie Handelsdaten braucht und die aus dem
+in ROADMAP.md genannten Grund nicht im Repo liegen (27,8 MB für 59 Tage).
+Ungeprüft ist nicht bestanden.
+
+`timesfm` hat eine, die kaum etwas zeigt: vier Trades über sieben OOS-Fenster.
+Ein Perzentil aus vier Entscheidungen sagt fast nichts. Der Querschnittslauf
+über 27 Märkte wurde vom Betriebssystem nach 17 Märkten abgebrochen — das
+Modell wird je Markt neu geladen. Beides bleibt so stehen; nach ADR-022 ist
+ein Backtest dieser Strategie ohnehin strukturell nicht vertrauenswürdig, das
+Pretraining kennt die Kursreihen möglicherweise.
+
+**`meanrev` liegt unter dem Median seiner eigenen Ziehungen** (38,5 %): die
+Strategie ist schlechter als ihre zufällig platzierte Fassung. Sie war schon
+vorher als Testinstrument markiert (Phase 1); jetzt steht eine Zahl dabei.
+
+---
+
+### Nebenbefund: die dokumentierte Kennzahl von `macross` reproduziert nicht
+
+Aus einem frisch gezogenen Store, mit denselben Fenstern:
+
+| | ROADMAP (Stand 2026-09-01) | gemessen (Stand 2026-09-03) |
+|---|---|---|
+| `macross` BTC/USD OOS-Sharpe | 0,31 | **0,25** |
+| `macross` ETH/USD OOS-Sharpe | 0,32 | **0,28** |
+
+Die Fenstergeometrie erklärt es nicht: verschiebt man den Anker des
+Walk-Forward um 1 bis 10 Bars, bewegt sich der BTC-Wert zwischen 0,229 und
+0,266 — die Kennzahl ist auf dieser Skala wackelig, aber 0,31 liegt außerhalb.
+Woran die Differenz sonst liegt, ist mit dem heutigen Store nicht
+rekonstruierbar; der alte existiert nicht mehr.
+
+**Festgehalten wird deshalb, was messbar ist:** die Zahl, auf der die
+Paper-Konten und die ganze Begründung aus ADR-035 ruhen, ist aus einer
+frischen Umgebung nicht reproduzierbar, und der Unterschied hat dieselbe
+Größenordnung wie der behauptete Effekt. Das ist die Konvention aus ROADMAP.md
+(„jede Ergebnistabelle nennt ihren Datenstand") in ihrer unangenehmen Form:
+sie hilft nicht nur beim Einordnen, sie zeigt auch, wenn nichts einzuordnen
+ist.
+
+---
+
+### Fund 5: der tägliche Tick schrieb auf einen zusammengeführten Zweig
+
+Beim Nachsehen des Laufzeitzustands — der erste Punkt des HIER-WEITER-Blocks —
+stand in beiden Konten der 2026-09-02 als letzter verarbeiteter Bar, bei einem
+Kalendertag 2026-09-03. Kein Commit im Repo, weder auf `main` noch auf dem
+alten Sitzungszweig, schreibt den Kontostand über den 2026-09-02T05:32Z
+hinaus.
+
+Zwei Dinge in `scripts/paper_tick.sh` erklären, warum das niemandem auffiel:
+
+1. `ZWEIG` stand fest auf `claude/llm-quant-algo-planning-f1ohgo`, und dessen
+   Pull Request ist zusammengeführt. `git push -u` legt einen gelöschten Zweig
+   wortlos neu an — der Zustand landet daneben statt dort, wo er gelesen
+   wurde. Jetzt schreibt das Skript auf den Zweig, auf dem sein Checkout
+   steht; ohne Zweig bricht es ab, statt zu raten.
+2. Nach der Push-Schleife stand **unbedingt** `echo "Kontostand gesichert."` —
+   auch wenn alle vier Versuche gescheitert waren. Ein Commit ohne Push
+   überlebt den Container nicht, und die Zeile behauptete das Gegenteil.
+   Jetzt meldet das Skript den Fehlschlag und endet mit Code 1.
+
+Ob die Routine überhaupt feuert, ist damit **nicht** beantwortet — das sagt
+erst der nächste Tag. Der von Hand nachgeholte Tick hat die beiden Konten
+zum ersten Mal überhaupt handeln lassen: BTC zu 77.437,40, ETH zu 2.418,61,
+je 600 Gebühr. Die Order lag seit dem 2026-09-02 vorgemerkt.
+
+Das ist ADR-051 zum dritten Mal, in einer neuen Verkleidung. Die Lehre bleibt
+dieselbe und ist im ROADMAP-Block jetzt ein Befehl: `Letzter verarbeiteter
+Bar` muss von Tag zu Tag weiterwandern; ein „Status: laeuft" allein sagt
+nichts.
+
+---
+
+### Konsequenzen
+
+- **`qt placebo shuffle` wählt die Kontrolle nach dem Typ der Strategie.**
+  Timing → Lage der Episoden, Querschnitt → Zuordnung der Märkte. Die falsche
+  Kontrolle ist kein schwächerer Test, sondern ein anderer.
+- **Der Bericht führt die Reibung mit.** Trades und Umsatz, echt gegen
+  Ziehungen. Fund 4 ist genau daran aufgefallen.
+- **Kein Lauf hat einen Versuch gekostet.** Negativkontrollen befragen keinen
+  neuen Kandidaten out-of-sample; der Zähler steht unverändert bei 16
+  (ADR-032).
+- **`fetch_ohlcv` unterscheidet die leere Seite vor der Notierung von der am
+  Ende der Historie.** Zwei Tests, einer fällt gegen den alten Code durch.
+- **`scripts/paper_tick.sh` schreibt zurück, wo es gelesen hat, und meldet
+  einen gescheiterten Push als Fehlschlag.**
+- **Acht von neun Strategien haben jetzt eine Negativkontrolle, und keine
+  besteht sie.** Der Satz aus ZIEL.md — „Nichts im Repo hat je eine
+  Negativkontrolle bestanden" — ist damit nicht mehr eine Beobachtung über
+  drei Strategien, sondern über acht.
+
+---
+
 ## ADR-058 — Querschnitt statt Timing: was aus NVIDIAs Blueprint taugt, und was nicht
 **Datum:** 2026-09-03
 

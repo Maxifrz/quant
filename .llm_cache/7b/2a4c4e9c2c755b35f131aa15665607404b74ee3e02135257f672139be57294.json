@@ -1,0 +1,27 @@
+{
+ "key": "7b2a4c4e9c2c755b35f131aa15665607404b74ee3e02135257f672139be57294",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positiver Sharpe 1.11 (384 Bar) und hohe Diversifikation (rho -0.55 zu B, +0.52 zu C) rechtfertigen Beibehaltung.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "Negativer Sharpe -0.41 (384 Bar) und -0.95 (96 Bar); Inversion nutzt die starke negative Korrelation zu C (rho -0.72).",
+    "strategy_id": "STRAT_B",
+    "weight": -0.15
+   },
+   {
+    "reason": "Konsistenter positiver Sharpe (1.83/0.93/0.62) und niedrigster Drawdown (-18 %) stützen Erhalt der Allokation.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.2
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "Langfristige Fenster (384 Bar) dominieren die Entscheidung: STRAT_A (Sharpe 1.11) und STRAT_C (Sharpe 0.62) zeigen positive Erwartungswerte, STRAT_B (-0.41) negative. Korrelationen (A-B -0.55, B-C -0.72, A-C +0.52) machen die aktuelle Short-Position in B als Hedge gegen C wertvoll. Keine Kennzahl rechtfertigt eine Umschichtung gegen Transaktionskosten.",
+  "regime": "Uneinheitlich; STRAT_C stark, STRAT_A Erholung, STRAT_B schwach."
+ }
+}

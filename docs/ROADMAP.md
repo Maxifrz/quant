@@ -4,19 +4,54 @@
 >
 > ### Zustand nachsehen, nicht nachlesen
 >
-> Dieser Abschnitt **behauptet keinen Laufzeitzustand mehr**. Zweimal hat eine
-> Prosa-Behauptung hier länger gestimmt als die Wirklichkeit — einmal lief das
-> Paper-Konto wochenlang nicht, während hier stand, es laufe (ADR-051), und
-> einmal widersprachen sich zwei Absätze desselben Blocks (ADR-052). Eine
-> Behauptung veraltet still, ein Befehl nicht:
+> Dieser Abschnitt **behauptet keinen Laufzeitzustand mehr**. Dreimal hat eine
+> Prosa-Behauptung hier länger gestimmt als die Wirklichkeit — das Paper-Konto
+> lief wochenlang nicht, während hier stand, es laufe (ADR-051); zwei Absätze
+> desselben Blocks widersprachen sich (ADR-052); und zuletzt schrieb der
+> tägliche Tick seinen Zustand auf einen Zweig, dessen Pull Request längst
+> zusammengeführt war (ADR-059). Eine Behauptung veraltet still, ein Befehl
+> nicht.
+>
+> **Der erste Befehl ist nicht optional: der Store ist beim Sitzungsstart
+> leer.** `/data/*` ist nicht versioniert, der Container ist frisch, und jeder
+> Befehl unten braucht Bars. Rund 20 Minuten, einmal je Sitzung:
+>
+> ```bash
+> KRYPTO="BTC/USD,ETH/USD,LTC/USD,BCH/USD,ETC/USD,XLM/USD,LINK/USD"
+> KRYPTO="$KRYPTO,ALGO/USD,ADA/USD,DOGE/USD,DOT/USD,SOL/USD,AVAX/USD,XRP/USD"
+> uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
+> uv run qt data pull --symbols "BTC/USD,ETH/USD" --tf 1h,4h --since 2019-01-01
+> uv run qt data stocks --since 2019-01-01     # 13 ETFs, braucht TIINGO_API_KEY
+> uv run qt data report                        # muss 27 Maerkte zeigen, alle "ok"
+> ```
+> **Zählen, nicht überfliegen.** Bis ADR-059 schrieb derselbe Befehl neun der
+> vierzehn Krypto-Märkte und meldete keinen Fehler: Coinbase antwortet für ein
+> Fenster vor der Notierung mit einer leeren Seite, und die galt als Ende der
+> Historie. Behoben, aber die Gewohnheit bleibt richtig — `qt data pull` nennt
+> jetzt außerdem, was nichts geliefert hat.
 >
 > ```bash
 > uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
 > uv run qt paper status --strategy macross --symbols ETH/USD --tf 1d
 > ```
-> Erwartet: „Status: laeuft", und über Wochen hinweg **null Fills** — `macross`
-> handelt rund viermal im Jahr. Steht dort „ANGEHALTEN", hat der Kill-Switch
-> ausgelöst; das ist der einzige Fall, der eine Entscheidung braucht.
+> Erwartet: „Status: laeuft", und **rund vier Fills im Jahr je Konto** —
+> `macross` handelt selten, lange Strecken ohne jeden Fill sind der Normalfall
+> und kein Hinweis auf einen Fehler. Steht dort „ANGEHALTEN", hat der
+> Kill-Switch ausgelöst; das ist der einzige Fall, der eine Entscheidung
+> braucht.
+>
+> Bis hierher stand „über Wochen hinweg **null Fills**". Das war die
+> Beobachtung eines Kontos, das noch nie gehandelt hatte, formuliert als
+> Erwartung — am 2026-09-03 sind beide Konten zum ersten Mal long gegangen,
+> und die Zeile hätte das als Auffälligkeit gelesen.
+>
+> **Auf `Letzter verarbeiteter Bar` schauen, nicht nur auf „laeuft".** Am
+> 2026-09-03 stand dort der 2026-09-02, und im ganzen Repo — auf `main` wie auf
+> dem alten Sitzungszweig — lag kein Commit, der den Kontostand über den
+> 2026-09-02T05:32Z hinausschreibt. Die Konten liefen also nicht seit über
+> einem Tag, während Punkt 1 unten „läuft von selbst" versprach. Der eine Grund,
+> der sich finden ließ, ist behoben (der tote Zweig, ADR-059); ob die Routine
+> überhaupt feuert, sagt nur der nächste Tag.
 >
 > **Seit ADR-053 handeln die Konten Gewicht 1,0 statt 0,25.** Vorher formte die
 > Risk-Engine mit den Portfolio-Defaults, und das Konto prüfte damit eine
@@ -26,14 +61,15 @@
 >
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
-> uv run qt data report         # Bestand und Lücken
-> uv run qt trials              # Versuchszähler der DSR — steht bei 15
+> uv run qt trials              # Versuchszaehler der DSR -- steht bei 16
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
+> uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
 > ```
-> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. Kein Bestandskandidat
-> kommt derzeit bis zum Walk-Forward — fünf von sieben scheitern am
-> Umschlagbudget.
+> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. `macross` scheitert bei
+> 8,8× am Umschlagbudget von 7× und kommt nicht bis zum Sharpe. `crossmom`
+> kommt durch bis zum Walk-Forward und steht dort bei **−0,08** gegen die
+> geforderten 0,33 (ADR-061).
 >
 > ### Wofür das alles
 >
@@ -42,23 +78,55 @@
 > ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
 > bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
 >
-> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und 1,4 effektiv
-> unabhängigen Märkten ist erst ein **Sharpe ab 0,67** beweisbar. `macross`
-> hat 0,31 — dafür bräuchte es 46 Jahre. Deshalb steht das Verbreitern der
-> Datenbasis vor jeder neuen Strategie-Idee.
+> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und **5,1** effektiv
+> unabhängigen Märkten ist ein **Sharpe ab 0,33** beweisbar (ADR-061).
+> `macross` hat 0,25 — immer noch darunter.
+>
+> **Der billige Hebel ist damit gezogen.** Das Verbreitern der Datenbasis stand
+> hier lange vor jeder Strategie-Idee, weil es rechenbar war: von 1,4 auf 5,1
+> effektive Märkte hat die Schwelle von 0,67 auf 0,33 halbiert. Der nächste
+> Schritt brächte 0,33 → 0,26 und bräuchte Anlageklassen, die es nicht gibt.
+> Ab hier hilft nur noch ein stärkerer Edge.
 >
 > ### Der Stand in einem Satz
 >
-> **Sieben Hypothesen geprüft, sieben gescheitert.** LLM-Allokator zweimal
-> (ADR-045/046), `hashribbon` (ADR-048), echtes ML (ADR-050), die
-> Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
-> (ADR-048) — und seit ADR-054 auch `macross` selbst: es liegt auf Perzentil
-> **74 % (BTC) / 82 % (ETH)** seiner eigenen gewürfelten Fassungen, gefordert
-> waren 95 %. Nichts im Repo hat je eine Negativkontrolle bestanden.
+> **Neun Hypothesen geprüft, neun gescheitert — und acht von neun Strategien
+> haben jetzt eine Negativkontrolle, die keine besteht.** LLM-Allokator
+> **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
+> die Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
+> (ADR-048), `macross` selbst (ADR-054) und `crossmom` (ADR-058).
+>
+> Der dritte Allokator-Lauf ist der, den dieser Block als Punkt 3 verlangt hat:
+> `macross` mit im Korb, auf 1d, damit der Allokator etwas zu verteilen hat,
+> das gewinnt. Ergebnis **Sharpe −1,50** gegen 0,00 (Gleichgewichtung) und
+> +0,58 (Vol-Parität), bei 20 sauberen Aufrufen ohne einen einzigen Rückfall.
+> Der Einwand „ein Allokator kann nicht verteilen, was nicht da ist" ist damit
+> ausgeräumt und rettet ihn nicht (ADR-060).
+>
+> Die Kontrollen im Überblick, alle *Datenstand 2026-09-03*, 200 Ziehungen,
+> gefordert waren 95 % (ADR-059):
+>
+> | | Perzentil | | Perzentil |
+> |---|---|---|---|
+> | `macross` | 75,5 % | `crossmom` | 45,0 % |
+> | `trend` | 70,5 % | `crossrev` | 64,5 % |
+> | `meanrev` | 38,5 % | `timesfm` | 66,5 % |
+>
+> `meanrev` liegt **unter** dem Median seiner eigenen Zufallsfassungen. Im
+> Querschnitt über 26 Märkte kommen `trend` (−0,17) und `meanrev` (−0,20) auf
+> negative Median-Sharpes. `orderflow` ist die einzige Strategie ohne Kontrolle
+> — sie bräuchte Handelsdaten, die aus Platzgründen nicht im Repo liegen.
+> Ungeprüft ist nicht bestanden.
+>
+> **Und die Zahl, auf der alles ruht, reproduziert nicht.** Aus einem frisch
+> gezogenen Store liefert `macross` OOS-Sharpe **0,25** auf BTC und **0,28** auf
+> ETH, nicht die 0,31/0,32, die hier bis ADR-059 standen. Die Fenstergeometrie
+> erklärt nur ±0,02 davon; der Rest ist mit dem alten Store nicht mehr
+> nachvollziehbar. Der Unterschied hat dieselbe Größenordnung wie der behauptete
+> Effekt.
 >
 > Dazu ein vollständiger Code-Audit (ADR-053): neun Funde, davon fünf, die
-> Zahlen verfälscht haben, ohne dass ein Test rot wurde. Behoben, mit 28
-> neuen Tests — 14 davon fallen gegen den alten Code durch.
+> Zahlen verfälscht haben, ohne dass ein Test rot wurde.
 >
 > **Die Paper-Konten laufen trotzdem weiter, und zwar genau deswegen.** Die
 > historischen Daten können die fehlenden unabhängigen Beobachtungen nicht
@@ -68,41 +136,48 @@
 >
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Warten und ticken lassen — läuft von selbst.** Die Routine
->    `Paper-Tick macross BTC+ETH (taeglich)` feuert täglich 01:00 UTC in einer
->    frischen Sitzung. Vorwärtszeit ist die einzige Evidenz, die ein Backtest
->    nicht liefern kann. Zwei Konten sind nach ADR-052 zusammen **1,2
->    unabhängige Tests wert**, nicht 2.
-> 2. **Negativkontrollen für alles, was noch keine hat.** ADR-054 hat gezeigt,
->    wie billig das ist (0,09 s je Durchlauf) und wie viel es entscheidet.
->    `qt placebo shuffle` und `qt placebo cross` laufen ohne API-Kosten gegen
->    jede registrierte Strategie.
-> 3. **Gate mit `macross` im Korb**, falls der LLM-Allokator noch eine Chance
->    bekommen soll. Alle bisherigen Läufe verteilten `trend` und `meanrev` auf
->    4h — beide verlieren dort dreistellig. Ein Allokator kann nicht
->    verteilen, was nicht da ist.
->    ```bash
->    NVIDIA_API_KEY=nvapi-... uv run qt alloc --compare-baselines \
->        --strategies macross,trend,meanrev --tf 1d \
->        --allocate-every 24 --effort low --provider nim
->    ```
->    Vorher mit `--stub` die Aufrufzahl aus der Telemetriezeile lesen.
-> 4. **Research-Loop erneut** — aber der Versuchszähler steht auf 8, und jeder
->    Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
->    (ADR-032). Das Budget ist nicht gratis.
+> 1. **Nachsehen, ob der Tick wirklich feuert.** Die Routine
+>    `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in einer
+>    frischen Sitzung laufen. Am 2026-09-03 war der Kontostand über einen Tag
+>    alt. `scripts/paper_tick.sh` schrieb bis dahin auf einen zusammengeführten
+>    Zweig und meldete „Kontostand gesichert" auch nach vier gescheiterten
+>    Push-Versuchen; beides ist behoben (ADR-059). Ob damit alles behoben ist,
+>    zeigt genau eine Zahl: `Letzter verarbeiteter Bar` muss von Tag zu Tag
+>    weiterwandern. Tut er das nicht, ist das kein Wartefall, sondern ein Bug.
+> 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
+>    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
+>    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
+>    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
+>    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
+>    die Datenlage, sondern ein Signal.
+> 3. **`orderflow` eine Kontrolle geben oder die Strategie streichen.** Sie ist
+>    die letzte ohne, und der Grund ist ein Speicherproblem, kein
+>    methodisches: 27,8 MB für 59 nutzbare Tage, ein Jahr wären rund 170 MB,
+>    und GitHub lehnt Dateien über 100 MB ab. Eine Strategie in der Bibliothek,
+>    die sich nicht prüfen lässt, ist eine offene Rechnung.
+> 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
+>    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
+>    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
+>    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
+>    `docs/ZIEL.md` in Phase C.2 nennt, gilt hier nicht mehr. Das Budget ist
+>    trotzdem nicht gratis — und `qt alloc --stub` nennt vorher in der
+>    Telemetriezeile, was ein echter Lauf kostet.
 >
-> **Order-Flow ist herabgestuft, und zwar aus einem gemessenen Grund.** Der
+> **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
+> Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
+> (ADR-060). Ein vierter Lauf wäre eine weitere Konfiguration auf denselben
+> Daten — was fehlt, ist ein zweites Testfenster, und das liefert nur eine
+> breitere Datenbasis oder Vorwärtszeit.
+>
+> **Order-Flow bleibt herabgestuft, und zwar aus einem gemessenen Grund.** Der
 > Punkt stand hier lange auf Platz 2 mit der Begründung, er brauche „dieselbe
 > Sicherungslogik wie der Paper-Zustand". Das geht nicht auf: der Paper-Zustand
-> sind 2 KB JSON, die Trades sind **27,8 MB für 59 nutzbare Tage** — ein Jahr
-> wären rund 170 MB, und GitHub lehnt Dateien über 100 MB ab. Dazu lebt Order
+> sind 2 KB JSON, die Trades sind 27,8 MB für 59 nutzbare Tage. Dazu lebt Order
 > Flow auf 4h, und ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede*
-> getestete Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen. Der Punkt
-> kostet Stunden, ein ungelöstes Speicherproblem und kämpft gegen ein
-> Kostenregime, das schon vier Strategien erledigt hat.
+> getestete Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen.
 >
 > **Was ausdrücklich nicht empfohlen wird:** noch eine Strategie-Idee. Nicht
-> weil Ideen schlecht wären, sondern weil dieses Projekt gerade siebenmal
+> weil Ideen schlecht wären, sondern weil dieses Projekt gerade achtmal
 > gezeigt hat, dass es sie zuverlässig widerlegt — und jede kostet einen
 > Versuch im Nenner.
 
@@ -139,7 +214,17 @@ Gegenrichtung kämpft gegen die stärkste Drift im Datensatz).
 | Max Drawdown | **−51,0%** | −76,7% |
 
 Nachgerechnet am 2026-09-01 (7 OOS-Fenster, 1000/250/20): Sharpe **0,31** auf
-BTC und **0,32** auf ETH — unverändert.
+BTC und **0,32** auf ETH.
+
+> **Nachgerechnet am 2026-09-03 aus einem frisch gezogenen Store: 0,25 auf BTC
+> und 0,28 auf ETH.** Dieselben Fenster, dieselben Parameter, dieselbe
+> Symbolquelle — nur ein Store, der neu von Coinbase geholt wurde, weil
+> `/data/*` nicht versioniert ist. Verschiebt man den Anker des Walk-Forward um
+> 1 bis 10 Bars, wandert der BTC-Wert zwischen 0,229 und 0,266; die
+> Fenstergeometrie erklärt die Differenz also nicht. Woran es sonst liegt, ist
+> ohne den alten Store nicht mehr feststellbar (ADR-059). Die Zahl, auf der die
+> Auswahl von `macross` fürs Paper-Trading ruht, ist damit **nicht
+> reproduzierbar**, und der Unterschied ist so groß wie der behauptete Effekt.
 
 20 von 25 Gitterpunkten verdienen Geld, und das Muster **repliziert auf ETH
 ohne Neuanpassung** (dort Faktor 1,00 gegen 0,49 bei Buy & Hold).
@@ -185,6 +270,11 @@ einzige Kandidat mit positiver Out-of-Sample-Kennzahl, auf BTC und auf ETH
 ohne Neuanpassung. *Nicht* „mit echter Evidenz" — so stand es hier, und
 ADR-054 hat es widerlegt: die Permutationskontrolle ist nicht bestanden.
 Es bleibt der beste verfügbare Kandidat, nicht ein belegter.
+
+Seit ADR-059 gilt derselbe Satz für alle: acht der neun Bibliotheksstrategien
+haben eine Negativkontrolle, keine besteht sie. `macross` liegt mit Perzentil
+75,5 % im Mittelfeld dieses Feldes — schlechter als nichts ist es nicht, ein
+Beleg aber auch nicht.
 
 ---
 
@@ -465,8 +555,32 @@ uv run qt paper run --strategy macross --symbols BTC/USD --tf 1d
 uv run qt paper status --strategy macross --symbols BTC/USD --tf 1d
 ```
 
-## ⬜ Phase 7 — Live (separate Entscheidung)
+## 🟡 Phase 7 — Live (gebaut, unverdrahtet — die Entscheidung steht noch aus)
 
-Erst wenn Phase 6 über Wochen sauber läuft. Exchange-Keys, `qt.live.broker_ccxt`,
-Mini-Kapital, harte Positionslimits. Das ist eine eigene Entscheidung mit echtem
-Geld — keine Fortsetzung der Bauarbeit.
+- `qt.live.broker_ccxt` — echte Orders, entschärft per Default. Scharf nur mit
+  **zwei** unabhängigen Schaltern: `scharf=True` im Aufruf *und*
+  `QT_LIVE_SCHARF=ja` in der Umgebung. Harte Grenzen je Order, je Position,
+  brutto und je Tick — geprüft im Broker selbst, nicht nur oben im Aufrufpfad,
+  und **geworfen statt gekappt**.
+- `qt.live.sizing` — Zielgewicht zu Ordermenge, gegen die Grenzen der Börse.
+  Was darunter fällt, wird nicht ungenau ausgeführt, sondern gar nicht — mit
+  Grund im Ergebnis statt als stille Null.
+- `qt.live.reconcile` — Soll gegen Ist. Seit ADR-037 aufgeschoben, weil es
+  ohne zweite Quelle keinen Gegenstand hatte; den gibt es jetzt. **Meldet nur**
+  — es gibt keinen Befehl, der den lokalen Zustand nachzieht, und ein Test
+  hält das fest.
+- `Zugang` — Schlüssel aus der Umgebung, in keinem `repr`, nirgends
+  gespeichert.
+
+**Vorführen:**
+```bash
+uv run qt live status      # Kontostand von der Boerse, liest nur
+uv run qt live groesse     # was von einem Zielgewicht bei diesem Kapital bleibt
+uv run qt live reconcile   # lokaler Zustand gegen Boersenbestand
+```
+
+**`qt live tick` ist absichtlich nicht verdrahtet** und endet mit Exit 1. Was
+fehlt, ist kein Code, sondern ein Kandidat, der Gate 1 besteht — neun
+Strategien geprüft, keine hat eine Negativkontrolle bestanden (ADR-059,
+ADR-062). Das bleibt eine eigene Entscheidung mit echtem Geld, keine
+Fortsetzung der Bauarbeit.

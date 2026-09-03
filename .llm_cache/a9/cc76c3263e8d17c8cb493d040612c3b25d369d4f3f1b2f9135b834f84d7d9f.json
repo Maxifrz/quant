@@ -1,0 +1,27 @@
+{
+ "key": "a9cc76c3263e8d17c8cb493d040612c3b25d369d4f3f1b2f9135b834f84d7d9f",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe over 96 and 24 bars despite positive 384-bar return; deep 55% drawdown limits sizing.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "Negative 384-bar Sharpe (-0.32) and large 507-bar drawdown; 96-bar Sharpe 0.76 not sufficient to offset.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.2
+   },
+   {
+    "reason": "Consistently positive Sharpe across all windows (1.04 at 384 bars), lowest drawdown (37%), best risk-adjusted return.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.6
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_C is the only strategy with positive Sharpe at the longest window (384 bars: 1.04) and the shallowest drawdown (-37%). STRAT_A has a 55% drawdown and negative Sharpe at 96/24 bars. STRAT_B has negative 384-bar Sharpe and 507 bars since peak. Correlations show STRAT_A/STRAT_C (+0.55) and STRAT_B/STRAT_C (-0.70) -- allocating to STRAT_C captures diversified exposure. Current equal-weight (33% each) over-allocates to impaired strategies. Shift to 60/20/20 respects turnover costs while favouring the only strategy with a verified long-horizon edge.",
+  "regime": "STRAT_C shows persistent edge; A and B in extended drawdowns with deteriorating short-term metrics."
+ }
+}

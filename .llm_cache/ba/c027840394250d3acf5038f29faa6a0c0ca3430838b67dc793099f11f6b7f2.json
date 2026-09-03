@@ -1,0 +1,27 @@
+{
+ "key": "bac027840394250d3acf5038f29faa6a0c0ca3430838b67dc793099f11f6b7f2",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative long-term Sharpe (-2.11) and large drawdown (-55%) indicate broken edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Only strategy with positive long-term Sharpe (1.47 at 384 bars) and minimal drawdown (-6.4%).",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative long-term Sharpe (-1.11) and large drawdown (-43%) despite good short-window stats.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B is the only strategy with a positive 384-bar Sharpe (1.471) and a shallow max drawdown (-6.4%), indicating a robust, persistent edge. STRAT_A (384-bar Sharpe -2.11, DD -55%) and STRAT_C (384-bar Sharpe -1.11, DD -43%) both show significantly negative long-term risk-adjusted returns, meaning their short-window performance (24/96 bars) is likely noise or regime-specific luck. Correlations (A|B: -0.50, B|C: -0.67) would offer diversification benefits *if* A and C had positive expectancy, but adding negative-expectancy strategies reduces portfolio Sharpe. Current allocation (100% B) is optimal; no rebalancing needed.",
+  "regime": "STRAT_B demonstrates consistent edge; A and C show deteriorated long-term performance."
+ }
+}
