@@ -5,6 +5,174 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-061 — Phase A bestanden: n_eff 5,1, und die Schwelle sinkt deshalb auf 0,33
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Zwölf Reihen aus Anlageklassen, die der Bestand nicht
+hatte, heben die effektive Marktzahl von 3,4 auf **5,1**. Das vorab gesetzte
+Kriterium aus `docs/ZIEL.md` Phase A (n_eff ≥ 4) ist damit erfüllt, und die
+daraus abgeleitete Nachweisgrenze `MIN_SHARPE` sinkt von 0,41 auf **0,33**.
+
+---
+
+### Warum mehr vom Gleichen nicht geholfen hätte
+
+`n_eff = n/(1+(n−1)·ρ̄)` hängt fast nur an der **mittleren paarweisen
+Korrelation**, kaum an der Zahl der Märkte. Ausgerechnet:
+
+| Märkte | ρ̄ für n_eff ≥ 4 |
+|---|---|
+| 30 | ≤ 0,224 |
+| 38 | ≤ 0,230 |
+| 60 | ≤ 0,236 |
+
+Von 30 auf 60 Märkte zu verdoppeln lockert die Anforderung um 0,012. Der
+Bestand lag bei ρ̄ = 0,264. Gebraucht wurden also nicht *mehr* Reihen, sondern
+Reihen, die mit dem Vorhandenen **nicht mitlaufen**.
+
+### Der Korb stand vor der ersten Messung
+
+Das ist der Teil, der zählt. Wer Kandidaten durchprobiert, bis n_eff über 4
+steht, hat die Kennzahl optimiert und nicht die Evidenz verbreitert — genau
+der Fehler, den ADR-055 an sich selbst dokumentiert, als dort ein anderer
+Schätzer gesucht wurde, nachdem 3,4 das Kriterium verfehlte.
+
+Vier Regeln, festgelegt vor dem ersten Ziehen, die den bequemen Weg
+ausschließen:
+
+1. **Keine inversen, keine gehebelten Produkte.** `SH` ist rechnerisch −SPY.
+   Es hätte Korrelation −1 zum Bestand, drückte ρ̄ kräftig — und trüge **null**
+   neue Information. Die Formel ist so zu schlagen, ohne dass ein einziger
+   Standardfehler kleiner wird.
+2. **Keine Geldmarktnähe.** `BIL` und Verwandte haben kaum Varianz und damit
+   Korrelation nahe null zu allem. Derselbe Trick, nur leiser. Ein Markt ohne
+   Bewegung ist kein Test.
+3. **Historie mindestens bis 2021-09-30** — der Anfang des gemeinsamen
+   Fensters (AVAX). Eine kürzere Reihe verkürzt die Korrelationsmatrix für
+   alle.
+4. **Nur physisch oder über Futures hinterlegte Long-Instrumente.**
+
+Übrig bleiben die drei Lücken, die `docs/ZIEL.md` selbst benennt
+(Volatilität, Zinsdifferenzen, Einzelwerte), plus eine vierte, die dort fehlt:
+Gold, Silber, Rohöl und ein breiter Korb waren da — **Agrarrohstoffe** nicht.
+Deren Treiber ist das Wetter, und das schert sich nicht um Notenbanken.
+
+| Klasse | Ticker |
+|---|---|
+| Volatilität | VIXY |
+| Anleihen | SHY, TIP, MUB |
+| Rohstoffe | DBA, CORN, WEAT, SOYB, UNG, CPER |
+| Immobilien | VNQ |
+| Aktien | EWJ |
+
+**Einzelwerte bleiben draußen, obwohl ZIEL.md sie nennt.** Es gibt keine
+neutrale Regel, fünf Namen aus viertausend zu wählen — und diese Wahl ließe
+sich hinterher auf n_eff hin treffen. Dazu trägt sie nicht: ein
+US-Großunternehmen läuft zu 0,5 bis 0,7 mit SPY und höbe ρ̄, statt es zu
+senken. Für Nebenwerte gälte die Vermutung aus ZIEL.md eher — deren
+Liquidität steht aber der Kostenannahme aus ADR-056 entgegen.
+
+### Das Ergebnis, und die Gegenprobe dazu
+
+```
+uv run qt placebo cross --strategy macross --tf 1d
+  Median-Sharpe ueber 38 Maerkte: +0.09
+  mittlere paarweise Korrelation der Maerkte: 0.18
+  -> effektiv 5.1 unabhaengige Maerkte (ADR-052), nicht 38
+```
+
+Eine einzelne Reihe darf das Ergebnis nicht tragen — `VIXY` ist der
+naheliegende Verdacht, weil implizite Volatilität in der Praxis überwiegend
+eine Gegenbewegung zu Aktien ist. Klassenweise weggelassen:
+
+| Auswahl | n | ρ̄ | n_eff |
+|---|---|---|---|
+| alle 38 | 38 | 0,176 | **5,07** |
+| ohne VIXY | 37 | 0,199 | 4,53 |
+| ohne Agrar | 34 | 0,200 | 4,48 |
+| ohne die neuen Anleihen | 35 | 0,185 | 4,80 |
+| ohne UNG + CPER | 36 | 0,183 | 4,86 |
+| **ohne VNQ + EWJ** | 36 | 0,171 | **5,15** |
+| Bestand vor diesem ADR | 26 | 0,264 | 3,42 |
+
+**Keine einzelne Klasse trägt das Ergebnis** — die schlechteste Auslassung
+landet bei 4,48, immer noch über dem Kriterium. Und die vorletzte Zeile ist
+der Beleg, dass der Korb nicht auf die Zahl hin gewählt wurde: `VNQ` und
+`EWJ` laufen mit Aktien mit und **verschlechtern** n_eff. Sie sind drin, weil
+Immobilien und Japan eigene Anlageklassen sind, nicht weil sie helfen.
+
+### Die Schwelle sinkt — und warum das kein Torpfostenverschieben ist
+
+`MIN_SHARPE` in `qt.research.gate` geht von 0,41 auf 0,33. Das ist die
+gefährliche Richtung, deshalb die drei Bedingungen, unter denen es zulässig
+ist, alle nachprüfbar:
+
+* **Die Regel stand vorher.** ZIEL.md Phase C.1: „Mindest-Sharpe aus Phase A
+  ableiten und **vorab** als ADR festschreiben." Die Schwelle ist eine
+  Funktion von n_eff, keine freie Zahl.
+* **Gesenkt hat sie die Datenlage, nicht ein verfehltes Ergebnis.** Der
+  Standardfehler ist wirklich kleiner geworden.
+* **Kein Kandidat gewinnt dadurch.** Nachgerechnet nach der Senkung:
+
+| | vor Phase A | nach Phase A |
+|---|---|---|
+| `macross` | Umschlag 8,8× > 7× | **unverändert 8,8×**, bricht vor dem Sharpe ab |
+| `crossmom` OOS-Sharpe | −0,24 | **−0,08**, verlangt ≥ 0,33 |
+| `crossmom` Umschlag | 4,6× | **3,0×** |
+| `crossmom` DSR | 0,010 | 0,023, verlangt ≥ 0,95 |
+
+Die Senkung rettet nichts, was vorher gescheitert ist. Sie dürfte es sonst
+auch nicht.
+
+### Was die breitere Basis tatsächlich bewegt hat
+
+`crossmom` ist die Strategie, für die der Querschnitt gebaut wurde, und sie
+reagiert in genau der Richtung, die der Plan vorhergesagt hat:
+
+| | 27 Märkte (ADR-058) | 39 Märkte |
+|---|---|---|
+| mittlerer Rank IC | +0,0307 | **+0,0346** |
+| effektive Datenpunkte | 348 | **413** |
+| t korrigiert | +1,42 | **+1,87** (p = 0,062) |
+| Umschlag/EK/Jahr | 4,6× | **3,0×** |
+| OOS-Sharpe | −0,24 | **−0,08** |
+
+Jede Zeile geht in die richtige Richtung, und **keine** kommt über ihre
+Schwelle. `|t| ≥ 1,96` ist verfehlt, der Sharpe ist negativ. Das ist der
+ehrliche Zwischenstand: die Datenbasis war ein echter Hebel, und sie reicht
+trotzdem nicht.
+
+### Nebenfund: das Gate meldete eine Nebenwirkung, die es nicht hat
+
+Der `crossmom`-Lauf schrieb: „Dieser Lauf zaehlt als Versuch. Zaehler danach:
+17 (ADR-032)." `qt trials` sagte danach unverändert **16**.
+
+Beides stimmte für sich: das Gate rechnet die DSR gegen `trial_count() + 1`,
+schreibt aber bewusst nichts in die Registry (ADR-057). Nur die Meldung
+behauptete den dauerhaften Effekt. Bei einer Zahl, die das gesamte
+Overfitting-Budget des Projekts trägt, ist das die schlechteste Stelle für
+eine falsche Zusage — sie lässt künftige DSR-Rechnungen zu optimistisch
+aussehen, und niemand sieht nach, weil die Meldung ja das Gegenteil sagte.
+Behoben, mit einem Test, der gegen den alten Text durchfällt.
+
+### Konsequenzen
+
+- **n_eff 5,1** statt 3,4; ρ̄ 0,18 statt 0,26; 38 prüfbare Märkte statt 26.
+- **`MIN_SHARPE` 0,33.** Der Test in `tests/test_gate1.py` hält die Zahl fest,
+  damit ihre Änderung zwei Diffs kostet statt keinen.
+- **Phase A in ZIEL.md ist erledigt**, beim zweiten Anlauf und mit der
+  Begründung, warum der erste zu kurz griff: dort wurden Anlageklassen
+  hinzugefügt, hier wurden sie danach ausgesucht, ob sie mit dem Bestand
+  mitlaufen.
+- **Der Versuchszähler steht unverändert bei 16.** Kein Lauf dieses ADRs hat
+  einen gekostet.
+- **Offen bleibt die Grenze der Kennzahl selbst:** n_eff misst die
+  Korrelationsstruktur, nicht die Güte der Reihen. 38 Märkte mit ρ̄ = 0,18
+  sind kein Beweis, dass sich in ihnen etwas finden lässt — nur, dass ein
+  Fund dort eher zeigbar wäre.
+
+---
+
 ## ADR-060 — Der LLM-Allokator, drittes Mal, mit einem fairen Korb: −1,50
 **Datum:** 2026-09-03
 

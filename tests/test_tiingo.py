@@ -301,9 +301,52 @@ def test_der_broker_reicht_das_symbol_durch():
 # ---------------------------------------------------------------------------
 
 
-def test_der_korb_deckt_vier_anlageklassen_ab():
-    """Ein Effekt in nur einer Klasse ist deren Beta, nicht der Edge (ZIEL.md)."""
+def test_der_korb_deckt_sechs_anlageklassen_ab():
+    """Ein Effekt in nur einer Klasse ist deren Beta, nicht der Edge (ZIEL.md).
+
+    Von vier auf sechs Klassen gewachsen (ADR-061): Volatilitaet und
+    Immobilien sind dazugekommen, weil vier nicht reichten, um n_eff ueber 4
+    zu bringen.
+    """
     klassen = {klasse for klasse, _ in tiingo.BASKET.values()}
-    assert klassen == {"Aktien", "Anleihen", "Rohstoffe", "FX"}
-    assert len(tiingo.BASKET) == 13
+    assert klassen == {
+        "Aktien", "Anleihen", "Rohstoffe", "FX", "Volatilitaet", "Immobilien",
+    }
+    assert len(tiingo.BASKET) == 25
     assert "Rohstoffe" in tiingo.describe_basket()
+
+
+def test_der_korb_enthaelt_nichts_was_n_eff_billig_macht():
+    """Die Ausschlussregeln aus ADR-061, als Test statt als Vorsatz.
+
+    `n_eff = n/(1+(n-1)*rho)` laesst sich schlagen, ohne dass ein einziger
+    Standardfehler kleiner wird -- und die Wege dahin sind naheliegend genug,
+    dass ein Kommentar sie nicht aufhaelt:
+
+    * **Inverse Produkte.** `SH` ist rechnerisch -SPY. Korrelation -1 zum
+      Bestand, druckt rho kraeftig, traegt null neue Information.
+    * **Gehebelte Produkte.** `TQQQ` ist 3x QQQ -- dieselbe Wette, lauter.
+    * **Geldmarktnahe Reihen.** `BIL` hat kaum Varianz und damit Korrelation
+      nahe null zu allem. Ein Markt ohne Bewegung ist kein Test.
+
+    Der Test kann nur benannte Faelle fangen, nicht die Regel beweisen. Er
+    steht hier, weil die Versuchung genau dann kommt, wenn n_eff das naechste
+    Mal knapp unter der Schwelle liegt.
+    """
+    verboten = {
+        "SH": "invers zu SPY",
+        "PSQ": "invers zu QQQ",
+        "SDS": "invers und gehebelt",
+        "TBF": "invers zu langlaufenden Staatsanleihen",
+        "SVXY": "invers zu VIX-Futures",
+        "TQQQ": "3x QQQ",
+        "SPXL": "3x S&P 500",
+        "UVXY": "1,5x VIX-Futures",
+        "BIL": "Geldmarkt, kaum Varianz",
+        "SGOV": "Geldmarkt, kaum Varianz",
+        "SHV": "Geldmarkt, kaum Varianz",
+    }
+    treffer = {t: grund for t, grund in verboten.items() if t in tiingo.BASKET}
+    assert not treffer, (
+        f"Diese Ticker heben n_eff, ohne Evidenz zu liefern: {treffer}"
+    )

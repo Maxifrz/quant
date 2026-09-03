@@ -72,6 +72,61 @@ BASKET: dict[str, tuple[str, str]] = {
     "UUP": ("FX", "US-Dollar-Index"),
     "FXE": ("FX", "Euro"),
     "FXY": ("FX", "Japanischer Yen"),
+    # -- Erweiterung ADR-061 ------------------------------------------------
+    #
+    # Die dreizehn Reihen darueber brachten n_eff von 1,4 auf 3,4 und
+    # verfehlten damit das vorab gesetzte Kriterium von 4 (ADR-055). Die
+    # Rechnung dahinter sagt auch, woran es liegt: `n/(1+(n-1)*rho)` haengt
+    # fast nur an der **mittleren paarweisen Korrelation**, nicht an der Zahl
+    # der Maerkte. Bei 38 Maerkten braucht n_eff >= 4 ein rho <= 0,23; bei 30
+    # sind es 0,224. Mehr vom Gleichen hilft also nicht -- gebraucht werden
+    # Reihen, die mit dem Bestand **nicht** mitlaufen.
+    #
+    # Die Auswahl ist vor der ersten Messung festgelegt und wird ganz
+    # gemeldet, auch wenn das Kriterium wieder verfehlt wird. Sonst waere sie
+    # eine Optimierung auf die Kennzahl statt eine Verbreiterung der Evidenz
+    # -- derselbe Fehler, den ADR-055 an sich selbst dokumentiert.
+    #
+    # Vier Regeln, die den bequemen Weg ausschliessen:
+    #
+    # 1. **Keine inversen und keine gehebelten Produkte.** SH ist rechnerisch
+    #    -SPY: es haette Korrelation -1 zum Bestand, wuerde rho im Nenner
+    #    kraeftig druecken und traegt **null** neue Information. Wer so auf
+    #    n_eff >= 4 kommt, hat die Formel geschlagen und nicht die Datenlage.
+    # 2. **Keine Geldmarktnaehe.** BIL und aehnliche haben kaum Varianz und
+    #    damit fast Korrelation null zu allem -- derselbe Trick, nur leiser.
+    #    Ein Markt ohne Bewegung ist kein Test.
+    # 3. **Historie mindestens bis 2021-09-30.** Das ist der Anfang des
+    #    gemeinsamen Fensters (AVAX). Eine kuerzere Reihe verkuerzt die
+    #    Korrelationsmatrix fuer alle.
+    # 4. **Nur physisch oder ueber Futures hinterlegte Long-Instrumente.**
+    #
+    # Was danach uebrig bleibt, sind die drei Luecken, die docs/ZIEL.md selbst
+    # benennt (Volatilitaet, Zinsdifferenzen, Einzelwerte ausserhalb der
+    # Indizes) plus eine vierte, die dort fehlt: der Bestand hat Gold, Silber,
+    # Rohoel und einen breiten Korb, aber **keine Agrarrohstoffe**. Deren
+    # Treiber ist das Wetter, und das schert sich nicht um Notenbanken.
+    #
+    # **Einzelwerte bleiben absichtlich draussen**, obwohl ZIEL.md sie nennt.
+    # Zwei Gruende. Erstens gibt es keine neutrale Regel, fuenf Namen aus
+    # viertausend zu waehlen -- jede Auswahl ist eine Entscheidung, und diese
+    # Entscheidung liesse sich hinterher auf n_eff hin treffen. Zweitens
+    # traegt sie nicht: ein US-Grossunternehmen laeuft zu 0,5 bis 0,7 mit
+    # SPY, hoebe rho also eher, statt es zu senken. Die Vermutung in ZIEL.md,
+    # Einzelwerte wuerden hier helfen, gilt fuer Nebenwerte -- und deren
+    # Liquiditaet steht der Kostenannahme aus ADR-056 entgegen.
+    "VIXY": ("Volatilitaet", "VIX-Futures, kurzes Ende"),
+    "SHY": ("Anleihen", "US-Staatsanleihen 1-3 Jahre"),
+    "TIP": ("Anleihen", "US-inflationsindexiert"),
+    "MUB": ("Anleihen", "US-Kommunalanleihen"),
+    "DBA": ("Rohstoffe", "Agrarkorb"),
+    "CORN": ("Rohstoffe", "Mais"),
+    "WEAT": ("Rohstoffe", "Weizen"),
+    "SOYB": ("Rohstoffe", "Sojabohnen"),
+    "UNG": ("Rohstoffe", "Erdgas"),
+    "CPER": ("Rohstoffe", "Kupfer"),
+    "VNQ": ("Immobilien", "US-REITs"),
+    "EWJ": ("Aktien", "Japan"),
 }
 
 CALENDAR = "sessions"

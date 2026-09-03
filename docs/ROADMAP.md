@@ -66,9 +66,10 @@
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
 > ```
-> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. Kein Bestandskandidat
-> kommt derzeit bis zum Walk-Forward — `macross` scheitert bei 8,8× am
-> Umschlagbudget von 7×.
+> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. `macross` scheitert bei
+> 8,8× am Umschlagbudget von 7× und kommt nicht bis zum Sharpe. `crossmom`
+> kommt durch bis zum Walk-Forward und steht dort bei **−0,08** gegen die
+> geforderten 0,33 (ADR-061).
 >
 > ### Wofür das alles
 >
@@ -77,10 +78,15 @@
 > ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
 > bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
 >
-> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und 3,4 effektiv
-> unabhängigen Märkten ist erst ein **Sharpe ab 0,41** beweisbar (ADR-055).
-> `macross` hat 0,25. Deshalb steht das Verbreitern der Datenbasis vor jeder
-> neuen Strategie-Idee.
+> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und **5,1** effektiv
+> unabhängigen Märkten ist ein **Sharpe ab 0,33** beweisbar (ADR-061).
+> `macross` hat 0,25 — immer noch darunter.
+>
+> **Der billige Hebel ist damit gezogen.** Das Verbreitern der Datenbasis stand
+> hier lange vor jeder Strategie-Idee, weil es rechenbar war: von 1,4 auf 5,1
+> effektive Märkte hat die Schwelle von 0,67 auf 0,33 halbiert. Der nächste
+> Schritt brächte 0,33 → 0,26 und bräuchte Anlageklassen, die es nicht gibt.
+> Ab hier hilft nur noch ein stärkerer Edge.
 >
 > ### Der Stand in einem Satz
 >
@@ -138,12 +144,12 @@
 >    Push-Versuchen; beides ist behoben (ADR-059). Ob damit alles behoben ist,
 >    zeigt genau eine Zahl: `Letzter verarbeiteter Bar` muss von Tag zu Tag
 >    weiterwandern. Tut er das nicht, ist das kein Wartefall, sondern ein Bug.
-> 2. **Die Datenbasis um eine Anlageklasse erweitern, die mit keiner
->    vorhandenen läuft.** Das ist der einzige Hebel, der die beweisbare Schwelle
->    senkt: von 3,4 auf 5 effektive Märkte fällt sie von 0,41 auf 0,33
->    (ADR-055). Volatilität, Zinsdifferenzen, Einzelwerte außerhalb der Indizes
->    — alles, was nicht schon im Korb steckt. Jede Strategie-Idee vorher ist
->    eine Messung, die nicht entscheiden kann.
+> 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
+>    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
+>    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
+>    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
+>    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
+>    die Datenlage, sondern ein Signal.
 > 3. **`orderflow` eine Kontrolle geben oder die Strategie streichen.** Sie ist
 >    die letzte ohne, und der Grund ist ein Speicherproblem, kein
 >    methodisches: 27,8 MB für 59 nutzbare Tage, ein Jahr wären rund 170 MB,

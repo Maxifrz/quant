@@ -51,9 +51,28 @@ from qt.core.types import Bar
 # davon fuer eine Geschmacksfrage haelt.
 # --------------------------------------------------------------------------
 
-# Aus n_eff = 3,4 ueber 7,7 Jahre: darunter ist ein Sharpe nicht von null zu
-# unterscheiden (ADR-055). Keine Zielvorgabe, eine Nachweisgrenze.
-MIN_SHARPE = 0.41
+# Aus n_eff = 5,1 ueber 7,7 Jahre: darunter ist ein Sharpe nicht von null zu
+# unterscheiden (ADR-061). Keine Zielvorgabe, eine Nachweisgrenze.
+#
+# **Diese Zeile ist von 0,41 auf 0,33 gesenkt worden, und das sieht aus wie
+# das Verschieben des Torpfostens.** Sie ist es nicht, und der Unterschied
+# haengt an einer Reihenfolge, die nachpruefbar ist:
+#
+#   * Die Regel stand vorher. docs/ZIEL.md, Phase C.1: "Mindest-Sharpe aus
+#     Phase A ableiten und vorab als ADR festschreiben." Die Schwelle ist
+#     eine Funktion von n_eff, keine freie Zahl.
+#   * Gesenkt hat sie die **Datenlage**, nicht ein verfehltes Ergebnis. Zwoelf
+#     Reihen aus Anlageklassen, die der Bestand nicht hatte, druecken die
+#     mittlere Korrelation von 0,26 auf 0,18 und heben n_eff von 3,4 auf 5,1
+#     (ADR-061). Der Standardfehler ist wirklich kleiner geworden.
+#   * Kein Kandidat gewinnt dadurch. `macross` steht bei 0,25 und scheitert
+#     ohnehin am Umschlagbudget; `crossmom` bei -0,24. Die Senkung rettet
+#     nichts, was vorher gescheitert ist -- sie wuerde es sonst auch nicht
+#     tun duerfen.
+#
+# Wer sie ohne eine dieser drei Bedingungen wieder anfasst, senkt die Latte
+# und nicht die Nachweisgrenze.
+MIN_SHARPE = 0.33
 
 # Ueblich, und seit ADR-005 unveraendert.
 MIN_DSR = 0.95
@@ -135,9 +154,22 @@ class GateResult:
             f"  Urteil: {'BESTANDEN' if self.bestanden else 'NICHT BESTANDEN'}"
         )
         if self.screening_gezaehlt:
+            # Bis ADR-061 stand hier "Dieser Lauf zaehlt als Versuch. Zaehler
+            # danach: N" -- und der Zaehler stand hinterher unveraendert da.
+            # Das Gate schreibt bewusst nichts in die Registry (ADR-057); die
+            # DSR rechnet nur **so**, als zaehlte der Lauf mit. Die Meldung
+            # behauptete damit eine dauerhafte Nebenwirkung, die es nicht gab
+            # -- bei einer Zahl, die das ganze Overfitting-Budget traegt.
             zeilen.append(
-                f"  Dieser Lauf zaehlt als Versuch. Zaehler danach: "
-                f"{self.versuchszaehler} (ADR-032)."
+                f"  Der Walk-Forward lief: die DSR rechnet gegen "
+                f"{self.versuchszaehler} Versuche, also einschliesslich "
+                f"dieses Laufs."
+            )
+            zeilen.append(
+                "  **Eingebucht wird er dadurch nicht** -- das Gate schreibt "
+                "nicht in die Registry (ADR-057).\n"
+                "  Wer diesen Lauf als Versuch fuehren will, tut das von Hand: "
+                "qt trials --backfill"
             )
         else:
             zeilen.append(

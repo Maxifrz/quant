@@ -50,9 +50,9 @@ Bei 7,7 Jahren Historie:
 |---|---|---|
 | 1,0 | 0,84 | ein einzelner Markt |
 | **1,4** | **0,67** | 13 Krypto-Märkte, ρ = 0,67 |
-| **3,4** | **0,41** | **heute: + 13 ETFs, ρ = 0,26 (ADR-055)** |
+| 3,4 | 0,41 | + 13 ETFs, ρ = 0,26 (ADR-055) |
 | 3,0 | 0,44 | + Aktien |
-| 5,0 | 0,33 | + Aktien, FX, Rohstoffe |
+| **5,1** | **0,33** | **heute: + 12 Reihen, ρ = 0,18 (ADR-061)** |
 | 8,0 | 0,26 | vier echte Anlageklassen |
 
 **`macross` hat 0,31** — und auf einem am 2026-09-03 frisch gezogenen Store nur
@@ -64,13 +64,19 @@ Datenlage die Frage nicht beantworten kann.
 
 Zwei Wege führen aus dieser Zeile heraus, und nur zwei:
 
-1. **Einen deutlich stärkeren Edge finden** (Sharpe ≥ 0,67 statt 0,31).
+1. **Einen deutlich stärkeren Edge finden** (Sharpe ≥ 0,33 statt 0,25).
 2. **Die Zahl unabhängiger Märkte erhöhen**, damit schwächere Edges beweisbar
    werden.
 
 Weg 2 ist rechenbar, planbar und in Wochen erledigt. Weg 1 ist Hoffnung. Der
 Plan unten geht deshalb zuerst Weg 2 — und macht Weg 1 danach überhaupt erst
 entscheidbar.
+
+> **Weg 2 ist am 2026-09-03 zu Ende gegangen (ADR-061).** n_eff steht bei
+> 5,1, die Nachweisgrenze bei 0,33. Damit ist der billige Hebel gezogen: von
+> 5 auf 8 effektive Märkte brächte nur noch 0,33 → 0,26, und dafür fehlen die
+> Anlageklassen. **Ab hier bleibt Weg 1** — und `macross` liegt mit 0,25
+> weiterhin darunter.
 
 ---
 
@@ -161,9 +167,9 @@ validierten Edge ist ein Weg, schneller Geld zu verlieren.
 
 ## Die Durchführung
 
-### Phase A — Datenbasis verbreitern *(2–3 Arbeitsblöcke)*
+### Phase A — Datenbasis verbreitern ✅ *(erledigt 2026-09-03, ADR-061)*
 
-Ziel: **n_eff von 1,4 auf mindestens 4.**
+Ziel: **n_eff von 1,4 auf mindestens 4.** Erreicht: **5,1.**
 
 1. Zweite Datenquelle für Nicht-Krypto anbinden. Der Schnitt existiert schon:
    `qt.data.ingest` ist quellenagnostisch, `qt.data.store` kennt nur Symbole.
@@ -184,6 +190,27 @@ Ziel: **n_eff von 1,4 auf mindestens 4.**
 > Konsequenz für Gate 1: **Mindest-Sharpe 0,41** statt der erhofften 0,33.
 > Um auf 4 zu kommen, fehlt eine Anlageklasse, die mit keiner vorhandenen
 > läuft — Volatilität, Zinsdifferenzen, Einzelwerte außerhalb der Indizes.
+
+> **Zweiter Anlauf am 2026-09-03 — bestanden (ADR-061).** Zwölf Reihen, nach
+> genau diesem Kriterium ausgesucht statt nach Anlageklasse allein: ρ̄ fällt
+> von 0,26 auf **0,18**, n_eff steigt auf **5,1** über 38 prüfbare Märkte.
+>
+> Der Unterschied zum ersten Anlauf ist die Frage, die gestellt wurde. Dort:
+> „welche Anlageklassen fehlen?" Hier: „welche Reihen laufen mit dem Bestand
+> **nicht** mit?" Die Rechnung sagt, warum das der richtige Hebel ist —
+> `n/(1+(n−1)ρ̄)` hängt fast nur an ρ̄; von 30 auf 60 Märkte zu verdoppeln
+> lockert die Anforderung an ρ̄ um 0,012.
+>
+> Der Korb stand **vor** der Messung fest, mit vier Ausschlussregeln gegen den
+> bequemen Weg — keine inversen Produkte (`SH` wäre −SPY: Korrelation −1, null
+> Information), keine Geldmarktnähe, Historie bis 2021-09-30, nur Long. Zwei
+> der zwölf (`VNQ`, `EWJ`) **verschlechtern** n_eff und sind trotzdem drin.
+> Klassenweise weggelassen bleibt das Ergebnis über 4,48; es hängt an keiner
+> einzelnen Reihe.
+>
+> Konsequenz für Gate 1: **Mindest-Sharpe 0,33.** Kein Kandidat gewinnt
+> dadurch — `macross` bricht weiter beim Umschlag ab, `crossmom` steht bei
+> −0,08.
 
 *Fallstrick, vorab benannt und inzwischen beseitigt:* Nicht-Krypto handelt
 nicht 24/7. `bars_per_year` und `find_gaps` unterstellten durchgehend Krypto —
@@ -288,7 +315,7 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
 | | Kriterium |
 |---|---|
-| OOS-Sharpe | ≥ der in Phase A abgeleiteten Schwelle |
+| OOS-Sharpe | ≥ **0,33** — die aus n_eff 5,1 abgeleitete Schwelle (ADR-061) |
 | DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler |
 | Permutation | Perzentil ≥ 95 % (`qt placebo shuffle`) |
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |

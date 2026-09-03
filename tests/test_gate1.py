@@ -89,8 +89,16 @@ def test_das_gate_kennt_keine_option_die_eine_schwelle_setzt():
     )
 
 
-def test_die_schwellen_stehen_dort_wo_ADR_055_und_056_sie_hergeleitet_haben():
-    assert MIN_SHARPE == 0.41
+def test_die_schwellen_stehen_dort_wo_die_ADRs_sie_hergeleitet_haben():
+    """Der Test haelt die Zahlen fest, damit ihre Aenderung ein Diff ist.
+
+    `MIN_SHARPE` ist am 2026-09-03 von 0,41 auf 0,33 gewandert, weil n_eff von
+    3,4 auf 5,1 gestiegen ist (ADR-061) -- eine Funktion der Datenlage, keine
+    freie Zahl. Genau deshalb steht sie hier: wer sie ohne gewachsene
+    Datenbasis anfasst, muss diesen Test mit anfassen und hinterlaesst zwei
+    Diffs statt keinem.
+    """
+    assert MIN_SHARPE == 0.33
     assert MAX_UMSCHLAG_PRO_JAHR == 7.0
     assert MIN_FILLS == 20
 
@@ -163,6 +171,40 @@ def test_ein_abbruch_vor_dem_walk_forward_kostet_keinen_versuch():
     ergebnis = gate_mod.run_gate(_Nichtstuer, {"BTC/USD": _bars(300)}, "1d", trial_count=1)
     assert not ergebnis.screening_gezaehlt
     assert "NICHT als Versuch" in ergebnis.table()
+
+
+def test_ein_gezaehlter_lauf_behauptet_keine_eingebuchte_zeile():
+    """Faellt gegen den alten Text durch: der versprach eine Nebenwirkung.
+
+    Bis ADR-061 meldete ein Lauf, der bis zum Walk-Forward kam, "Dieser Lauf
+    zaehlt als Versuch. Zaehler danach: 17" -- und `qt trials` sagte danach
+    unveraendert 16. Das Gate schreibt bewusst nicht in die Registry
+    (ADR-057); die DSR rechnet nur **so**, als zaehlte der Lauf mit.
+
+    Die Zahl traegt das gesamte Overfitting-Budget des Projekts. Eine
+    Meldung, die sie als erhoeht ausgibt, ohne dass sie es ist, laesst
+    kuenftige DSR-Rechnungen zu optimistisch aussehen -- und niemand sieht
+    es, weil die Meldung ja das Gegenteil sagte.
+    """
+    from qt.research.gate import GateResult, Kriterium
+
+    gezaehlt = GateResult(
+        strategie="x",
+        timeframe="1d",
+        kriterien=[Kriterium("a", True, "1", "1")],
+        screening_gezaehlt=True,
+        versuchszaehler=17,
+    )
+    text = gezaehlt.table()
+
+    assert "Zaehler danach" not in text, (
+        "die Registry bekommt durch einen Gate-Lauf keine Zeile -- der Text "
+        "darf das nicht behaupten"
+    )
+    assert "17 Versuche" in text, "die DSR-Grundlage gehoert trotzdem genannt"
+    assert "qt trials --backfill" in text, (
+        "wer den Lauf fuehren will, braucht den Befehl dafuer"
+    )
 
 
 def test_das_urteil_ist_nur_bestanden_wenn_jedes_kriterium_geprueft_wurde():
