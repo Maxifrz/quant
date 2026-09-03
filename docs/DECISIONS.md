@@ -5,6 +5,132 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-063 — Aufteilen hilft, aber nicht in git: die Trade-Ablage war quadratisch
+**Datum:** 2026-09-03
+
+**Die Frage:** Lässt sich das Order-Flow-Problem durch Aufteilen der Dateien
+lösen? `docs/ROADMAP.md` führte Order Flow herabgestuft, unter anderem mit der
+Begründung, ein Jahr Trades wäre „rund 170 MB, und GitHub lehnt Dateien über
+100 MB ab".
+
+**Die Antwort:** Aufteilen löst genau dieses Hindernis — und dieses Hindernis
+war weder das größte noch das eigentliche. Die Ablage ist jetzt in Tagesteilen,
+aus einem Grund, der mit git nichts zu tun hat. Order Flow bleibt herabgestuft,
+aber die Begründung dafür stimmte nicht.
+
+---
+
+### Erst messen, was da überhaupt anfällt
+
+Zwei Tage BTC/USD von Kraken gezogen, 2026-09-03:
+
+| | |
+|---|---|
+| Trades | 210.331 in 2,00 Tagen |
+| Dateigröße | 2,52 MB → **1,26 MB/Tag** |
+| hochgerechnet | **460 MB/Jahr** |
+
+Die 170 MB aus dem ROADMAP waren also zu niedrig, und die 100-MB-Grenze ist
+schon **am Tag 79** erreicht, nicht nach einem Jahr.
+
+**Kompression ist nicht der Hebel.** `df.to_parquet(path)` schrieb ohne
+Angabe, also Snappy. Gemessen an denselben Daten:
+
+| Variante | MB/Jahr | gegen heute |
+|---|---|---|
+| heute (snappy) | 460 | 100 % |
+| zstd | 374 | 81 % |
+| brotli | 343 | 75 % |
+
+Ein Viertel weniger löst kein Problem, das um den Faktor fünf zu groß ist.
+Die Daten sind schlicht groß: 105.000 Trades am Tag, jeder mit Zeitstempel,
+Preis, Menge und Seite.
+
+### Das größere Problem stand nicht im ROADMAP, weil es niemand gesucht hat
+
+`write_trades` legte alles in **einer** Datei je Symbol ab und schrieb sie bei
+jedem Anhängen komplett neu — lesen, zusammenführen, entdoppeln, sortieren,
+ganz zurückschreiben. Was das kostet, hängt daran, wie oft angehängt wird:
+
+| | geschriebene Bytes |
+|---|---|
+| ein Jahresabzug am Stück (≈139 Zwischenspeicherungen) | **≈ 32 GB** |
+| täglich fortgeschrieben über ein Jahr (365 Schreibvorgänge) | **≈ 84 GB** |
+
+Für 460 MB Ergebnis. Der Abzug ist **quadratisch in seinem eigenen
+Ausgabevolumen**, und das ist der Grund, warum ein langer Abzug in der Praxis
+nicht durchführbar war — nicht die Dateigröße. Kein Test war rot; es dauerte
+nur immer länger.
+
+Genau hier hilft Aufteilen, und zwar dramatisch:
+
+| Ablage | Dateigröße | in git über ein Jahr |
+|---|---|---|
+| eine Datei, täglich neu geschrieben | 460 MB | ≈ 84 GB |
+| monatliche Teile | 38 MB | ≈ 7,0 GB |
+| **tägliche Teile, je einmal geschrieben** | **1,3 MB** | **0,46 GB** |
+
+Ein abgeschlossener Tag wird nie wieder angefasst. Damit ist der Abzug linear,
+und der Dateiname wird zum Index: `read_trades` sortiert Teile außerhalb des
+Zeitraums am Namen aus, ohne sie zu öffnen.
+
+### Und trotzdem gehört es nicht ins Repository
+
+Die Aufteilung macht die Daten *versionierbar* — unveränderliche Dateien
+speichert git einmal. Die Frage ist, ob sie dorthin gehören, und die Antwort
+steht in `.gitignore`: versioniert wird nur, was sich **nicht rekonstruieren
+lässt** (der Kontostand, die Kandidaten-Registry).
+
+Gemessen statt vermutet, `fetch_trades` gegen Kraken:
+
+| `since` | Antwort |
+|---|---|
+| 2019-06-01 | 1000 Trades, erster 2019-06-01 00:00 |
+| 2021-06-01 | 1000 Trades, erster 2021-06-01 00:00 |
+| 2023-06-01 | 1000 Trades, erster 2023-06-01 00:00 |
+| 2025-06-01 | 1000 Trades, erster 2025-06-01 00:00 |
+
+Kraken liefert die Historie ab 2019 auf Zuruf. **Die Trades sind nicht
+verderblich, sondern reproduzierbar** — genau deshalb wurde Kraken in ADR-034
+gewählt, und genau das ist beim Formulieren des Speicherproblems untergegangen.
+Sie gehören damit unter `/data/*` wie die Bars, nicht ins Repository.
+
+### Was daraus für Order Flow folgt
+
+**Die Begründung im ROADMAP war falsch, die Schlussfolgerung bleibt richtig.**
+Order Flow ist nicht an einem Speicherproblem herabgestuft, sondern an zwei
+Dingen, die beide gemessen sind:
+
+1. **Zeit.** 19 Anfragen je Tag Historie, 1,2 s Wartezeit je Anfrage. Ein Jahr
+   sind 6.935 Anfragen, rund **2,3 Stunden** — und in einem Container, dessen
+   Store bei jedem Start leer ist, fällt das **jedes Mal** an. Für sieben
+   Walk-Forward-Fenster auf 4h braucht es rund 460 Tage Historie, also gut
+   drei Stunden.
+2. **Das Kostenregime.** Order Flow lebt auf 4h. ADR-047 hat für 4h gemessen,
+   dass die Gebühren dort *jede* getestete Strategie von positiv auf −0,65 bis
+   −1,60 Sharpe ziehen, und Gate 1 lässt seit ADR-056 nur 1d oder gröber zu.
+
+Der erste Punkt ist jetzt ein Preis und kein Hindernis mehr: der Abzug ist
+linear, er läuft durch. Die Negativkontrolle für `orderflow` — die letzte, die
+fehlt (ADR-059) — kostet damit drei Stunden Ziehen und keine Grundsatzfrage.
+
+### Konsequenzen
+
+- **`data/trades/<SYMBOL>/<YYYY-MM-DD>.parquet`** statt einer Datei je Symbol,
+  mit zstd. Ein abgeschlossener Tag wird nie wieder geschrieben; ein Test hält
+  das an der Änderungszeit der Nachbardateien fest.
+- **`read_trades` liest über die Teile hinweg** und sortiert am Dateinamen vor.
+  Ein Altbestand aus der Zeit davor wird weiter mitgelesen — ihn still zu
+  übergehen wäre der Weg, auf dem Daten verschwinden, ohne dass etwas
+  fehlschlägt.
+- **Die Begründung im ROADMAP ist korrigiert.** Ein falscher Grund für eine
+  richtige Entscheidung ist keine harmlose Ungenauigkeit: er wird zitiert, und
+  irgendwann trifft jemand auf seiner Grundlage eine andere Entscheidung.
+- **Offen bleibt der Abzug selbst.** Drei Stunden je Sitzung sind der Preis;
+  ob er sich lohnt, hängt an Punkt 2 oben und ist keine technische Frage mehr.
+
+---
+
 ## ADR-062 — Der Live-Pfad ist gebaut und bleibt unverdrahtet
 **Datum:** 2026-09-03
 
