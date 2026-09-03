@@ -90,8 +90,11 @@
 >
 > ### Der Stand in einem Satz
 >
-> **Neun Hypothesen geprüft, neun gescheitert — und acht von neun Strategien
-> haben jetzt eine Negativkontrolle, die keine besteht.** LLM-Allokator
+> **Neun Hypothesen geprüft, neun gescheitert — und alle neun Strategien haben
+> jetzt eine Negativkontrolle, die keine besteht.** Dazu fünf Kandidaten aus
+> dem Research-Loop, die zwar den Versuchszähler kosten, aber die Verdrahtung
+> geprüft haben und nicht ihre Idee (ADR-065) — sie als geprüfte Hypothesen zu
+> zählen wäre zu großzügig gegen uns selbst. LLM-Allokator
 > **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
 > die Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
 > (ADR-048), `macross` selbst (ADR-054) und `crossmom` (ADR-058).
@@ -114,9 +117,12 @@
 >
 > `meanrev` liegt **unter** dem Median seiner eigenen Zufallsfassungen. Im
 > Querschnitt über 26 Märkte kommen `trend` (−0,17) und `meanrev` (−0,20) auf
-> negative Median-Sharpes. `orderflow` ist die einzige Strategie ohne Kontrolle
-> — sie bräuchte Handelsdaten, die aus Platzgründen nicht im Repo liegen.
-> Ungeprüft ist nicht bestanden.
+> negative Median-Sharpes.
+>
+> **`orderflow` hat seit ADR-064 auch eine: Perzentil 52,5 % auf 15m.** Damit
+> haben alle neun Strategien eine Negativkontrolle, und keine besteht sie. Der
+> Vorbehalt ist dort größer als sonst — bei Sharpe −42 beherrschen die
+> Gebühren beide Seiten des Vergleichs, der Test ist gültig und fast blind.
 >
 > **Und die Zahl, auf der alles ruht, reproduziert nicht.** Aus einem frisch
 > gezogenen Store liefert `macross` OOS-Sharpe **0,25** auf BTC und **0,28** auf
@@ -150,14 +156,14 @@
 >    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
 >    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
 >    die Datenlage, sondern ein Signal.
-> 3. **`orderflow` eine Kontrolle geben oder die Strategie streichen.** Sie ist
->    die letzte ohne. Der Grund war hier als Speicherproblem geführt und ist
->    keines: Kraken liefert Trades ab 2019 auf Zuruf, sie sind reproduzierbar
->    und gehören damit unter `/data/*` wie die Bars (ADR-063). Was bleibt, ist
->    ein Preis — 19 Anfragen je Tag Historie, für sieben Walk-Forward-Fenster
->    auf 4h rund **drei Stunden je Sitzung**. Der Abzug läuft seit ADR-063
->    durch; vorher war er quadratisch in seiner eigenen Ausgabe und deshalb
->    praktisch nicht machbar.
+> 3. **Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.** Der
+>    Research-Loop hat keine: über 38 Märkte summiert sich das Bruttoexposure
+>    auf 38× und ruiniert das Konto, bei Normierung auf 1 handelt keiner mehr
+>    (ADR-065). Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
+>    das Ergebnis der Idee zeigen würde. Vol-Targeting, Gleichgewichtung und
+>    Brutto-Cap sind drei verschiedene Strategien, nicht drei Einstellungen —
+>    das gehört **vorab** entschieden, sonst wird die Wahl davon abhängen, wie
+>    der letzte Lauf aussah.
 > 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
 >    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein

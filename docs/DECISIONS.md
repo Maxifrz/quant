@@ -318,13 +318,72 @@ Nicht: „Order Flow funktioniert nicht." Das ist ungeprüft, und ungeprüft ist
 nicht widerlegt.
 
 Sondern: **die Timeframe-Frage ist unter diesem Kostenregime entschieden,
-bevor Daten gezogen werden.** Die Kontrolle für `orderflow` läuft deshalb auf
-**1h** — dem feinsten Takt, dessen Anforderung (1,9 brutto bei Maker-Gebühren)
-überhaupt in der Nähe des Messbaren liegt — und wird von `qt maker` begleitet.
-Ein positiver Befund dort wäre kein Kandidat für Gate 1 (das lässt seit
-ADR-056 nur 1d oder gröber zu), sondern ein Argument, das Kostenregime neu zu
-verhandeln. Das ist ein anderes Gespräch, und es setzt eine Zahl voraus, die
-es noch nicht gibt.
+bevor Daten gezogen werden.** Offen blieb nur die eine Zelle — Maker-Gebühren
+auf einem feinen Takt. Die ist jetzt gemessen.
+
+---
+
+### Nachgemessen: `orderflow` auf 15m
+
+1,7 Mio. Trades von Kraken gezogen, davon **28 zusammenhängende Tage**
+(2026-05-06 bis 2026-06-04); der Rest hat eine Lücke. Auf 15m sind das 2.760
+Bars — genug für zehn Walk-Forward-Fenster, und der feinste Takt, den diese
+Datenlage trägt.
+
+**Der Lauf selbst bestätigt die Rechnung oben:**
+
+| | |
+|---|---|
+| Sharpe | **−42,3** |
+| Gesamtrendite | −63,6 % (Buy & Hold −21,4 %) |
+| Trades | 148 |
+| Umschlag | 95× Eigenkapital in 28 Tagen ≈ **1.240×/Jahr** |
+
+Gegen ein Budget von 7×. Die Tabelle oben sagte für 15m einen nötigen
+Brutto-Sharpe von 52 voraus; das Ergebnis ist damit keine Überraschung,
+sondern eine Bestätigung.
+
+**Die Negativkontrolle** (200 Ziehungen, zehn Fenster):
+
+```
+  Strategie selbst      -42.693
+  Abspieler (Referenz)  -42.693  Pfadabhaengigkeit 0.0000
+  Trades   echt   110   Ziehungen Median   110  (87-132)
+  Perzentil der echten Strategie: 52.5%
+```
+
+Sauber kalibriert — Pfadabhängigkeit null, identische Reibung — und
+**durchgefallen**. `orderflow` ist von der zufälligen Platzierung seiner
+eigenen Episoden nicht zu unterscheiden. Damit haben **alle neun Strategien
+der Bibliothek eine Negativkontrolle, und keine besteht sie.**
+
+Der Vorbehalt gehört dazu, und er ist größer als sonst: bei Sharpe −42
+beherrschen die Gebühren beide Seiten des Vergleichs. Die Ziehungen liegen
+zwischen −45,9 und −38,3 — in diesem Band ist für ein Signal kaum Platz. Der
+Test ist gültig und fast blind.
+
+### Und die letzte Tür: `qt maker`
+
+```
+Symbol      n  marktnah  passiv  Ausfall  Maker%
+BTC/USD   148       104      42        2     28%
+```
+
+**Nur 28 % der Orders wären passiv gefüllt worden**, und das ist eine
+Obergrenze — die Warteschlangenposition ist nicht modelliert. 104 von 148
+Limits waren schon beim Open erreichbar: die Order geht durch, zahlt aber
+Taker.
+
+Damit ist auch die einzige nicht-absurde Zelle der Tabelle geschlossen. Das
+Maker-Regime aus ADR-009 steht dieser Strategie auf diesem Takt nicht zur
+Verfügung, und die 1,9 sind keine Zielmarke, sondern eine Rechnung unter einer
+Annahme, die gerade widerlegt wurde.
+
+**Was offen bleibt:** 28 Tage sind ein Monat Evidenz. Nach der Tabelle oben
+müsste ein Signal dort Sharpe 7 erreichen, um überhaupt zeigbar zu sein. Der
+Befund lautet also nicht „Order Flow funktioniert nicht", sondern: **unter
+diesem Kostenregime ist er auf keinem Takt prüfbar, auf dem er interessant
+wäre.** Das ist eine Aussage über das Regime, nicht über das Signal.
 
 ---
 
