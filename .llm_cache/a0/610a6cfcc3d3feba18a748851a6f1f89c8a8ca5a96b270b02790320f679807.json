@@ -1,0 +1,27 @@
+{
+ "key": "a0610a6cfcc3d3feba18a748851a6f1f89c8a8ca5a96b270b02790320f679807",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 384-bar Sharpe (1.06) with 51.6% time in market; moderate drawdown (-29.8%) supports keeping current weight.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "Consistently negative Sharpe across all windows (384-bar: -1.31) and deep drawdown (-65.1%); negative weight captures persistent negative edge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.15
+   },
+   {
+    "reason": "Strongest risk-adjusted returns (384-bar Sharpe 1.35, 96-bar 1.67) with minimal drawdown (-1.2%); negative correlation to STRAT_B (-0.81) enhances diversification when STRAT_B is shorted.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "Allocate to strategies with positive long-horizon Sharpe (STRAT_A: 1.06, STRAT_C: 1.35 at 384 bars). Invert STRAT_B (384-bar Sharpe -1.31, max drawdown -65%) as it shows persistent negative edge, not temporary underperformance. STRAT_C's near-zero drawdown and strong Sharpe across windows justify largest weight. Correlation structure supports this: STRAT_C and STRAT_B are strongly negatively correlated (-0.81), so long STRAT_C + short STRAT_B provides natural hedge. STRAT_A adds uncorrelated positive return (low correlation to both). Gross allocation 0.75 leaves 0.25 cash buffer. No change to STRAT_A/B weights from current as metrics support them; increase STRAT_C from 0.2 to 0.4 given superior risk-adjusted performance.",
+  "regime": "STRAT_C in uptrend near peak; STRAT_A recovering from moderate drawdown; STRAT_B in deep drawdown with negative edge"
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "key": "c9d8b4f4bb1c1bfc24b2c430169934bd43c229e1079ca71c1042d263574b4a87",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative Sharpe across all windows (-0.196 over 384 bars, -3.269 over 96 bars) and 55% drawdown; no edge detected.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Only strategy with positive Sharpe on the longest window (0.458 over 384 bars) and low 11% drawdown; consistent edge.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.6
+   },
+   {
+    "reason": "Positive 384-bar Sharpe (0.285) and negative correlation to STRAT_B (-0.684) provides diversification; reduced from 0.6 due to recent 96-bar Sharpe of -0.312.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_B is the only strategy with a positive Sharpe ratio on the longest, most reliable window (384 bars: 0.458) and a modest 11% drawdown, warranting the largest allocation. STRAT_A shows negative Sharpe on every window and a 55% drawdown -- zero allocation. STRAT_C has a positive 384-bar Sharpe (0.285) and is strongly negatively correlated with STRAT_B (-0.684), so a meaningful 0.4 weight captures diversification benefits. However, STRAT_C's 96-bar Sharpe turned negative (-0.312) and time-in-market dropped to 8%, so its weight is reduced from the current 0.6 to 0.4. The -0.58 correlation between STRAT_A and STRAT_B is irrelevant at zero weight. Gross allocation sums to 1.0.",
+  "regime": "STRAT_B showing persistent positive edge; STRAT_A failed; STRAT_C weakening recently but diversifying"
+ }
+}

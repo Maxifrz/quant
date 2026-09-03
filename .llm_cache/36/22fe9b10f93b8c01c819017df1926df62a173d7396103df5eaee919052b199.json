@@ -1,0 +1,27 @@
+{
+ "key": "3622fe9b10f93b8c01c819017df1926df62a173d7396103df5eaee919052b199",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-window Sharpe 0.50 over 384 bars and hit-rate >50 % justify core long exposure.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.35
+   },
+   {
+    "reason": "Long-window Sharpe -0.23 over 384 bars confirms persistent negative edge; keep short.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.35
+   },
+   {
+    "reason": "Best long-window Sharpe 0.53 over 384 bars and lowest vol 0.35; diversifies via negative correlation to B.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.6,
+  "reasoning": "Allocate to strategies with positive 384-bar Sharpe (A: 0.50, C: 0.53) and short B with negative 384-bar Sharpe (-0.23). Recent 24-bar figures are noisy (extreme Sharpe values) and ignored. Correlation matrix shows A/C positive (0.52) and both negative to B (-0.53, -0.69), supporting a balanced long/short portfolio. Gross exposure sums to 1.0, respecting turnover costs versus current allocation.",
+  "regime": "Mixed regime: A and C positive long-term edge, B negative; short-window noise dominant."
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "key": "efa84d425e65b8d5aac36c821a0fe7a6a01b8ebac138e2384b9d46352c5c39ad",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strong long-term Sharpe 2.66 (96-bar) and 6.07 (24-bar); negative correlation to B adds diversification.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.35
+   },
+   {
+    "reason": "Only strategy with positive long-term return 0.209 and Sharpe 0.64 (384-bar); currently 1.0 weight so reduce but keep core.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.35
+   },
+   {
+    "reason": "Best risk-adjusted metrics: Sharpe 3.59 (96-bar), 5.89 (24-bar); low drawdown -0.276; negative correlation to B.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "STRAT_B is the only strategy with positive 384-bar return (0.209) and Sharpe (0.64), justifying core allocation. STRAT_A and STRAT_C show excellent 96-bar Sharpe ratios (2.66 and 3.59) with negative correlations to B (-0.49 and -0.64), providing diversification. Current 100% B allocation ignores diversification benefits. Equal-ish weighting (0.35/0.35/0.30) balances long-term evidence (B) with strong recent risk-adjusted performance (A, C) and correlation structure. Gross allocated = 1.0.",
+  "regime": "Mixed regime: STRAT_B shows long-term edge, STRAT_A/C strong recent momentum with negative correlation to B."
+ }
+}

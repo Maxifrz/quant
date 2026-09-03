@@ -85,10 +85,13 @@ Ein vierter Lauf wäre eine weitere Konfiguration auf denselben Daten. Was
 fehlt, ist kein besserer Prompt, sondern ein zweites Testfenster — und das
 liefert nur eine breitere Datenbasis (ADR-055) oder Vorwärtszeit.
 
-**Nicht mitgenommen:** die 20 Cache-Einträge dieses Laufs liegen unversioniert
-im Container. Die Konvention in `.gitignore` sieht `git add -f` für einen
-teuren Lauf vor; in dieser Sitzung war das Erzwingen nicht erlaubt. Ein
-Nachvollziehen kostet damit erneut 20 Aufrufe.
+**Der Cache liegt im Repo.** Die 20 Einträge dieses Laufs sind per
+`git add -f` aufgenommen, wie es die Konvention in `.gitignore` für einen
+teuren Lauf vorsieht — ein Nachvollziehen kostet damit null Aufrufe statt
+zwanzig. Vorher geprüft statt der Zusage geglaubt: keine der zwanzig Dateien
+enthält einen Schlüssel, einen Symbolnamen oder ein Datum. Die Anonymisierung
+aus ADR-003/017 hält also nicht nur im Briefing, sondern auch in dem, was
+davon liegen bleibt.
 
 ---
 

@@ -1,0 +1,27 @@
+{
+ "key": "bdab57e8ef16296458ff1f0a3b2ed62bae3281d39dc28803b9d6ef31da5fee8f",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Long-window Sharpe 0.817 with 47% drawdown; reducing would realize loss without evidence of regime change.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Long-window Sharpe -0.742 and 60% drawdown; negative weight exploits persistent negative edge while cutting gross exposure.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.2
+   },
+   {
+    "reason": "Best long-window Sharpe 0.952 with smallest drawdown 23%; deserves largest weight among long-biased strategies.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "The 384-bar window dominates allocation decisions. STRAT_C has the highest Sharpe (0.952) and lowest drawdown (-0.229), warranting 0.4 weight. STRAT_A has positive Sharpe (0.817) but deep drawdown (-0.474); holding 0.5 avoids crystallizing losses. STRAT_B shows persistently negative long-term Sharpe (-0.742) and worst drawdown (-0.599); inverting to -0.2 captures the negative edge while reducing gross leverage from 1.0 to 1.1. The strong negative correlation between STRAT_B and STRAT_C (-0.818) means the inverted STRAT_B position provides genuine diversification. Current allocation kept STRAT_B at -0.1; increasing to -0.2 is a measured adjustment supported by the full-window data. No weight changes for A and C as their long-term metrics haven't deteriorated enough to justify turnover costs.",
+  "regime": "STRAT_A and STRAT_C in moderate drawdown; STRAT_B deeply underwater with negative long-term edge."
+ }
+}

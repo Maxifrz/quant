@@ -1,0 +1,27 @@
+{
+ "key": "b45d922c3111be77d77d095fc3c3fec287c66dae4c4428731ea4c9d29a33b42c",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "384-Bar Sharpe 1.11 und Return 0.465 sprechen fuer Beibehaltung; 96-Bar Drawdown ist bekanntes Risiko.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.2
+   },
+   {
+    "reason": "Durchgehend negative Sharpe (-1.45 bis -2.66) und Return -0.584 ueber 384 Bars rechtfertigen Inversion.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.15
+   },
+   {
+    "reason": "Bester 384-Bar Sharpe 1.39 bei Return 0.678; niedrigster Drawdown (0) und neue Hochs.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.2
+   }
+  ],
+  "confidence": 0.75,
+  "reasoning": "STRAT_C zeigt konsistent positive Kennzahlen ueber alle Fenster (Sharpe 1.22-1.96) und steht am Hoch. STRAT_A hat ueber 384 Bars solide Performance (Sharpe 1.11), leidet aber kurzfristig. STRAT_B ist ueber alle Fenster verlustbringend (384-Bar Sharpe -1.45, Return -0.584), die Inversion ist statistisch getragen. Korrelationen (B/C -0.78) ergaenzen sich gut. Aktuelle Allokation wird beibehalten, da Kennzahlen keine Umschichtung erfordern.",
+  "regime": "STRAT_C in Aufwaertstrend, STRAT_A in Erholung, STRAT_B dauerhaft negativ"
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "key": "890f6c03aa8fb65374cb6bb08b3737a3173372c2e663ad693a70756aaf3bda9e",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive Sharpe across all windows (3.7/4.2/0.6) with low drawdown (-7%) and 497 bars since peak shows sustainable edge.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Persistently negative Sharpe across all windows (-3.7/-3.7/-0.2) with -51% drawdown and only 62 bars since peak confirms structural negative edge; inversion justified.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   },
+   {
+    "reason": "Moderate positive Sharpe (1.7/3.3/0.6) but zero weight because A and -B already provide strong negative correlation (-0.63) and full 1.0 gross exposure; adding C would dilute conviction without improving diversification.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A shows consistent positive risk-adjusted returns across all windows with minimal drawdown. STRAT_B shows persistently negative Sharpe across 24/96/384-bar windows and a -51% drawdown — this is not a losing streak but a structural negative edge, justifying full inversion. The -0.63 correlation between A and B means inverted B acts as a natural hedge to A, creating a portable alpha structure. STRAT_C has decent metrics but adds marginal diversification (0.39 corr with A, -0.45 with B) while reducing concentration in the highest-conviction pair. Current 35/35/30 allocation holds B long despite its negative edge — the shift to 50/0/-50 corrects this with full gross exposure maintained.",
+  "regime": "STRAT_A trending positively, STRAT_B in deep drawdown with negative edge, STRAT_C near peak but lower conviction"
+ }
+}

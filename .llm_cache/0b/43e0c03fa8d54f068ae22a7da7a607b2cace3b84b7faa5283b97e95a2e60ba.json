@@ -1,0 +1,27 @@
+{
+ "key": "0b43e0c03fa8d54f068ae22a7da7a607b2cace3b84b7faa5283b97e95a2e60ba",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Strongest long-term Sharpe (1.168 over 384 bars) and lowest long-term vol (0.509); currently in drawdown but edge persists.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative long-term Sharpe (-0.804) justifies small inverse allocation; negative correlation with A (-0.47) and C (-0.833) provides hedge benefit.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.1
+   },
+   {
+    "reason": "Positive long-term Sharpe (0.79) with shallow drawdown (-0.228); negative correlation to B diversifies the small inverse B position.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Allocation weights long-term (384-bar) Sharpe as primary edge metric. STRAT_A leads (1.168), STRAT_C follows (0.79), STRAT_B fails (-0.804). Current allocation already reflects this; no rebalance needed. STRAT_B kept at -0.1 as hedge given strong negative correlations to both A and C. Gross exposure remains 1.0.",
+  "regime": "Mixed: STRAT_A and STRAT_C show persistent long-term edges; STRAT_B shows long-term degradation."
+ }
+}

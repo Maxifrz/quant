@@ -1,0 +1,27 @@
+{
+ "key": "647518cc3259b98daa5802f6266f89661a319804f7fc924cca015f177d4a33d6",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Negative 384-bar Sharpe (-1.5) and 54% drawdown show structural failure.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.0
+   },
+   {
+    "reason": "Only strategy with positive 384-bar return (0.80) and Sharpe (1.45); low drawdown (13%).",
+    "strategy_id": "STRAT_B",
+    "weight": 1.0
+   },
+   {
+    "reason": "Negative 384-bar Sharpe (-1.38) and 44% drawdown; inactive in recent 24-bar window.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_B is the only strategy with positive long-window (384-bar) return and Sharpe, coupled with a modest 13% drawdown. STRAT_A and STRAT_C both show negative 384-bar Sharpe (-1.50 and -1.38) and deep drawdowns (>44%), indicating broken edges. Correlations are irrelevant when two strategies have negative expectancy. Concentrating 100% in STRAT_B maximizes risk-adjusted return; deviating from current 60/40 B/C split is justified by C's negative long-window performance.",
+  "regime": "STRAT_B sole survivor with persistent edge; A and C in deep drawdown."
+ }
+}

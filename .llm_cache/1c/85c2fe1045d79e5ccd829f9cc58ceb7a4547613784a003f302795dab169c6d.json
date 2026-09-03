@@ -1,0 +1,27 @@
+{
+ "key": "1c85c2fe1045d79e5ccd829f9cc58ceb7a4547613784a003f302795dab169c6d",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Sharpe auf 384 Bars 1.14 ueberzeugt laengerfristig; aktuell -23.7% DD deutet auf Erholungspotenzial hin.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.1
+   },
+   {
+    "reason": "Stark negativ korreliert zu A und C (-0.89, -0.51); 96-Bar Sharpe 2.05 zeigt aktuelle Kante, Diversifikationseffekt traegt grosses Gewicht.",
+    "strategy_id": "STRAT_B",
+    "weight": 0.3
+   },
+   {
+    "reason": "Bester langfristiger Sharpe 1.17 auf 384 Bars mit geringstem Drawdown (-10.2%); stabilisiert Portfolio.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.65,
+  "reasoning": "Kernentscheidung: STRAT_B als Hedge gegen STRAT_C nutzen (rho=-0.89). Beide erhalten 30% each, STRAT_A nur 10% wegen aktuellem Drawdown und schwachem 96-Bar Sharpe (-1.57). Short-Seite bei B bleibt erhalten, da 96-Bar Sharpe 2.05 positive Kante zeigt, nicht bloss Verlustserie. Summe Betraege = 0.7 < 1, Puffer fuer Transaktionskosten.",
+  "regime": "Hohe Korrelation zwischen B und C (-0.89) erfordert explizite Long/Short-Struktur; A in Erholungsphase nach Drawdown."
+ }
+}

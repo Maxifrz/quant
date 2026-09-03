@@ -1,0 +1,27 @@
+{
+ "key": "bbeb0503cb86f12f402f86109307f8efe085326182bd4ab7472236a6290bbd2c",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Consistently positive Sharpe across all windows (2.1-3.4) with low drawdown (-10.5%), justifying largest allocation.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Negative Sharpe on medium/long windows (-1.2 to -1.5) and deep drawdown (-71.4%) support small inverse position for diversification.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.1
+   },
+   {
+    "reason": "Positive long-window Sharpe (0.78) and negative correlation with STRAT_B (-0.86) provide diversification benefit despite recent weakness.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Maintain current allocation (sum |w|=1.0) as it aligns with evidence: STRAT_A shows persistent edge across all horizons; STRAT_B's negative medium/long Sharpe and -71% drawdown justify inverse weight for hedge/diversification given -0.86 correlation with STRAT_C; STRAT_C's positive 384-bar Sharpe (0.78) and negative correlation to both STRAT_A (0.41) and STRAT_B (-0.86) warrant meaningful long allocation. No rebalancing needed as current weights reflect risk-adjusted merit and correlation structure.",
+  "regime": "STRAT_A leading with consistent returns; STRAT_B in prolonged drawdown; STRAT_C recovering from recent peak"
+ }
+}

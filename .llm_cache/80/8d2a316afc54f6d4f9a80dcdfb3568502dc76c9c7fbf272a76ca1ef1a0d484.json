@@ -1,0 +1,27 @@
+{
+ "key": "808d2a316afc54f6d4f9a80dcdfb3568502dc76c9c7fbf272a76ca1ef1a0d484",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive long-window Sharpe (1.61) and return (0.79); negative correlation with STRAT_B (-0.50) diversifies portfolio.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.4
+   },
+   {
+    "reason": "Negative 384-bar Sharpe (-1.5) and return (-0.62); strong negative correlation with STRAT_C (-0.90) makes inverted position a hedge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.2
+   },
+   {
+    "reason": "Best 96-bar Sharpe (2.05) and positive 384-bar return (0.85); negative correlation with STRAT_B (-0.90) offsets B's inversion.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.4
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "STRAT_A and STRAT_C have positive long-horizon Sharpe and returns; STRAT_B has negative 384-bar Sharpe and large drawdown. STRAT_B/STRAT_C correlation -0.90 means they are near-perfect opposites; allocating +0.4 to C and -0.2 to B captures spread while limiting gross exposure. STRAT_A adds diversification with -0.50 correlation to B. Gross allocation 1.0 respects limit.",
+  "regime": "STRAT_A and STRAT_C show persistent edge; STRAT_B deteriorating."
+ }
+}

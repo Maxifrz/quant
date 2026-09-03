@@ -1,0 +1,27 @@
+{
+ "key": "df063c09202b24848b27b9cfe85b978bf360bcea3b4d67c0e9c76736e88c1493",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Highest long-window Sharpe (1.669) and zero drawdown; dominates risk-adjusted returns.",
+    "strategy_id": "STRAT_A",
+    "weight": 0.5
+   },
+   {
+    "reason": "Persistently negative Sharpe across all windows (-1.51 at 384 bars) and -76% drawdown; inversion captures the negative edge.",
+    "strategy_id": "STRAT_B",
+    "weight": -0.5
+   },
+   {
+    "reason": "Lower Sharpe (1.221) and 97% correlated with STRAT_B (via -0.885 with B), adding no diversification vs A.",
+    "strategy_id": "STRAT_C",
+    "weight": 0.0
+   }
+  ],
+  "confidence": 0.85,
+  "reasoning": "STRAT_A shows the only robust positive edge at the 384-bar window (Sharpe 1.669, return 0.912) with zero drawdown. STRAT_B has a persistent negative edge (Sharpe -1.51 at 384 bars, -76% drawdown), justifying full inversion. STRAT_C's returns are subsumed by STRAT_A and its correlation structure (0.41 with A, -0.89 with B) makes it a proxy for the A/B spread rather than an independent source of alpha. Gross allocation sums to 1.0 with zero net exposure to the redundant STRAT_C.",
+  "regime": "STRAT_A trending strongly; STRAT_B in deep drawdown with negative expectancy; STRAT_C redundant."
+ }
+}

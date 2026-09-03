@@ -1,0 +1,27 @@
+{
+ "key": "11ee2110fd1949f4fce8db2ed604637e77a8832e29680475d57d0327884b3fc0",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "allocations": [
+   {
+    "reason": "Positive 384-bar Sharpe 0.92, low drawdown -13.9%, diversifies STRAT_C (corr 0.47)",
+    "strategy_id": "STRAT_A",
+    "weight": 0.4
+   },
+   {
+    "reason": "Negative 384-bar return -0.446 and Sharpe -0.793; inverse adds positive expectation and negative correlation to A (-0.51) and C (-0.88)",
+    "strategy_id": "STRAT_B",
+    "weight": -0.3
+   },
+   {
+    "reason": "Strong 384-bar Sharpe 0.916 and return 0.426; best drawdown -10.2%; negative corr to B (-0.88) and moderate to A (0.47)",
+    "strategy_id": "STRAT_C",
+    "weight": 0.3
+   }
+  ],
+  "confidence": 0.7,
+  "reasoning": "Longest window (384 bars) is most reliable: A (Sharpe 0.92, return 0.36) and C (Sharpe 0.916, return 0.426) have positive edges. B is deeply negative (return -0.446, Sharpe -0.793). Correlations: B is strongly negatively correlated with both A (-0.51) and C (-0.88), so inverting B adds diversification and positive expectancy. A and C are moderately positively correlated (0.47), so both kept but sized to respect gross limit. Gross 1.0 allocated: 0.4 + 0.3 + 0.3 = 1.0. Deviates from current (0.5, -0.5, 0) because C's long-window metrics justify inclusion and B's weight reduced as its edge weakened over 384 bars.",
+  "regime": "Strategies A and C show persistent long-window edges; B has degraded long-window performance"
+ }
+}
