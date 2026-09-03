@@ -38,7 +38,7 @@ kein Scheitern. Siehe *Abbruchbedingung* unten.
 
 ## Warum genau dieses Ziel — die Arithmetik, die alles diktiert
 
-Acht Hypothesen geprüft, acht gescheitert. Der Grund ist in keinem einzigen
+Neun Hypothesen geprüft, neun gescheitert. Der Grund ist in keinem einzigen
 Fall gewesen, dass die Idee dumm war. Er ist immer derselbe: **es gibt zu wenig
 unabhängige Evidenz, um irgendetwas zu zeigen.**
 
@@ -264,9 +264,11 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    > Achse.
    **Nicht mehr blockiert, und das ist neu.** Dieser Absatz stand hier als
    „in dieser Umgebung ist kein API-Schlüssel gesetzt". Am 2026-09-03 ist
-   `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
-   durch (ADR-059). Die Kette war ohnehin gegen die Stubs end-to-end geprüft;
-   es fehlte der Zugang, nicht die Verdrahtung. Das Generator-Briefing kennt
+   `NVIDIA_API_KEY` gesetzt, und ein vollständiger Gate-Lauf über
+   `--provider nim` ist durchgelaufen — 20 Aufrufe, ohne einen einzigen
+   Rückfall, und mit Sharpe −1,50 durchgefallen (ADR-060). Die Kette war
+   ohnehin gegen die Stubs end-to-end geprüft; es fehlte der Zugang, nicht die
+   Verdrahtung. Das Generator-Briefing kennt
    die beiden harten Grenzen inzwischen — vorher lief es gegen eine Wand, die
    es nicht sah.
 
@@ -275,9 +277,10 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    Aufrufe, die ein echter Lauf kosten würde (derzeit 20).
 3. **Jeder Kandidat durchläuft die volle Kette, in dieser Reihenfolge:**
    Sandbox → Kritik → Walk-Forward → DSR → `qt placebo shuffle` →
-   `qt placebo cross`. Die Kontrollen stehen jetzt als Befehl bereit
-   (ADR-054), sie kosten 0,09 s je Durchlauf — es gibt keinen Grund mehr,
-   sie ans Ende zu schieben.
+   `qt placebo cross`. Die Kontrollen stehen als Befehl bereit (ADR-054) und
+   decken seit ADR-059 auch pfadabhängige und Querschnittsstrategien ab —
+   `shuffle` wählt die passende Fassung selbst, `cross` verweigert die
+   unpassende. Es gibt keinen Grund mehr, sie ans Ende zu schieben.
 
 ### Gate 1 — 2027-03-01
 
@@ -333,7 +336,7 @@ Nachsehen statt erinnern: `uv run qt trials`.
 
 ## Der ehrliche Erwartungswert
 
-Acht Hypothesen, acht gescheitert. Nichts im Repo hat je eine
+Neun Hypothesen, neun gescheitert. Nichts im Repo hat je eine
 Negativkontrolle bestanden — und seit ADR-059 ist das keine Beobachtung über
 drei Strategien mehr, sondern über acht: `macross`, `trend`, `meanrev`,
 `timesfm`, `crossmom` und `crossrev` liegen zwischen Perzentil 38 % und 76 %

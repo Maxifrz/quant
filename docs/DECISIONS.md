@@ -5,6 +5,93 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-060 — Der LLM-Allokator, drittes Mal, mit einem fairen Korb: −1,50
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Der Einwand aus dem ROADMAP-Block ist ausgeräumt, und er
+rettet den Allokator nicht. Er bekommt keinen vierten Lauf, solange sich an
+den Daten nichts ändert.
+
+### Der Einwand, der geprüft werden musste
+
+ADR-045 und ADR-046 haben den LLM-Allokator zweimal am Gate aus ADR-004
+scheitern lassen. Der ROADMAP-Block führte dagegen einen Vorbehalt, und der war
+berechtigt:
+
+> Alle bisherigen Läufe verteilten `trend` und `meanrev` auf 4h — beide
+> verlieren dort dreistellig. Ein Allokator kann nicht verteilen, was nicht da
+> ist.
+
+Ein Allokator, der nur zwischen zwei Verlustquellen wählen darf, wird
+zwangsläufig schlecht aussehen. Der faire Test gibt ihm etwas, das gewinnt.
+`macross` auf 1d ist die einzige Strategie des Projekts mit positiver
+OOS-Kennzahl.
+
+### Der Lauf
+
+```bash
+NVIDIA_API_KEY=... uv run qt alloc --compare-baselines \
+    --strategies macross,trend,meanrev --tf 1d \
+    --allocate-every 24 --effort low --provider nim
+```
+
+20 Aufrufe, keiner aus dem Cache, rund eine halbe Stunde. **Der Blocker aus
+`docs/ZIEL.md` Phase C.2 („in dieser Umgebung ist kein API-Schlüssel gesetzt")
+gilt in dieser Umgebung nicht mehr** — die Kette läuft gegen echte Modelle
+durch.
+
+| Allokator | Sharpe | Rendite | MaxDD | Zeit i. M. | Umsatz | Trades |
+|---|---|---|---|---|---|---|
+| **llm** | **−1,50** | −16,1 % | −16,4 % | 25,0 % | 507.926 | 28 |
+| equal_weight | 0,00 | −0,5 % | −9,2 % | 74,4 % | 1.053.279 | 72 |
+| vol_parity | **+0,58** | +8,0 % | −10,4 % | 84,0 % | 1.164.209 | 79 |
+| best_single | −1,72 | −9,4 % | −9,4 % | 5,8 % | 213.814 | 8 |
+
+Durchgefallen an vier Kriterien gleichzeitig, darunter dem absoluten: der
+Kandidat verdient out-of-sample kein Geld, unabhängig von jeder Baseline.
+
+### Was der Lauf ausschließt, und was nicht
+
+**Ausgeschlossen ist die bequeme Erklärung.** Die Telemetrie sagt: 20 Aufrufe,
+**0 Rückfälle auf Gleichgewichtung, 0 halluzinierte Labels, 0 bewusste
+Ausstiege**. Das Modell hat also sauber geantwortet, in gültigem Schema, mit
+gültigen Strategienamen — es hat schlecht verteilt. ADR-018 (jeder Fehler wird
+zu Gleichgewichtung) hat nichts zu tun gehabt; wäre der Allokator
+zusammengebrochen, stünde hier die Gleichgewichtungszeile.
+
+**Wie er verliert, ist die interessante Zeile.** Zeit im Markt 25,0 % gegen
+74,4 % bei Gleichgewichtung. Der Allokator hat sich weitgehend
+herausgehalten — und lag damit in einem Fenster falsch, in dem
+Dabeibleiben die bessere Wahl war. Genau deshalb gibt es die Untergrenze aus
+ADR-016: wer ein Viertel der Zeit investiert ist, beantwortet eine andere
+Frage als die Baselines, und ein Vergleich der Sharpes wäre dann kein
+Vergleich.
+
+**Nicht ausgeschlossen ist Zufall.** Es ist **ein** OOS-Fenster. Das Gate sagt
+das selbst („ein Vorsprung, der nicht in der Mehrheit der Fenster steht, ist
+eine Zufallsstichprobe"), und der Satz gilt in beide Richtungen: ein Rückstand
+in einem Fenster ist auch keiner. Mit 2.803 Tagesbars und der
+Fenstergeometrie 2000/24/500 gibt es kein zweites — mehr Fenster brauchen
+mehr Kalenderzeit oder mehr Märkte, nicht mehr Aufrufe.
+
+### Konsequenz
+
+Der Punkt „Gate mit `macross` im Korb" verschwindet aus der Liste im
+ROADMAP-Block: er ist gelaufen. Die Zeile über den LLM-Allokator lautet jetzt
+**dreimal geprüft, dreimal gescheitert**, und beim dritten Mal ohne die Ausrede
+des schlechten Korbs.
+
+Ein vierter Lauf wäre eine weitere Konfiguration auf denselben Daten. Was
+fehlt, ist kein besserer Prompt, sondern ein zweites Testfenster — und das
+liefert nur eine breitere Datenbasis (ADR-055) oder Vorwärtszeit.
+
+**Nicht mitgenommen:** die 20 Cache-Einträge dieses Laufs liegen unversioniert
+im Container. Die Konvention in `.gitignore` sieht `git add -f` für einen
+teuren Lauf vor; in dieser Sitzung war das Erzwingen nicht erlaubt. Ein
+Nachvollziehen kostet damit erneut 20 Aufrufe.
+
+---
+
 ## ADR-059 — Negativkontrollen für den Rest: drei Wege, wie eine Kontrolle lügt
 **Datum:** 2026-09-03
 

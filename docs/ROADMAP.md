@@ -84,11 +84,18 @@
 >
 > ### Der Stand in einem Satz
 >
-> **Acht Hypothesen geprüft, acht gescheitert — und acht von neun Strategien
-> haben jetzt eine Negativkontrolle, die keine besteht.** LLM-Allokator zweimal
-> (ADR-045/046), `hashribbon` (ADR-048), echtes ML (ADR-050), die
-> Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
+> **Neun Hypothesen geprüft, neun gescheitert — und acht von neun Strategien
+> haben jetzt eine Negativkontrolle, die keine besteht.** LLM-Allokator
+> **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
+> die Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
 > (ADR-048), `macross` selbst (ADR-054) und `crossmom` (ADR-058).
+>
+> Der dritte Allokator-Lauf ist der, den dieser Block als Punkt 3 verlangt hat:
+> `macross` mit im Korb, auf 1d, damit der Allokator etwas zu verteilen hat,
+> das gewinnt. Ergebnis **Sharpe −1,50** gegen 0,00 (Gleichgewichtung) und
+> +0,58 (Vol-Parität), bei 20 sauberen Aufrufen ohne einen einzigen Rückfall.
+> Der Einwand „ein Allokator kann nicht verteilen, was nicht da ist" ist damit
+> ausgeräumt und rettet ihn nicht (ADR-060).
 >
 > Die Kontrollen im Überblick, alle *Datenstand 2026-09-03*, 200 Ziehungen,
 > gefordert waren 95 % (ADR-059):
@@ -144,9 +151,17 @@
 >    die sich nicht prüfen lässt, ist eine offene Rechnung.
 > 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
->    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt; der Blocker,
->    den `docs/ZIEL.md` in Phase C.2 nennt, gilt hier nicht mehr. Das Budget ist
->    trotzdem nicht gratis.
+>    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
+>    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
+>    `docs/ZIEL.md` in Phase C.2 nennt, gilt hier nicht mehr. Das Budget ist
+>    trotzdem nicht gratis — und `qt alloc --stub` nennt vorher in der
+>    Telemetriezeile, was ein echter Lauf kostet.
+>
+> **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
+> Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
+> (ADR-060). Ein vierter Lauf wäre eine weitere Konfiguration auf denselben
+> Daten — was fehlt, ist ein zweites Testfenster, und das liefert nur eine
+> breitere Datenbasis oder Vorwärtszeit.
 >
 > **Order-Flow bleibt herabgestuft, und zwar aus einem gemessenen Grund.** Der
 > Punkt stand hier lange auf Platz 2 mit der Begründung, er brauche „dieselbe
