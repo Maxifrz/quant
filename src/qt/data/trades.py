@@ -45,10 +45,33 @@ TRADES_EXCHANGE = "kraken"
 PAGE_LIMIT = 1000
 
 
+def trades_dir(symbol: str, data_dir: Path | None = None) -> Path:
+    """Verzeichnis der Tagesteile. Getrennt von den Bars -- andere Kornung."""
+    root = (data_dir or DataConfig().data_dir) / "trades"
+    return root / symbol_to_path(symbol)
+
+
 def trades_path(symbol: str, data_dir: Path | None = None) -> Path:
-    """Parquet-Pfad. Getrennt von den Bars, weil es eine andere Kornung ist."""
+    """Der alte Einzeldatei-Pfad. Nur noch zum Lesen von Altbestaenden.
+
+    Bis ADR-063 lag hier alles in **einer** Datei je Symbol, und
+    `write_trades` schrieb sie bei jedem Anhaengen komplett neu. Bei 1,26 MB
+    Trades je Tag (BTC/USD, gemessen 2026-09-03) heisst das im Jahresverlauf
+    rund 84 GB geschriebene Bytes fuer 460 MB Ergebnis -- der Abzug ist
+    quadratisch in seinem eigenen Ausgabevolumen.
+    """
     root = (data_dir or DataConfig().data_dir) / "trades"
     return root / f"{symbol_to_path(symbol)}.parquet"
+
+
+def partition_path(symbol: str, tag, data_dir: Path | None = None) -> Path:
+    """Ein Tagesteil. Der Dateiname **ist** der Index.
+
+    `2026-09-03.parquet` laesst sich ohne Oeffnen aus einem Zeitraum
+    ausschliessen -- ein Lauf ueber einen Monat liest zwoelf Dateien statt
+    einer 460-MB-Datei.
+    """
+    return trades_dir(symbol, data_dir) / f"{tag:%Y-%m-%d}.parquet"
 
 
 def make_trades_exchange(cfg: DataConfig | None = None):
@@ -167,21 +190,39 @@ def _frame(rows: list[dict]) -> pd.DataFrame:
 def write_trades(
     symbol: str, df: pd.DataFrame, data_dir: Path | None = None
 ) -> Path:
-    """Trades schreiben, mit bestehenden zusammenfuehren und entdoppeln."""
-    path = trades_path(symbol, data_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Trades in **Tagesteile** schreiben, je Teil zusammenfuehren und entdoppeln.
 
-    if path.exists():
-        alt = pd.read_parquet(path)
-        df = pd.concat([alt, df], ignore_index=True)
+    Angefasst wird nur, was der neue Block beruehrt. Ein Abzug, der bei Tag
+    200 angekommen ist, schreibt die ersten 199 Tage nicht noch einmal --
+    genau daran hing bis ADR-063 die Laufzeit langer Abzuege.
 
-    df = (
-        df.drop_duplicates(subset=["ts", "price", "amount", "side"])
-        .sort_values("ts")
-        .reset_index(drop=True)
-    )
-    df.to_parquet(path, index=False)
-    return path
+    Ein abgeschlossener Tag wird danach nie wieder geschrieben. Das ist auch
+    der Grund, warum diese Ablage sich ueberhaupt versionieren **liesse**:
+    unveraenderliche Dateien speichert git einmal. Dass sie trotzdem nicht ins
+    Repository gehoert, ist eine andere Frage -- siehe ADR-063.
+    """
+    if df.empty:
+        return trades_dir(symbol, data_dir)
+
+    ziel = trades_dir(symbol, data_dir)
+    ziel.mkdir(parents=True, exist_ok=True)
+
+    df = df.copy()
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+
+    for tag, teil in df.groupby(df["ts"].dt.date, sort=True):
+        pfad = partition_path(symbol, tag, data_dir)
+        if pfad.exists():
+            teil = pd.concat([pd.read_parquet(pfad), teil], ignore_index=True)
+            teil["ts"] = pd.to_datetime(teil["ts"], utc=True)
+        teil = (
+            teil.drop_duplicates(subset=["ts", "price", "amount", "side"])
+            .sort_values("ts")
+            .reset_index(drop=True)
+        )
+        teil.to_parquet(pfad, index=False, compression="zstd")
+
+    return ziel
 
 
 def read_trades(
@@ -190,19 +231,65 @@ def read_trades(
     end: str | datetime | None = None,
     data_dir: Path | None = None,
 ) -> pd.DataFrame:
-    """Trades lesen, optional auf einen Zeitraum beschnitten."""
-    path = trades_path(symbol, data_dir)
-    if not path.exists():
+    """Trades lesen, optional auf einen Zeitraum beschnitten.
+
+    Tagesteile ausserhalb des Zeitraums werden **am Dateinamen** aussortiert,
+    nicht nach dem Oeffnen. Ein Lauf ueber einen Monat liest damit rund
+    dreissig kleine Dateien statt der ganzen Historie (ADR-063).
+    """
+    ziel = trades_dir(symbol, data_dir)
+    von = pd.Timestamp(start, tz="UTC") if start is not None else None
+    bis = pd.Timestamp(end, tz="UTC") if end is not None else None
+
+    teile = sorted(ziel.glob("*.parquet")) if ziel.is_dir() else []
+    if von is not None or bis is not None:
+        teile = [t for t in teile if _teil_im_zeitraum(t, von, bis)]
+
+    rahmen = [pd.read_parquet(t) for t in teile]
+
+    # Altbestand aus der Zeit vor der Aufteilung. Kann es nur auf einem
+    # persistenten Volume geben; still zu ignorieren waere der Weg, auf dem
+    # Daten verschwinden, ohne dass etwas fehlschlaegt.
+    alt = trades_path(symbol, data_dir)
+    if alt.exists():
+        rahmen.append(pd.read_parquet(alt))
+
+    if not rahmen:
         raise FileNotFoundError(
             f"Keine Trades fuer {symbol}. Erst `qt data trades --symbol {symbol}` laufen lassen."
         )
-    df = pd.read_parquet(path)
+
+    df = pd.concat(rahmen, ignore_index=True) if len(rahmen) > 1 else rahmen[0]
     df["ts"] = pd.to_datetime(df["ts"], utc=True)
-    if start is not None:
-        df = df[df["ts"] >= pd.Timestamp(start, tz="UTC")]
-    if end is not None:
-        df = df[df["ts"] <= pd.Timestamp(end, tz="UTC")]
-    return df.sort_values("ts").reset_index(drop=True)
+    if von is not None:
+        df = df[df["ts"] >= von]
+    if bis is not None:
+        df = df[df["ts"] <= bis]
+    return (
+        df.drop_duplicates(subset=["ts", "price", "amount", "side"])
+        .sort_values("ts")
+        .reset_index(drop=True)
+    )
+
+
+def _teil_im_zeitraum(pfad: Path, von, bis) -> bool:
+    """Ueberschneidet der Tag dieses Teils den Zeitraum?
+
+    Beidseitig grosszuegig um einen Tag: der Dateiname nennt den UTC-Tag, und
+    ein Zeitraum, der um 23:50 beginnt, braucht trotzdem den Vortag nicht --
+    aber ein Off-by-one an dieser Stelle liesse Trades verschwinden, ohne
+    dass etwas fehlschlaegt. Die Datei wird dann eben gelesen und die Zeile
+    danach filtert sie weg.
+    """
+    try:
+        tag = pd.Timestamp(pfad.stem, tz="UTC")
+    except ValueError:
+        return True  # unbekannter Name -> lieber lesen als uebersehen
+    if von is not None and tag < von.normalize() - pd.Timedelta(days=1):
+        return False
+    if bis is not None and tag > bis.normalize() + pd.Timedelta(days=1):
+        return False
+    return True
 
 
 def coverage(df: pd.DataFrame) -> dict:
@@ -254,14 +341,12 @@ def resume_point(
     Ein Abzug ueber sieben Stunden **muss** fortsetzbar sein. Ohne das ist
     seine Laufzeit zugleich sein Risiko: jeder Abbruch fuehrt zurueck auf Null.
     """
-    path = trades_path(symbol, data_dir)
-    if not path.exists():
+    try:
+        df = read_trades(symbol, data_dir=data_dir)
+    except FileNotFoundError:
         return since
-
-    df = pd.read_parquet(path)
     if df.empty:
         return since
-    df["ts"] = pd.to_datetime(df["ts"], utc=True)
     df = df.sort_values("ts")
 
     start = pd.Timestamp(since)

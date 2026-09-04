@@ -26,19 +26,37 @@ MAX_LISTED_PREVIOUS = 12
 
 
 def build_generation_briefing(
-    index: int, total: int, previous: list[str] | None = None
+    index: int,
+    total: int,
+    previous: list[str] | None = None,
+    bereits_geprueft: list[str] | None = None,
 ) -> str:
     """Das Briefing fuer einen einzelnen Kandidaten.
 
-    Enthaelt bewusst nur drei Dinge: die Position in der Charge, die bereits
-    verwendeten Ansaetze, und die Aufforderung. Keine Kurse, keine Kennzahlen,
-    keine Zeitraeume, keine Asset-Namen.
+    Enthaelt bewusst nur vier Dinge: die Position in der Charge, die bereits
+    verwendeten Ansaetze **dieser Charge**, die bereits geprueften Ansaetze
+    **aus der Vergangenheit**, und die Aufforderung. Keine Kurse, keine
+    Kennzahlen, keine Zeitraeume, keine Asset-Namen.
 
     Die Liste der bisherigen Ansaetze ist der einzige Grund, warum die
     Kandidaten einer Charge nacheinander statt nebeneinander erzeugt werden.
     Ohne sie liefert dasselbe Modell auf dasselbe Prompt zwanzigmal die
     naheliegendste Idee -- und zwanzig Varianten derselben Idee sind fuer die
     Deflated Sharpe Ratio trotzdem zwanzig Versuche.
+
+    **`bereits_geprueft` ist dieselbe Ueberlegung mit laengerem Gedaechtnis,
+    und sie ist gemessen entstanden (ADR-065).** Die Charge kannte sich
+    selbst, aber nicht die Bibliothek: der Lauf vom 2026-09-03 lieferte
+    `SMACross50_200`, `DonchianBreakout` und `ZScoreMeanReversion` -- also
+    `macross`, `trend` und `meanrev`, die seit Phase 1 im Repo stehen und
+    laengst gescheitert sind. **Drei von fuenf Versuchen** gingen dafuer
+    drauf, und der Zaehler vergisst sie nie (ADR-032).
+
+    Es weicht das blinde Briefing nicht auf (ADR-003): eine Liste von
+    Ansatznamen enthaelt keine Kurse, keine Kennzahlen und keinen Markt. Sie
+    sagt, was schon versucht wurde, nicht was funktioniert hat -- die
+    Ergebnisse bleiben draussen, sonst suchte das Modell in der Naehe der
+    besten bisherigen Zahl.
 
     **Die Grenzen aus Gate 1 stehen mit drin, und das ist keine Aufweichung
     des blinden Briefings** (ADR-003). Blind heisst: keine Kurse, keine
@@ -56,6 +74,7 @@ def build_generation_briefing(
     from qt.research.gate import MAX_UMSCHLAG_PRO_JAHR, MIN_FILLS
 
     previous = previous or []
+    bereits_geprueft = bereits_geprueft or []
     lines = [
         f"Kandidat {index + 1} von {total}.",
         "",
@@ -78,6 +97,17 @@ def build_generation_briefing(
         "Signal, das traege ist, weil es etwas Traeges misst -- nicht eines,",
         "das durch einen Glaettungsparameter kuenstlich langsam gemacht wurde.",
     ]
+
+    if bereits_geprueft:
+        lines += [
+            "",
+            "Diese Ansaetze sind bereits geprueft und gescheitert:",
+            *(f"  - {name}" for name in sorted(set(bereits_geprueft))),
+            "",
+            "Sie noch einmal vorzuschlagen kostet einen Versuch und liefert",
+            "kein neues Wissen. Das gilt auch fuer eine Umbenennung oder eine",
+            "andere Parameterwahl derselben Mechanik.",
+        ]
 
     if previous:
         shown = previous[-MAX_LISTED_PREVIOUS:]

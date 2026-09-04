@@ -538,3 +538,99 @@ def test_modulname_folgt_dem_klassennamen():
 
     assert _module_name({"class_name": "DonchianTrend"}) == "donchian_trend"
     assert _module_name({"class_name": "StubReversion1"}) == "stub_reversion1"
+
+
+# ---------------------------------------------------------------------------
+# Die letzte Stufe der Kette (ADR-065)
+# ---------------------------------------------------------------------------
+
+
+def _kandidat_mit_signal(signale):
+    """Strategie-Klasse, die einen vorgegebenen Gewichtsverlauf abspielt."""
+    from qt.research.placebo import PlaybackStrategy
+
+    class _Abspieler(PlaybackStrategy):
+        def __init__(self, symbols, timeframe, **kw):
+            super().__init__(symbols, timeframe, signals=signale, warmup_bars=22)
+
+    return _Abspieler
+
+
+def test_die_kette_endet_nicht_bei_der_dsr():
+    """Phase C.3 verlangt die Negativkontrolle **nach** der DSR.
+
+    Bis ADR-065 hoerte `screen_candidate` nach der DSR auf, und die Kette
+    stand nur in `docs/ZIEL.md`. Bemerkt hat es niemand, weil nie ein
+    Kandidat bis dorthin kam -- eine fehlende Stufe hinter einer nie
+    genommenen Huerde sieht aus wie eine vorhandene.
+    """
+    import inspect
+
+    from qt.research import screening
+
+    quelle = inspect.getsource(screening.screen_candidate)
+    assert "permutation_control" in quelle
+    assert quelle.index("permutation_control") > quelle.index("dsr_from_returns"), (
+        "die Kontrolle muss nach der DSR laufen -- 200 Ziehungen kosten ein "
+        "Vielfaches des Screenings"
+    )
+
+
+def test_ein_kandidat_faellt_an_der_negativkontrolle_durch():
+    """Der Fall, fuer den die Stufe da ist: DSR bestanden, Placebo nicht."""
+    import numpy as np
+
+    from qt.research.screening import screen_candidate
+    from tests.conftest import make_bars
+
+    bars = make_bars(700, "BTC/USD", "1d", seed=3)
+    rng = np.random.default_rng(5)
+    roh = rng.choice([0.0, 1.0], size=len(bars))
+    geglaettet = np.repeat(roh[::20], 20)[: len(bars)]
+    signale = {
+        (b.symbol, b.ts): float(w) for b, w in zip(bars, geglaettet, strict=True)
+    }
+
+    ergebnis = screen_candidate(
+        _kandidat_mit_signal(signale),
+        {"BTC/USD": bars},
+        ["BTC/USD"],
+        "1d",
+        trial_count=1,
+        train_bars=250,
+        test_bars=120,
+        embargo_bars=10,
+        dsr_threshold=0.001,  # DSR faktisch aushebeln, damit die Kontrolle drankommt
+    )
+
+    assert ergebnis.placebo_perzentil is not None, "die Kontrolle ist gar nicht gelaufen"
+    assert not ergebnis.passed
+    assert "Placebo-Perzentil" in ergebnis.reason
+    assert "Placebo" in ergebnis.summary()
+
+
+def test_ohne_bestandene_dsr_laeuft_die_teure_kontrolle_nicht():
+    """Nach Kosten sortiert, wie der ganze uebrige Trichter."""
+    from qt.research.screening import screen_candidate
+    from tests.conftest import make_bars
+
+    bars = make_bars(700, "BTC/USD", "1d", seed=3)
+    signale = {(b.symbol, b.ts): 1.0 for b in bars}
+
+    ergebnis = screen_candidate(
+        _kandidat_mit_signal(signale),
+        {"BTC/USD": bars},
+        ["BTC/USD"],
+        "1d",
+        trial_count=50,
+        train_bars=250,
+        test_bars=120,
+        embargo_bars=10,
+        dsr_threshold=0.95,
+    )
+
+    assert not ergebnis.passed
+    assert ergebnis.placebo_perzentil is None, (
+        "ein an der DSR gescheiterter Kandidat ist tot -- 200 Ziehungen "
+        "waeren verschwendet"
+    )

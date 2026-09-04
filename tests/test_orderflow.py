@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -609,3 +610,99 @@ def test_der_luecken_waechter_der_strategie_greift_jetzt():
     assert not math.isnan(gewichte[-2]), (
         "Gegenprobe: der Bar davor hat keine Luecke und muss eine Meinung haben"
     )
+
+
+# --------------------------------------------------------------------------
+# Die Ablage in Tagesteilen (ADR-063)
+# --------------------------------------------------------------------------
+
+
+def test_ein_abzug_schreibt_nur_die_tage_die_er_beruehrt(tmp_path):
+    """Die Eigenschaft, an der die Laufzeit langer Abzuege haengt.
+
+    Bis ADR-063 lag alles in **einer** Datei, die `write_trades` bei jedem
+    Anhaengen komplett neu schrieb. Ein Abzug ueber ein Jahr schrieb damit
+    rund 84 GB fuer 460 MB Ergebnis -- quadratisch in seinem eigenen
+    Ausgabevolumen, und deshalb praktisch nicht durchfuehrbar.
+
+    Ein abgeschlossener Tag darf danach nie wieder angefasst werden.
+    """
+    from qt.data.trades import partition_path
+
+    tag1 = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    tag2 = datetime(2026, 1, 2, 12, tzinfo=timezone.utc)
+    _lege_trades_an(tmp_path, [tag1])
+
+    erster = partition_path("BTC/USD", tag1.date(), data_dir=tmp_path)
+    assert erster.exists()
+    vorher = erster.stat().st_mtime_ns
+    inhalt_vorher = erster.read_bytes()
+
+    _lege_trades_an(tmp_path, [tag2])
+
+    assert partition_path("BTC/USD", tag2.date(), data_dir=tmp_path).exists()
+    assert erster.stat().st_mtime_ns == vorher, (
+        "ein abgeschlossener Tag wurde erneut geschrieben -- damit ist der "
+        "Abzug wieder quadratisch"
+    )
+    assert erster.read_bytes() == inhalt_vorher
+
+
+def test_gelesen_wird_ueber_alle_teile_hinweg(tmp_path):
+    from qt.data.trades import read_trades
+
+    zeiten = [
+        datetime(2026, 1, tag, stunde, tzinfo=timezone.utc)
+        for tag in (1, 2, 3)
+        for stunde in (0, 12)
+    ]
+    _lege_trades_an(tmp_path, zeiten)
+
+    df = read_trades("BTC/USD", data_dir=tmp_path)
+    assert len(df) == 6
+    assert df["ts"].is_monotonic_increasing
+
+
+def test_ein_zeitraum_laesst_teile_ungelesen(tmp_path):
+    """Am Dateinamen aussortiert, nicht nach dem Oeffnen."""
+    from qt.data.trades import _teil_im_zeitraum
+
+    pfad = Path("2026-01-15.parquet")
+    von = pd.Timestamp("2026-03-01", tz="UTC")
+    assert not _teil_im_zeitraum(pfad, von, None)
+    assert _teil_im_zeitraum(pfad, pd.Timestamp("2026-01-01", tz="UTC"), None)
+    # Beidseitig grosszuegig: ein Off-by-one liesse Trades verschwinden.
+    assert _teil_im_zeitraum(pfad, pd.Timestamp("2026-01-16", tz="UTC"), None)
+
+
+def test_ein_altbestand_aus_einer_datei_wird_weiter_gelesen(tmp_path):
+    """Still zu ignorieren waere der Weg, auf dem Daten verschwinden."""
+    from qt.data.trades import read_trades, trades_path
+
+    alt = trades_path("BTC/USD", data_dir=tmp_path)
+    alt.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ts": datetime(2025, 6, 1, tzinfo=timezone.utc),
+                "price": 100.0,
+                "amount": 1.0,
+                "side": "buy",
+            }
+        ]
+    ).to_parquet(alt, index=False)
+
+    _lege_trades_an(tmp_path, [datetime(2026, 1, 1, tzinfo=timezone.utc)])
+
+    df = read_trades("BTC/USD", data_dir=tmp_path)
+    assert len(df) == 2, "der Altbestand darf nicht stillschweigend wegfallen"
+
+
+def test_derselbe_trade_zweimal_geschrieben_bleibt_einer(tmp_path):
+    from qt.data.trades import read_trades
+
+    ts = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    _lege_trades_an(tmp_path, [ts])
+    _lege_trades_an(tmp_path, [ts])
+
+    assert len(read_trades("BTC/USD", data_dir=tmp_path)) == 1

@@ -5,6 +5,827 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-068 — „1.0 = kein Hebel" stimmte nicht, und das Paper-Konto zeigte es
+**Datum:** 2026-09-03
+
+**Der Fehler:** `rebalance_order` rechnete `target_qty = gewicht × equity /
+preis`. Ein Kauf über das volle Eigenkapital kostet damit **genau** das
+Eigenkapital an Gegenwert — und die Gebühr kommt obendrauf. Das Konto rutscht
+um sie ins Minus und hält mehr Position, als es Kapital hat.
+
+`BacktestConfig.max_gross_exposure` beschreibt sich daneben mit
+„**1.0 = kein Hebel**".
+
+---
+
+### Wie er aufgefallen ist
+
+Nicht durch eine Suche, sondern beim Zustandscheck nach einem
+Container-Neustart. Das Paper-Konto meldete:
+
+```
+Cash: -650.31
+Positionen: BTC/USD  Menge +1.292012  Einstand 77437.40  Wert 100,568.52
+Fills gesamt 1, Gebuehren 600.30
+```
+
+Nachgerechnet: 1,292012 × 77.437,40 = 100.050,05 Gegenwert, plus 600,30
+Gebühr = **100.650,35** aus 100.000 Startkapital. Der Fehlbetrag ist exakt
+die Gebühr.
+
+Über die volle Historie von `macross` auf BTC/USD 1d:
+
+| | vorher |
+|---|---|
+| Hebel im Markt (Median) | **1,0056** |
+| Hebel maximal | 1,0085 |
+| Bars mit negativem Cash | **1.496 von 2.803** (53 %) |
+| tiefstes Cash | −12.928,47 |
+
+53 % — also jeder Bar, an dem eine Position gehalten wird.
+
+### Warum es niemandem aufgefallen ist
+
+**Der Sharpe merkt es nicht.** Ein Hebel skaliert Mittelwert und Volatilität
+mit demselben Faktor; der Quotient bleibt. Gemessen:
+
+| | vorher | nachher |
+|---|---|---|
+| Sharpe | +1,0146 | **+1,0148** |
+| Gesamtrendite | +1394,30 % | **+1381,87 %** |
+| Max Drawdown | −58,39 % | −58,19 % |
+| Trades | 67 | 67 |
+
+Und der Sharpe ist die Zahl, an der in diesem Projekt **jedes** Kriterium
+hängt — Gate 1, DSR, Permutationskontrolle. Ein Fehler, der genau ihn nicht
+bewegt, ist in dieser Umgebung praktisch unsichtbar.
+
+Die Rendite hat er bewegt, um rund 0,9 % relativ. Nach oben.
+
+### Warum es trotzdem repariert gehört
+
+**Weil eine Spot-Börse kein negatives Guthaben kennt.** Der Backtest
+modelliert etwas, das die Ausführung nicht kann: die erste echte Order über
+das volle Gewicht bekäme „insufficient funds". Genau diese Divergenz soll
+Phase D fangen (`docs/ZIEL.md`: „Divergenz hier ist ein Stopp") — nur wäre
+sie beim allerersten Fill aufgetreten, nicht nach Monaten.
+
+Der `CcxtBroker` aus ADR-062 hätte den Fehler also gefunden. Nur eben mit
+echtem Geld und einer abgelehnten Order statt hier.
+
+### Die Korrektur
+
+Die Order trägt ihre eigenen Kosten:
+
+```python
+kosten = cfg.costs_by_symbol.get(symbol, cfg.costs)
+target_qty = capped * equity / (preis * kaufkraft_faktor(kosten))
+```
+
+Der Faktor ist **multiplikativ**, nicht `1 + one_way_bps/10_000`:
+
+```python
+(1 + (half_spread + slippage)/10_000) * (1 + taker_fee/10_000)
+```
+
+Die Gebühr fällt auf den bereits um Spanne und Slippage verschlechterten
+Ausführungspreis an, nicht auf den Referenzpreis. Der Unterschied ist das
+Produkt der beiden Anteile — bei den Defaults 3·10⁻⁶, also **0,30 auf
+100.000**. Der erste Anlauf hier stand mit der linearen Näherung im Code, und
+genau diese 0,30 blieben als negatives Guthaben stehen. Der Test aus diesem
+ADR hat sie gefangen; eine Näherung ist an dieser Stelle kein Rundungsfehler,
+sondern das Vorzeichen, um das es geht.
+
+Exakt ist der Faktor für `FlatFillModel` (den Default). Unter
+`SizeAwareFillModel` hängt der Aufschlag von der Ordergröße ab, die beim
+Sizing noch nicht feststeht — dort bleibt er eine Untergrenze und ein kleiner
+Rest Hebel möglich. Ihn zu beseitigen hieße, den Fixpunkt zu lösen; das steht
+so im Docstring und ist bewusst nicht getan.
+
+Danach über die volle Historie von `macross` BTC/USD 1d:
+
+| | vorher | nachher |
+|---|---|---|
+| tiefstes Cash | −12.928,47 | **−140,98** |
+| Bars mit negativem Cash | 1.496 (53 %) | **302 (11 %)** |
+| Hebel im Markt (Median) | 1,0056 | **1,0000** |
+| Hebel maximal | 1,0085 | **1,0002** |
+
+**Der Rest ist echt und bleibt.** Was übrig bleibt, stammt aus der Lücke
+zwischen Entscheidung und Ausführung: bewertet wird mit dem Close des
+geschlossenen Bars, gefüllt wird zum Open des nächsten. Springt der Kurs
+dazwischen nach oben, kostet die Order mehr als reserviert. Das ist das
+Realismusmodell dieser Engine und kein Fehler — ein echter Broker würde dort
+teilfüllen oder ablehnen, und das zu modellieren ist eine eigene Frage.
+
+### Ein Test aus ADR-067 hat den falschen Nenner geprüft
+
+`test_ein_round_trip_kostet_genau_was_das_modell_sagt` maß den Verlust gegen
+das **Startkapital** und traf damit 130,0 bps nur, solange das Konto genau
+sein volles Eigenkapital umsetzte — also nur wegen des Fehlers. Nach der
+Korrektur wurde er rot.
+
+Nachgerechnet, ein Konto, konstanter Kurs, ein Rein und ein Raus:
+
+```
+Modell:                         130,0000 bps je Round-Trip
+Verlust / gehandeltem Notional: 130,0000 bps   <- die Aussage
+Verlust / Startkapital:         129,1601 bps   <- die Folge daraus
+```
+
+Beide Sätze sind wahr; ADR-067 hat sie verwechselt. Der Test prüft jetzt
+beides und rechnet den Faktor aus den Config-Feldern nach statt aus
+`kaufkraft_faktor` — sonst prüfte er die Funktion gegen sich selbst.
+
+### Konsequenzen
+
+- **Alle Renditezahlen des Projekts sinken um rund 0,9 % relativ.** Die
+  Sharpe-Zahlen bleiben, wo sie sind — und damit jede Aussage aus ADR-035,
+  ADR-054, ADR-058, ADR-061 und ADR-064, die an ihnen hängt.
+- **Ein Test hält die Zusage der Config fest**: ein Konto mit Zielgewicht 1,0
+  darf weder negatives Cash noch Bruttoexposure über 1,0 haben. Er fällt
+  gegen den alten Code durch.
+- **Die beiden Paper-Konten trugen den Fehler weiter und sind neu gestartet.**
+  Beide waren am 2026-09-02 long gegangen — gefüllt vom alten Sizing, Position
+  0,65 % zu groß, Cash −650,31 (BTC) und −656,55 (ETH). Das hätte sich
+  **nicht** von selbst korrigiert: die Abweichung liegt innerhalb des
+  Rebalancing-Bands von 5 %, es wird also keine Ausgleichsorder erzeugt, und
+  der Rest wäre bis zum nächsten echten Ausstiegssignal stehen geblieben —
+  bei `macross` möglicherweise Monate.
+
+  Der Zustand vor dem Neustart, damit er nachlesbar bleibt (Commit `e658ee8`):
+
+  | | BTC/USD | ETH/USD |
+  |---|---|---|
+  | Cash | −650,31 | −656,55 |
+  | Position | 1,292012 @ 77.437,40 | 41,369325 @ 2.418,61 |
+  | Fills / Gebühren | 1 / 600,30 | 1 / 600,34 |
+  | erstellt | 2026-09-01 | 2026-09-01 |
+
+  **Warum Neustart und nicht Weiterlaufen:** die Konten existieren für Phase D,
+  also für den Abgleich gegen eine echte Ausführung — und genau diesen Zustand
+  hätte eine Spot-Börse abgelehnt. Ein Konto, das der Live-Pfad nicht
+  nachbilden kann, ist als Beweismittel wertlos, egal wie lange es läuft. Der
+  Preis sind zwei Tage Vorwärtszeit und ein Fill.
+
+  **Warum nicht von Hand korrigiert:** ein auf die Größe gesetztes Konto, die
+  es *gehabt hätte*, ist kein beobachtetes mehr. Der Runner legt bei fehlendem
+  Zustand ein flaches Konto an und verankert es am jüngsten bekannten Bar
+  (`runner.py`) — es handelt also nicht rückwirkend, sondern ab jetzt.
+
+  **Was der erste Tick des neuen Kontos tun wird, ist gemessen und nicht
+  gehofft.** Dieselbe Mechanik einen Tag zurückversetzt, mit der Risk-Config
+  der CLI (Formung aus, ADR-053), gegen den echten Store:
+
+  | | BTC/USD | ETH/USD |
+  |---|---|---|
+  | Cash nach dem Einstieg | **0,00** | **0,84** |
+  | Bruttoexposure | **1,000000** | **0,999992** |
+  | Gebühr | 596,42 | 596,42 |
+
+  Der erste Anlauf dieser Messung lief ohne `risk_cfg` und landete bei 25 %
+  Gewicht — die Portfolio-Defaults der Risk-Engine. Genau der Fehler aus
+  ADR-053, diesmal im Prüfstand statt im Konto: ein Nachweis, der eine andere
+  Kontogröße misst als die, die läuft, beweist nichts.
+- **Dritter Fund derselben Familie an einem Tag.** ADR-066: eine Kennzahl
+  meldete Positives über ein ruiniertes Konto. ADR-067: die Suche nach der
+  Gegenrichtung. Und jetzt einer, den ADR-067 nicht gefunden hat — weil er
+  genau die Zahl in Ruhe lässt, nach der gesucht wurde.
+
+  Das ist die Lehre und sie ist unbequem: **ein Audit findet, wonach es
+  sucht.** Gefunden hat diesen hier ein Blick auf einen Kontostand, der
+  komisch aussah.
+
+---
+
+## ADR-067 — Die Gegenrichtung geprüft: wo machen wir uns schlechter, als wir sind?
+**Datum:** 2026-09-03
+
+**Der Anlass:** ADR-066 endet mit einem unbequemen Satz — der Fehler fiel nur
+auf, weil er die Zahlen **zu gut** aussehen ließ, und einer in der
+Gegenrichtung wäre niemandem aufgefallen. Dieses ADR ist die Suche danach.
+
+**Das Ergebnis vorweg:** vier Stellen exakt gegen von Hand gerechnete Werte
+geprüft, keine Abweichung. Drei kleine pessimistische Effekte gefunden, alle
+ohne Wirkung auf eine Schlussfolgerung. Und ein Befund in der **anderen**
+Richtung, der größer ist als alles Pessimistische zusammen.
+
+---
+
+### Was geprüft wurde und stimmt
+
+**Kosten je Round-Trip.** Ein Konto, konstanter Kurs, genau ein Rein und ein
+Raus:
+
+```
+Modell:     130.0 bps
+Gemessen:   130.0 bps   (Gebuehr 1.200 + Slippage 100 auf 100.000)
+Abweichung: +0.0 bps
+```
+
+**Ordergrößen.** `rebalance_order` bildet `delta = ziel_menge − ist_menge`.
+Gebühren fallen auf die *Differenz* an, nicht auf das Zielgewicht — der
+naheliegendste Weg zu sechsfach zu hohen Kosten ist nicht beschritten.
+
+**Annualisierung bei fremden Handelskalendern.** Die Sorge aus ADR-055: eine
+Aktienreihe mit 252 Handelstagen, annualisiert mit 365, hätte eine um Faktor
+1,20 zu hohe Vola und einen entsprechend zu niedrigen Sharpe.
+
+| Reihe | Perioden/Jahr gemessen | Sharpe von Hand | Sharpe laut System |
+|---|---|---|---|
+| nur Börsentage | 260,9 | +0,112 | +0,114 |
+| alle Tage | 365,2 | +0,135 | +0,135 |
+
+`observed_periods_per_year` misst die **tatsächliche** Bar-Dichte statt sie
+aus dem Timeframe zu raten. Die 1,5 % Abweichung oben sind mein synthetischer
+Kalender ohne Feiertage — und sie gehen nach oben, nicht nach unten.
+
+**Gebühren im Walk-Forward.** `n_trades`, `turnover` und `fees_paid` eines
+Fensters kommen alle aus derselben, auf das Testfenster **gefilterten**
+Fill-Liste. Kein Doppelzählen von Warmup-Gebühren.
+
+### Drei kleine pessimistische Effekte
+
+**1. Erzwungene Wiedereinstiege an den Fenstergrenzen.** Der Walk-Forward
+setzt die Strategie je Fenster neu auf; sie startet flach und muss ihre
+Position neu kaufen. Gemessen an `macross`: **3 von 47 Trades** (6 %) liegen
+im ersten Bar eines Testfensters.
+
+Der Effekt ist kleiner als die Zahl vermuten lässt, weil dieselbe Grenze auch
+den *Ausstieg* der Vorperiode verschluckt — die offene Position verschwindet
+mit dem Fenster, ohne Gebühr. Ein zusätzlicher Einstieg gegen einen
+gesparten Ausstieg hebt sich weitgehend auf.
+
+**2. Die angenommene halbe Spanne von 2 bps ist vermutlich zu hoch.** Und
+hier ist ein zweiter Fehlschlag festzuhalten: ich habe zweimal versucht, sie
+aus 1,48 Mio. Tick-Daten mit Aggressor-Seite zu messen, und beide Schätzer
+haben Artefakte geliefert.
+
+| Schätzer | Ergebnis | warum unbrauchbar |
+|---|---|---|
+| Preisabstand bei Seitenwechsel | Median 0,014 bps | von der Tickgröße dominiert |
+| Kauf- minus Verkaufsmittel je Minute | Mittelwert **−0,13 bps** | negative Spannen — er misst Kursdrift |
+
+Eine negative Spanne gibt es nicht. **ADR-056 ist damit bestätigt und nicht
+widerlegt:** die Spanne ist auch mit Tickdaten nicht sauber messbar, sie
+braucht Quotes.
+
+Was sich sagen lässt: das 90-%-Quantil der Minutenschätzung liegt bei 0,8 bps
+*voller* Spanne, die Annahme im Modell entspricht 4 bps. Sie ist also
+wahrscheinlich um 2 bis 3 bps zu teuer — auf einen Round-Trip von 130. Der
+Unterschied macht **3 %** der Kosten aus; bei `macross` mit 8,8× Umschlag sind
+das rund 0,004 Sharpe.
+
+**3. Der Versuchszähler ist absichtlich zu hoch.** ADR-057 hat die sieben
+handgeschriebenen Hypothesen nachgetragen, obwohl ADR-032 formal nur
+abgeschlossenes Screening zählt. Das ist eine bewusste Entscheidung in die
+strengere Richtung, im Modul begründet: „Eine Korrektur der Buchführung, die
+das eigene Ergebnis verbessert, wäre verdächtig; diese verschlechtert es."
+Bleibt so.
+
+### Der Befund in der anderen Richtung
+
+`metrics.sharpe` zieht **keinen risikofreien Zins ab**. Bei 4 bis 5 % Zins und
+44 % Jahresvolatilität überschätzt das den Sharpe um rund **0,10** — knapp ein
+Drittel der Gate-1-Schwelle von 0,33.
+
+Es ist nicht schlicht falsch, und das ist der Grund, warum es hier als offene
+Frage steht und nicht als Korrektur:
+
+* **Für die Nachweisbarkeit ist es richtig.** DSR und Permutationskontrolle
+  fragen, ob der Mittelwert von **null** verschieden ist. Die 0,33 aus
+  ADR-061 ist eine Nachweisgrenze aus `t ≥ 2`, keine ökonomische Hürde — sie
+  ist gegen dieselbe Größe definiert, die gemessen wird.
+* **Für die Frage „lohnt sich das?" ist es falsch.** Eine Strategie mit
+  Sharpe 0,33 gegen null kann gegen Tagesgeld bei null liegen. Das Ziel in
+  `docs/ZIEL.md` ist ein ökonomisches („echtes Geld, 12 Monate, besserer
+  Calmar als Buy-and-Hold"), und dort gehört der Zins hinein.
+* **Der Vergleich bleibt fair,** solange Buy-and-Hold genauso gerechnet wird —
+  und das wird es.
+
+**Nicht geändert, weil die Änderung jede dokumentierte Zahl im Repo bewegen
+würde** und die Entscheidung davon abhängt, welche der beiden Fragen eine
+Kennzahl beantworten soll. Das gehört vorab entschieden, nicht nebenbei.
+
+### Was das über den Audit selbst sagt
+
+Vier exakte Treffer und drei Effekte unter einem Prozent sind ein
+beruhigendes Ergebnis — und ein begrenztes. Geprüft wurde, wo ich **vermutet**
+habe, dass ein Pessimismus sitzt. ADR-066 ist nicht durch Suchen gefunden
+worden, sondern weil ein Ergebnis auffällig gut war; die Gegenrichtung hat
+diesen Alarm nicht. Ein Fehler, der alles gleichmäßig um zehn Prozent
+schlechter macht, sähe genau wie dieses Projekt aus.
+
+---
+
+## ADR-066 — Ein ruiniertes Konto meldete Sharpe +8,65
+**Datum:** 2026-09-03
+
+**Der Fehler:** `qt.backtest.metrics.compute` rechnete `equity.pct_change()`
+ohne Untergrenze. Sobald eine Kapitalkurve durch null geht, liest diese Zeile
+jede **Verschlechterung** als Gewinn — von −10.000 auf −20.000 sind
+rechnerisch +100 %.
+
+Minimalbeispiel, gegen den alten Code gemessen:
+
+```
+Kurve       [100.000, -10.000, -20.000, -40.000, -80.000]
+pct_change  [-1,1, +1,0, +1,0, +1,0]      Mittelwert +0,475
+gemeldet    Sharpe +8,65 bei Gesamtrendite -180 %
+```
+
+**Das ist ADR-026, eine Ebene höher.** Dort stand derselbe Satz für
+`qt.sim`: „`prod(1 + r)` ohne Untergrenze … negatives Kapital, das sich
+rechnerisch erholt." Korrigiert wurde er damals in der Pfad-Simulation. Im
+Backtest nicht — und dort ist er schlimmer, weil hier die Zahlen entstehen,
+die in ADRs landen.
+
+---
+
+### Wie er aufgefallen ist
+
+Nicht durch einen Test. Durch den ersten Research-Lauf gegen die erweiterte
+Marktbasis (ADR-065): fünf Kandidaten, vier davon mit **positivem**
+OOS-Sharpe, einer bei +0,67 — die ersten positiven Zahlen, die der
+Research-Loop je geliefert hat. Das war zu gut, um es ungeprüft zu glauben.
+
+`MomentumTrend`, der beste davon, nachgerechnet:
+
+| | |
+|---|---|
+| Startkapital | 100.000 |
+| Minimum der Kurve | **−96.506** |
+| Endwert | **0** |
+| Gesamtrendite | **−100 %** |
+| Punkte unter null | **979 von 1.751** |
+| gemeldeter Sharpe | **+0,59** |
+
+Alle fünf Kandidaten hatten das Konto ruiniert, zwischen 2021-10 und 2024-01.
+Nach der Korrektur:
+
+| Kandidat | vorher | jetzt | ruiniert am |
+|---|---|---|---|
+| `SMACross50_200` | −0,42 | **−3,09** | 2021-12-05 |
+| `DonchianBreakout` | +0,49 | **−2,70** | 2022-02-06 |
+| `VolRegime` | +0,55 | **−2,12** | 2021-12-05 |
+| `ZScoreMeanReversion` | +0,44 | **−1,14** | 2024-01-12 |
+| `MomentumTrend` | +0,67 | **−0,91** | 2021-10-28 |
+
+### Was **nicht** betroffen ist, nachgeprüft statt gehofft
+
+Die naheliegende Sorge ist, dass die dokumentierten Zahlen des Projekts auf
+demselben Fehler stehen. Jede Bibliotheksstrategie über denselben Store
+nachgerechnet:
+
+| Strategie | Sharpe | Ruin |
+|---|---|---|
+| `macross` | +0,25 | – |
+| `trend` | +0,16 | – |
+| `elliott` | +0,15 | – |
+| `orderflow` | +0,00 | – |
+| `timesfm` | −0,09 | – |
+| `crossmom` | −0,08 | – |
+| `meanrev` | −0,42 | – |
+| `crossrev` | −0,77 | – |
+
+**Keine einzige ruiniert das Konto.** Der Fehler hat also keine Zahl in
+ADR-035, ADR-054, ADR-058 oder ADR-061 verfälscht — er traf ausschließlich
+die generierten Kandidaten, weil nur die mit ungebremster Hebelwirkung über
+38 Märkte laufen (ADR-065).
+
+Das ist die beruhigende Hälfte des Befunds. Die andere: **der Fehler hätte
+jede dieser Zahlen treffen können**, und aufgefallen wäre er nur, weil das
+Ergebnis diesmal *zu gut* aussah. Ein Fehler, der zu schlechte Zahlen
+produziert hätte, läge noch drin.
+
+### Die Korrektur
+
+`absorbiere_ruin(equity)` schneidet die Kurve am ersten Punkt ≤ 0 ab und hält
+sie dort — dieselbe Regel wie `growth_factors()` in ADR-026. Zurückgegeben
+wird **die Kurve und der Zeitpunkt**, nicht nur die Kurve: wer nur
+abschneidet, verwandelt einen Totalverlust in eine flache Linie, die wie
+„hat nicht gehandelt" aussieht. `Metrics.ruined_at` trägt ihn, `as_dict()`
+zeigt ihn.
+
+Ein zweiter Schritt war nötig und stand nicht im ersten Entwurf: nach der
+Absorption liefert `pct_change` für `0/0` ein `nan`, `dropna()` macht daraus
+eine Reihe mit einem Wert, und der Sharpe fiel auf **0,0** zurück — ein
+ruiniertes Konto las sich wie eines, das nichts getan hat. Ein totes Konto
+hat Rendite **null**, nicht undefiniert; die Division steht deshalb jetzt
+explizit da. Erst damit meldet das Beispiel oben **−9,56** statt +8,65.
+
+### Konsequenz
+
+- **Jede gemeldete Kennzahl läuft durch die Absorption**, weil `compute` die
+  einzige Stelle ist, an der `Metrics` entsteht.
+- **Drei Tests**, einer davon mit einer Zusicherung über den Testfall selbst:
+  er prüft vorab, dass die Rohreihe einen positiven Mittelwert hat. Ohne das
+  prüft er nichts — mein erster Entwurf hatte eine Kurve, die auch im alten
+  Code negativ herauskam, und wäre grün durchgegangen.
+- **Offen:** die Absorption sitzt in der Berichtsschicht, nicht in der
+  Engine. Ein Broker, dessen Konto null erreicht, handelt weiter. Das ist
+  folgenlos, solange jede Zahl durch `compute` geht — aber es ist die Sorte
+  Annahme, die dieses Projekt schon zweimal eingeholt hat.
+
+---
+
+## ADR-065 — Phase C: der Loop hat kein Gedächtnis, die Kette hat ein Loch
+**Datum:** 2026-09-03
+
+**Die Entscheidung:** Der Research-Loop läuft erstmals gegen die erweiterte
+Marktbasis. Dabei fielen drei Dinge auf, die alle dieselbe Form haben wie die
+Funde aus ADR-059: **etwas fehlte, und das sah aus wie etwas, das da war.**
+
+Der Versuchszähler steht danach bei **21** statt 16. Fünf Versuche, dauerhaft,
+und was sie gekauft haben, steht unten.
+
+---
+
+### Der Lauf
+
+```bash
+uv run qt research --generate 5 --screen --provider nim --tf 1d \
+    --symbols <38 Märkte> --train 1000 --test 250 --embargo 20
+```
+
+Fünf Kandidaten erzeugt, fünf durch Sandbox, Kritik und Sanity, fünf
+gescreent, null bestanden. Das ist der Normalfall (ADR-005).
+
+Die berichteten Sharpes waren **positiv** — die ersten, die dieser Loop je
+geliefert hat; die acht Kandidaten vom 2026-08-31 lagen zwischen −1,84 und
+−8,21. Das war zu gut, und es war falsch: alle fünf hatten das Konto ruiniert,
+und die Kennzahl hat es nicht gemerkt. Der Fund hat ein eigenes ADR bekommen
+(**ADR-066**), weil er nicht den Loop betrifft, sondern jede Zahl des Systems.
+
+### Fund 1: der Generator kannte die Bibliothek nicht
+
+Von fünf Kandidaten waren drei Neuauflagen dessen, was seit Phase 1 im Repo
+steht:
+
+| erzeugt | ist in Wahrheit |
+|---|---|
+| `SMACross50_200` | `macross` |
+| `DonchianBreakout` | `trend` |
+| `ZScoreMeanReversion` | `meanrev` |
+
+**Drei von fünf Versuchen für Hypothesen, die dieses Projekt längst verworfen
+hat** — und der Zähler vergisst sie nie (ADR-032).
+
+Das Briefing kannte die **laufende Charge** (`previous`) und sonst nichts.
+Der Kommentar dazu benannte den Mechanismus sogar präzise: „zwanzig Varianten
+derselben Idee sind für die Deflated Sharpe Ratio trotzdem zwanzig Versuche."
+Nur reichte das Gedächtnis genau bis zum Ende des Laufs.
+
+**Behoben:** `bereits_geprueft(registry)` sammelt die Namen aus Bibliothek
+*und* Registry — derzeit 42 — und das Briefing führt sie als „bereits geprüft
+und gescheitert". Es weicht das blinde Briefing nicht auf (ADR-003): eine
+Liste von Ansatznamen enthält keine Kurse, keine Kennzahlen, keinen Markt.
+**Nur Namen, keine Ergebnisse** — wer dem Generator sagt, welcher Ansatz wie
+gut war, lässt ihn in der Nähe der besten bisherigen Zahl suchen, und das ist
+Overfitting mit einem Umweg über ein Sprachmodell. Ein Test hält beides fest.
+
+### Fund 2: die Kette endete bei der DSR
+
+`docs/ZIEL.md` Phase C.3 schreibt die Reihenfolge vor: Sandbox → Kritik →
+Walk-Forward → DSR → `qt placebo shuffle` → `qt placebo cross`. Die letzten
+beiden Stufen liefen nie. `screen_candidate` hörte nach der DSR auf.
+
+**Bemerkt hat es niemand, weil nie ein Kandidat bis dorthin kam.** Eine
+fehlende Stufe hinter einer nie genommenen Hürde sieht genauso aus wie eine
+vorhandene.
+
+**Behoben:** die Permutationskontrolle läuft jetzt für Kandidaten, die die DSR
+bestehen — **nach** ihr, nicht davor: 200 Ziehungen Walk-Forward kosten ein
+Vielfaches des Screenings, und ein an der DSR gescheiterter Kandidat ist
+ohnehin tot. Dieselbe Kostenreihenfolge wie im übrigen Trichter. Ein Test
+prüft die Reihenfolge im Quelltext, ein zweiter, dass ein Kandidat mit
+bestandener DSR und durchgefallenem Placebo als durchgefallen gilt.
+
+### Fund 3: der Loop hat keine Positionsgrößen-Schicht
+
+Warum ruinierten die Kandidaten das Konto? Weil sie über 38 Märkte laufen und
+jedes Gewicht für sich vergeben. `qt backtest` und `qt wf` rufen keine
+Risk-Engine auf (ADR-053) — das Bruttoexposure summiert sich damit auf bis zu
+**38×** Eigenkapital.
+
+Gegenprobe, dieselben Kandidaten mit auf 1 normiertem Brutto:
+
+| | Brutto 38 | Brutto 1 |
+|---|---|---|
+| alle fünf | −0,91 bis −3,09 | **+0,00** |
+
+Bei Brutto 1 fällt jedes Gewicht unter das Rebalancing-Band und **keiner
+handelt mehr**. Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
+das Ergebnis der *Idee* zeigen würde.
+
+**Das ist nicht behoben, und der Grund steht hier:** eine Positionsgrößen-
+Schicht für generierte Kandidaten ist eine Entwurfsentscheidung mit Folgen für
+jede künftige Messung — Vol-Targeting, Gleichgewichtung, Brutto-Cap sind drei
+verschiedene Strategien, nicht drei Einstellungen. Sie gehört vorab
+festgelegt, nicht nebenbei gewählt, weil ein Lauf sonst schlecht aussah.
+
+**Die fünf Versuche haben damit die Verdrahtung geprüft, nicht die Signale.**
+Sie zählen trotzdem — ADR-032 kennt keine Ausnahme für „falsch aufgesetzt",
+und eine solche Ausnahme wäre die bequemste Hintertür im ganzen System.
+
+### Stand von Phase C
+
+| Punkt | Stand |
+|---|---|
+| 1. Mindest-Sharpe vorab festgeschrieben | erledigt (ADR-057, aktualisiert in ADR-061 auf 0,33) |
+| 2. Research-Loop gegen die erweiterte Marktbasis | **gelaufen** — fünf Kandidaten, null bestanden, drei Funde |
+| 3. Volle Kette je Kandidat | **jetzt vollständig** — Stufe 5 fehlte bis heute |
+
+Offen bleibt Punkt 3 in einer Hinsicht: `qt placebo cross` ist noch nicht Teil
+des automatischen Screenings. Für eine Timing-Strategie über 38 Märkte wäre
+er ein Lauf je Markt und damit teurer als alles davor; er bleibt der
+Handgriff vor einer Promotion.
+
+---
+
+## ADR-064 — Order Flow auf feineren Timeframes: die Frage ist nicht der Takt, sondern die Gebühr
+**Datum:** 2026-09-03
+
+**Die Frage:** Wäre `orderflow` auf kleineren Timeframes wirksamer? Die
+Vermutung dahinter ist gut: aggressiver Fluss ist ein kurzfristiges Signal.
+Was er über die nächsten Minuten sagt, hat er über die nächsten vier Stunden
+längst gesagt.
+
+**Die Antwort:** Die Vermutung stimmt vermutlich für das *Signal* und ist für
+das *Ergebnis* gleichgültig — unter diesem Kostenregime. Das lässt sich
+ausrechnen, ohne eine Zeile zu backtesten, und die Rechnung ist der Grund,
+warum unten trotzdem ein Lauf steht.
+
+---
+
+### Das Umschlagbudget hängt nicht am Timeframe
+
+Aus ADR-056: **Drag p. a. ≈ (Umschlag/EK/Jahr) × einfache Kosten** und
+**ΔSharpe ≈ −Drag/Vola**. Gate 1 erlaubt 7× Umschlag pro Jahr. Ein Round-Trip
+schlägt zweimal das Eigenkapital um, also:
+
+> **Das Budget erlaubt 3,5 Round-Trips pro Jahr — auf jedem Timeframe.**
+
+Es ist ein Jahresbudget, kein Bar-Budget. Ein feinerer Takt bekommt dadurch
+nicht mehr Spielraum, er macht es nur schwerer, im Budget zu bleiben:
+
+| Timeframe | Bars/Jahr | Haltedauer für 3,5 Round-Trips |
+|---|---|---|
+| 1d | 365 | 104 Bars |
+| 4h | 2.190 | 626 Bars |
+| 1h | 8.760 | 2.503 Bars |
+| 15m | 35.040 | 10.011 Bars |
+| 5m | 105.120 | 30.034 Bars |
+
+Eine 5m-Strategie, die eine Position 30.034 Bars hält, ist keine
+5m-Strategie. Sie ist eine Jahresstrategie mit teurer Datenbeschaffung.
+
+### Was ein schnelleres Signal leisten müsste
+
+Andersherum gefragt: angenommen, `orderflow` hält im Schnitt 20 Bars — für
+einen Flussindikator eher träge. Welchen **Brutto**-Sharpe bräuchte das
+Signal, damit nach Kosten die 0,33 aus ADR-061 übrig bleiben?
+
+| Timeframe | Umschlag/Jahr | taker 130 bps | maker 80 bps | ADR-009 16 bps |
+|---|---|---|---|---|
+| 1d | 36× | 1,0 | 0,7 | 0,4 |
+| 4h | 219× | 4,3 | 2,9 | 0,7 |
+| 1h | 876× | 13,3 | 8,4 | **1,9** |
+| 15m | 3.504× | 52 | 32 | 6,7 |
+| 5m | 10.512× | 156 | 96 | 19,4 |
+
+Die höchste je in diesem Repo gemessene Kennzahl ist Sharpe **1,04**, und die
+ist in-sample. Unter `coinbase_taker` — dem Regime, unter dem laut ADR-056
+gesucht wird — ist damit alles unter 1d erledigt, bevor ein Backtest läuft.
+
+**Eine Zelle in dieser Tabelle ist aber nicht absurd.** Bei den 16 bps aus
+ADR-009 braucht 1h einen Brutto-Sharpe von 1,9. Das ist ambitioniert und
+nicht unmöglich. Genau dort, und nur dort, lebt die Vermutung weiter: **die
+Frage ist nicht der Takt, sondern ob passiv gefüllt wird.**
+
+Dafür gibt es seit Phase 1 einen Befehl, `qt maker` — „Wären die Orders dieses
+Laufs passiv überhaupt gefüllt worden?". Er ist die richtige Frage an ein
+schnelleres Order-Flow-Signal, und sie ist nicht dieselbe wie „ist der
+Backtest positiv".
+
+### Die zweite Grenze, die keine Gebühr auflöst
+
+Feinere Bars sehen aus wie mehr Daten. ADR-047 hat gemessen, dass der
+Standardfehler eines annualisierten Sharpe an der **Kalenderspanne** hängt und
+nicht an der Bar-Frequenz:
+
+| Zeitraum | Bars auf 5m | beweisbarer Sharpe (t ≥ 2, ein Markt) |
+|---|---|---|
+| 1 Monat | 8.640 | 6,98 |
+| 3 Monate | 25.920 | 4,03 |
+| 1 Jahr | 105.120 | 2,00 |
+| 7,7 Jahre | 809.280 | 0,72 |
+
+Ein Monat 5m-Daten ist eine imposante Zeilenzahl und ein Monat Evidenz. Wer
+auf feinere Timeframes ausweicht, weil die Historie knapp ist, tauscht ein
+Problem gegen seine Illusion.
+
+### Was daraus folgt
+
+Nicht: „Order Flow funktioniert nicht." Das ist ungeprüft, und ungeprüft ist
+nicht widerlegt.
+
+Sondern: **die Timeframe-Frage ist unter diesem Kostenregime entschieden,
+bevor Daten gezogen werden.** Offen blieb nur die eine Zelle — Maker-Gebühren
+auf einem feinen Takt. Die ist jetzt gemessen.
+
+---
+
+### Nachgemessen: `orderflow` auf 15m
+
+1,7 Mio. Trades von Kraken gezogen, davon **28 zusammenhängende Tage**
+(2026-05-06 bis 2026-06-04); der Rest hat eine Lücke. Auf 15m sind das 2.760
+Bars — genug für zehn Walk-Forward-Fenster, und der feinste Takt, den diese
+Datenlage trägt.
+
+**Der Lauf selbst bestätigt die Rechnung oben:**
+
+| | |
+|---|---|
+| Sharpe | **−42,3** |
+| Gesamtrendite | −63,6 % (Buy & Hold −21,4 %) |
+| Trades | 148 |
+| Umschlag | 95× Eigenkapital in 28 Tagen ≈ **1.240×/Jahr** |
+
+Gegen ein Budget von 7×. Die Tabelle oben sagte für 15m einen nötigen
+Brutto-Sharpe von 52 voraus; das Ergebnis ist damit keine Überraschung,
+sondern eine Bestätigung.
+
+**Die Negativkontrolle** (200 Ziehungen, zehn Fenster):
+
+```
+  Strategie selbst      -42.693
+  Abspieler (Referenz)  -42.693  Pfadabhaengigkeit 0.0000
+  Trades   echt   110   Ziehungen Median   110  (87-132)
+  Perzentil der echten Strategie: 52.5%
+```
+
+Sauber kalibriert — Pfadabhängigkeit null, identische Reibung — und
+**durchgefallen**. `orderflow` ist von der zufälligen Platzierung seiner
+eigenen Episoden nicht zu unterscheiden. Damit haben **alle neun Strategien
+der Bibliothek eine Negativkontrolle, und keine besteht sie.**
+
+Der Vorbehalt gehört dazu, und er ist größer als sonst: bei Sharpe −42
+beherrschen die Gebühren beide Seiten des Vergleichs. Die Ziehungen liegen
+zwischen −45,9 und −38,3 — in diesem Band ist für ein Signal kaum Platz. Der
+Test ist gültig und fast blind.
+
+### Und die letzte Tür: `qt maker`
+
+```
+Symbol      n  marktnah  passiv  Ausfall  Maker%
+BTC/USD   148       104      42        2     28%
+```
+
+**Nur 28 % der Orders wären passiv gefüllt worden**, und das ist eine
+Obergrenze — die Warteschlangenposition ist nicht modelliert. 104 von 148
+Limits waren schon beim Open erreichbar: die Order geht durch, zahlt aber
+Taker.
+
+Damit ist auch die einzige nicht-absurde Zelle der Tabelle geschlossen. Das
+Maker-Regime aus ADR-009 steht dieser Strategie auf diesem Takt nicht zur
+Verfügung, und die 1,9 sind keine Zielmarke, sondern eine Rechnung unter einer
+Annahme, die gerade widerlegt wurde.
+
+**Was offen bleibt:** 28 Tage sind ein Monat Evidenz. Nach der Tabelle oben
+müsste ein Signal dort Sharpe 7 erreichen, um überhaupt zeigbar zu sein. Der
+Befund lautet also nicht „Order Flow funktioniert nicht", sondern: **unter
+diesem Kostenregime ist er auf keinem Takt prüfbar, auf dem er interessant
+wäre.** Das ist eine Aussage über das Regime, nicht über das Signal.
+
+---
+
+## ADR-063 — Aufteilen hilft, aber nicht in git: die Trade-Ablage war quadratisch
+**Datum:** 2026-09-03
+
+**Die Frage:** Lässt sich das Order-Flow-Problem durch Aufteilen der Dateien
+lösen? `docs/ROADMAP.md` führte Order Flow herabgestuft, unter anderem mit der
+Begründung, ein Jahr Trades wäre „rund 170 MB, und GitHub lehnt Dateien über
+100 MB ab".
+
+**Die Antwort:** Aufteilen löst genau dieses Hindernis — und dieses Hindernis
+war weder das größte noch das eigentliche. Die Ablage ist jetzt in Tagesteilen,
+aus einem Grund, der mit git nichts zu tun hat. Order Flow bleibt herabgestuft,
+aber die Begründung dafür stimmte nicht.
+
+---
+
+### Erst messen, was da überhaupt anfällt
+
+Zwei Tage BTC/USD von Kraken gezogen, 2026-09-03:
+
+| | |
+|---|---|
+| Trades | 210.331 in 2,00 Tagen |
+| Dateigröße | 2,52 MB → **1,26 MB/Tag** |
+| hochgerechnet | **460 MB/Jahr** |
+
+Die 170 MB aus dem ROADMAP waren also zu niedrig, und die 100-MB-Grenze ist
+schon **am Tag 79** erreicht, nicht nach einem Jahr.
+
+**Kompression ist nicht der Hebel.** `df.to_parquet(path)` schrieb ohne
+Angabe, also Snappy. Gemessen an denselben Daten:
+
+| Variante | MB/Jahr | gegen heute |
+|---|---|---|
+| heute (snappy) | 460 | 100 % |
+| zstd | 374 | 81 % |
+| brotli | 343 | 75 % |
+
+Ein Viertel weniger löst kein Problem, das um den Faktor fünf zu groß ist.
+Die Daten sind schlicht groß: 105.000 Trades am Tag, jeder mit Zeitstempel,
+Preis, Menge und Seite.
+
+### Das größere Problem stand nicht im ROADMAP, weil es niemand gesucht hat
+
+`write_trades` legte alles in **einer** Datei je Symbol ab und schrieb sie bei
+jedem Anhängen komplett neu — lesen, zusammenführen, entdoppeln, sortieren,
+ganz zurückschreiben. Was das kostet, hängt daran, wie oft angehängt wird:
+
+| | geschriebene Bytes |
+|---|---|
+| ein Jahresabzug am Stück (≈139 Zwischenspeicherungen) | **≈ 32 GB** |
+| täglich fortgeschrieben über ein Jahr (365 Schreibvorgänge) | **≈ 84 GB** |
+
+Für 460 MB Ergebnis. Der Abzug ist **quadratisch in seinem eigenen
+Ausgabevolumen**, und das ist der Grund, warum ein langer Abzug in der Praxis
+nicht durchführbar war — nicht die Dateigröße. Kein Test war rot; es dauerte
+nur immer länger.
+
+Genau hier hilft Aufteilen, und zwar dramatisch:
+
+| Ablage | Dateigröße | in git über ein Jahr |
+|---|---|---|
+| eine Datei, täglich neu geschrieben | 460 MB | ≈ 84 GB |
+| monatliche Teile | 38 MB | ≈ 7,0 GB |
+| **tägliche Teile, je einmal geschrieben** | **1,3 MB** | **0,46 GB** |
+
+Ein abgeschlossener Tag wird nie wieder angefasst. Damit ist der Abzug linear,
+und der Dateiname wird zum Index: `read_trades` sortiert Teile außerhalb des
+Zeitraums am Namen aus, ohne sie zu öffnen.
+
+### Und trotzdem gehört es nicht ins Repository
+
+Die Aufteilung macht die Daten *versionierbar* — unveränderliche Dateien
+speichert git einmal. Die Frage ist, ob sie dorthin gehören, und die Antwort
+steht in `.gitignore`: versioniert wird nur, was sich **nicht rekonstruieren
+lässt** (der Kontostand, die Kandidaten-Registry).
+
+Gemessen statt vermutet, `fetch_trades` gegen Kraken:
+
+| `since` | Antwort |
+|---|---|
+| 2019-06-01 | 1000 Trades, erster 2019-06-01 00:00 |
+| 2021-06-01 | 1000 Trades, erster 2021-06-01 00:00 |
+| 2023-06-01 | 1000 Trades, erster 2023-06-01 00:00 |
+| 2025-06-01 | 1000 Trades, erster 2025-06-01 00:00 |
+
+Kraken liefert die Historie ab 2019 auf Zuruf. **Die Trades sind nicht
+verderblich, sondern reproduzierbar** — genau deshalb wurde Kraken in ADR-034
+gewählt, und genau das ist beim Formulieren des Speicherproblems untergegangen.
+Sie gehören damit unter `/data/*` wie die Bars, nicht ins Repository.
+
+### Was daraus für Order Flow folgt
+
+**Die Begründung im ROADMAP war falsch, die Schlussfolgerung bleibt richtig.**
+Order Flow ist nicht an einem Speicherproblem herabgestuft, sondern an zwei
+Dingen, die beide gemessen sind:
+
+1. **Zeit.** 19 Anfragen je Tag Historie, 1,2 s Wartezeit je Anfrage. Ein Jahr
+   sind 6.935 Anfragen, rund **2,3 Stunden** — und in einem Container, dessen
+   Store bei jedem Start leer ist, fällt das **jedes Mal** an. Für sieben
+   Walk-Forward-Fenster auf 4h braucht es rund 460 Tage Historie, also gut
+   drei Stunden.
+2. **Das Kostenregime.** Order Flow lebt auf 4h. ADR-047 hat für 4h gemessen,
+   dass die Gebühren dort *jede* getestete Strategie von positiv auf −0,65 bis
+   −1,60 Sharpe ziehen, und Gate 1 lässt seit ADR-056 nur 1d oder gröber zu.
+
+Der erste Punkt ist jetzt ein Preis und kein Hindernis mehr: der Abzug ist
+linear, er läuft durch. Die Negativkontrolle für `orderflow` — die letzte, die
+fehlt (ADR-059) — kostet damit drei Stunden Ziehen und keine Grundsatzfrage.
+
+### Konsequenzen
+
+- **`data/trades/<SYMBOL>/<YYYY-MM-DD>.parquet`** statt einer Datei je Symbol,
+  mit zstd. Ein abgeschlossener Tag wird nie wieder geschrieben; ein Test hält
+  das an der Änderungszeit der Nachbardateien fest.
+- **`read_trades` liest über die Teile hinweg** und sortiert am Dateinamen vor.
+  Ein Altbestand aus der Zeit davor wird weiter mitgelesen — ihn still zu
+  übergehen wäre der Weg, auf dem Daten verschwinden, ohne dass etwas
+  fehlschlägt.
+- **Die Begründung im ROADMAP ist korrigiert.** Ein falscher Grund für eine
+  richtige Entscheidung ist keine harmlose Ungenauigkeit: er wird zitiert, und
+  irgendwann trifft jemand auf seiner Grundlage eine andere Entscheidung.
+- **Offen bleibt der Abzug selbst.** Drei Stunden je Sitzung sind der Preis;
+  ob er sich lohnt, hängt an Punkt 2 oben und ist keine technische Frage mehr.
+
+---
+
 ## ADR-062 — Der Live-Pfad ist gebaut und bleibt unverdrahtet
 **Datum:** 2026-09-03
 

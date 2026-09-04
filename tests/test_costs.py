@@ -447,3 +447,113 @@ def test_ein_etf_zahlt_ueber_zwanzigmal_weniger_als_ein_krypto_taker():
     from qt.core.config import COINBASE_TAKER, US_ETF_COSTS
 
     assert round_trip_bps(COINBASE_TAKER) > 20 * round_trip_bps(US_ETF_COSTS)
+
+
+# ---------------------------------------------------------------------------
+# Der Audit gegen pessimistische Verzerrungen (ADR-067)
+# ---------------------------------------------------------------------------
+
+
+def test_ein_round_trip_kostet_genau_was_das_modell_sagt():
+    """Haelt die Zahl fest, gegen die ADR-067 geprueft hat -- im richtigen Nenner.
+
+    Der naheliegendste Weg zu systematisch zu schlechten Ergebnissen waere,
+    Gebuehren auf das **Zielgewicht** statt auf die Differenz zu rechnen, oder
+    Spanne und Slippage doppelt anzusetzen. Beides faellt hier auf: ein Konto,
+    konstanter Kurs, genau ein Rein und ein Raus muss exakt den Round-Trip
+    des Kostenmodells verlieren -- keinen Basispunkt mehr.
+
+    Die erste Fassung mass gegen das **Startkapital** und traf damit 130,0 bps
+    nur, solange das Konto genau sein volles Eigenkapital umsetzte. Seit
+    ADR-068 traegt die Order ihre eigene Gebuehr, kauft also fuer etwas
+    weniger -- 129,16 statt 130,0 bps vom Startkapital. Beide Saetze sind
+    wahr, die ADR-067-Formulierung hat sie verwechselt:
+
+        Verlust / gehandeltem Notional : 130,0000 bps   <- die Aussage
+        Verlust / Startkapital         : 129,1601 bps   <- die Folge daraus
+
+    Deshalb pruefen wir jetzt beides. Der zweite Wert ist kein Spielraum,
+    sondern exakt der Kehrwert des Kaufkraftfaktors: faellt der Nenner aus
+    ADR-068 wieder weg, steht dort wieder 130,0 und der Test wird rot. Der
+    Faktor wird hier aus den Config-Feldern nachgerechnet und nicht aus
+    `kaufkraft_faktor` geholt -- sonst pruefte der Test die Funktion gegen
+    sich selbst.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from qt.backtest.costs import round_trip_bps
+    from qt.backtest.engine import run_backtest
+    from qt.core.config import BacktestConfig
+    from qt.core.types import Bar
+    from qt.strategy.base import Strategy
+
+    cfg = BacktestConfig()
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        Bar("X/USD", "1d", t0 + timedelta(days=i), 100.0, 100.0, 100.0, 100.0, 1e9)
+        for i in range(10)
+    ]
+
+    class EinRoundTrip(Strategy):
+        name = "rt"
+
+        @property
+        def warmup_bars(self) -> int:
+            return 1
+
+        def on_bar(self, symbol, store):
+            n = len(store.window(symbol, self.timeframe))
+            return 1.0 if 2 <= n <= 4 else 0.0
+
+    r = run_backtest(EinRoundTrip(["X/USD"], "1d"), {"X/USD": bars}, cfg)
+    ek = r.equity["equity"]
+    verlust = ek.iloc[0] - ek.iloc[-1]
+
+    assert len(r.fills) == 2, "genau ein Rein und ein Raus"
+
+    # Der Verlust ist die Reibung und sonst nichts -- der Kurs steht still.
+    reibung = sum(f.total_cost for f in r.fills)
+    assert verlust == pytest.approx(reibung, abs=1e-6)
+
+    # Die eigentliche Aussage: je gehandeltem Gegenwert genau ein Round-Trip.
+    # Zwei Ausfuehrungen tragen je eine Einwegkosten ihres eigenen Notionals,
+    # deshalb *2 fuer den Round-Trip.
+    notional = sum(f.notional for f in r.fills)
+    assert reibung / notional * 2 * 10_000 == pytest.approx(
+        round_trip_bps(cfg.costs), abs=0.01
+    )
+
+    # Und die Folge daraus: gemessen am Startkapital ist es *weniger*, weil
+    # die Order seit ADR-068 ihre Gebuehr zuruecklegt statt sie zu hebeln.
+    vom_startkapital = verlust / ek.iloc[0] * 10_000
+    faktor = (1 + (cfg.costs.half_spread_bps + cfg.costs.slippage_bps) / 10_000) * (
+        1 + cfg.costs.taker_fee_bps / 10_000
+    )
+    erwartet = round_trip_bps(cfg.costs) / faktor
+    assert erwartet == pytest.approx(129.1601, abs=0.001)
+    assert vom_startkapital == pytest.approx(erwartet, abs=0.001)
+    assert vom_startkapital < round_trip_bps(cfg.costs)
+
+
+def test_der_handelskalender_wird_gemessen_und_nicht_geraten():
+    """Eine Aktienreihe mit 365 zu annualisieren waere Faktor 1,20 zu viel Vola.
+
+    Damit saehe jede ETF-Strategie um denselben Faktor schlechter aus, als sie
+    ist -- genau die Sorte Fehler, die niemandem auffaellt, weil sie in die
+    unangenehme Richtung zeigt (ADR-055, geprueft in ADR-067).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from qt.backtest.metrics import compute, observed_periods_per_year
+
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2020-01-01", periods=2520, tz="UTC")
+    r = rng.normal(0.0004, 0.01, len(idx))
+    eq = pd.Series(100_000 * np.cumprod(1 + r), index=idx)
+
+    py = observed_periods_per_year(eq.index, 365)
+    assert 250 < py < 265, f"Boersentage muessen ~261 ergeben, nicht {py:.0f}"
+
+    von_hand = r.mean() / r.std(ddof=1) * np.sqrt(py)
+    assert compute(eq, "1d").sharpe == pytest.approx(von_hand, rel=0.01)

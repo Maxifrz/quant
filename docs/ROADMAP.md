@@ -22,7 +22,7 @@
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
 > uv run qt data pull --symbols "BTC/USD,ETH/USD" --tf 1h,4h --since 2019-01-01
 > uv run qt data stocks --since 2019-01-01     # 13 ETFs, braucht TIINGO_API_KEY
-> uv run qt data report                        # muss 27 Maerkte zeigen, alle "ok"
+> uv run qt data report                        # muss 39 Maerkte zeigen, alle "ok"
 > ```
 > **Zählen, nicht überfliegen.** Bis ADR-059 schrieb derselbe Befehl neun der
 > vierzehn Krypto-Märkte und meldete keinen Fehler: Coinbase antwortet für ein
@@ -61,7 +61,7 @@
 >
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
-> uv run qt trials              # Versuchszaehler der DSR -- steht bei 16
+> uv run qt trials              # Versuchszaehler der DSR -- steht bei 21
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
@@ -90,8 +90,11 @@
 >
 > ### Der Stand in einem Satz
 >
-> **Neun Hypothesen geprüft, neun gescheitert — und acht von neun Strategien
-> haben jetzt eine Negativkontrolle, die keine besteht.** LLM-Allokator
+> **Neun Hypothesen geprüft, neun gescheitert — und alle neun Strategien haben
+> jetzt eine Negativkontrolle, die keine besteht.** Dazu fünf Kandidaten aus
+> dem Research-Loop, die zwar den Versuchszähler kosten, aber die Verdrahtung
+> geprüft haben und nicht ihre Idee (ADR-065) — sie als geprüfte Hypothesen zu
+> zählen wäre zu großzügig gegen uns selbst. LLM-Allokator
 > **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
 > die Timeframe-Frage (ADR-047), zwei BTC-Mechanismen vor der ersten Codezeile
 > (ADR-048), `macross` selbst (ADR-054) und `crossmom` (ADR-058).
@@ -114,9 +117,12 @@
 >
 > `meanrev` liegt **unter** dem Median seiner eigenen Zufallsfassungen. Im
 > Querschnitt über 26 Märkte kommen `trend` (−0,17) und `meanrev` (−0,20) auf
-> negative Median-Sharpes. `orderflow` ist die einzige Strategie ohne Kontrolle
-> — sie bräuchte Handelsdaten, die aus Platzgründen nicht im Repo liegen.
-> Ungeprüft ist nicht bestanden.
+> negative Median-Sharpes.
+>
+> **`orderflow` hat seit ADR-064 auch eine: Perzentil 52,5 % auf 15m.** Damit
+> haben alle neun Strategien eine Negativkontrolle, und keine besteht sie. Der
+> Vorbehalt ist dort größer als sonst — bei Sharpe −42 beherrschen die
+> Gebühren beide Seiten des Vergleichs, der Test ist gültig und fast blind.
 >
 > **Und die Zahl, auf der alles ruht, reproduziert nicht.** Aus einem frisch
 > gezogenen Store liefert `macross` OOS-Sharpe **0,25** auf BTC und **0,28** auf
@@ -128,6 +134,22 @@
 > Dazu ein vollständiger Code-Audit (ADR-053): neun Funde, davon fünf, die
 > Zahlen verfälscht haben, ohne dass ein Test rot wurde.
 >
+> **Und drei Kennzahlfehler an einem Tag, keiner davon in einer Strategie.**
+> ADR-066: `compute` las jede Verschlechterung einer negativen Kapitalkurve
+> als Gewinn und meldete Sharpe +8,65 für ein ruiniertes Konto. ADR-067: die
+> Suche nach der Gegenrichtung — vier Stellen exakt nachgerechnet, drei kleine
+> pessimistische Effekte ohne Wirkung, und ein Befund *zugunsten* der Zahlen
+> (kein risikofreier Zins im Sharpe, rund 0,10). ADR-068: `rebalance_order`
+> kaufte für genau das Eigenkapital und ließ die Gebühr obendrauf laufen —
+> 1,0056 Hebel im Median und negatives Cash in 53 % der Bars, bei einer
+> Config, die „1.0 = kein Hebel" verspricht.
+>
+> **Die Reihenfolge ist die Lehre.** ADR-067 hat gezielt nach Fehlern gesucht
+> und ADR-068 nicht gefunden — weil ein Hebel Mittelwert und Volatilität
+> gleich skaliert und damit genau die Zahl in Ruhe lässt, nach der gesucht
+> wurde. Gefunden hat ihn ein Blick auf einen Kontostand, der komisch aussah.
+> Ein Audit findet, wonach es sucht.
+>
 > **Die Paper-Konten laufen trotzdem weiter, und zwar genau deswegen.** Die
 > historischen Daten können die fehlenden unabhängigen Beobachtungen nicht
 > liefern; Vorwärtszeit kann es. Was sich geändert hat, ist der Anspruch: die
@@ -136,26 +158,54 @@
 >
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Nachsehen, ob der Tick wirklich feuert.** Die Routine
->    `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in einer
->    frischen Sitzung laufen. Am 2026-09-03 war der Kontostand über einen Tag
->    alt. `scripts/paper_tick.sh` schrieb bis dahin auf einen zusammengeführten
->    Zweig und meldete „Kontostand gesichert" auch nach vier gescheiterten
->    Push-Versuchen; beides ist behoben (ADR-059). Ob damit alles behoben ist,
->    zeigt genau eine Zahl: `Letzter verarbeiteter Bar` muss von Tag zu Tag
->    weiterwandern. Tut er das nicht, ist das kein Wartefall, sondern ein Bug.
+> 1. **Der Tick feuert, aber nicht dort, wo das Repository liegt.** Die
+>    Routine `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in
+>    einer frischen Sitzung laufen. Am 2026-09-04 ist sie gelaufen — und
+>    scheiterte vor der ersten Zeile: die Sitzung startete in einem Container
+>    **ohne Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts
+>    zu ticken. Nichts wurde verändert, kein Kill-Switch berührt.
+>
+>    Das ist der dritte verschiedene Grund in Folge, aus dem derselbe Tick
+>    nicht ankommt — nach dem toten Zweig und der beschönigten Push-Meldung
+>    (beide ADR-059) jetzt einer, der gar nicht im Repository liegt: die
+>    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
+>    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
+>
+>    **Beide Konten sind am 2026-09-04 neu gestartet** (ADR-068). Sie trugen
+>    den Hebel aus dem alten Sizing: am 2026-09-02 long gegangen mit 0,65 % zu
+>    großer Position, Cash −650,31 (BTC) und −656,55 (ETH). Das hätte sich
+>    nicht von selbst korrigiert — die Abweichung liegt innerhalb des
+>    Rebalancing-Bands von 5 %, also wäre sie bis zum nächsten echten
+>    Ausstiegssignal stehen geblieben, bei `macross` möglicherweise Monate.
+>    Ein Zustand, den eine Spot-Börse ablehnt, taugt nicht als Beweismittel
+>    für Phase D, egal wie lange er läuft. Preis: zwei Tage Vorwärtszeit und
+>    ein Fill. Der alte Stand liegt in Commit `e658ee8`.
+>
+>    Die Konten stehen jetzt flach bei 100.000, verankert am 2026-09-04, und
+>    handeln **ab jetzt** statt rückwirkend. Der erste Einstieg wird gemessen
+>    bei Cash 0,00 (BTC) bzw. 0,84 (ETH) und Bruttoexposure 1,000000 landen —
+>    nachgestellt mit derselben Mechanik einen Tag zurückversetzt.
+>
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand gesetzt,
+>    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
+>    nur zusammen mit der Frage, wer sie bewegt hat. **Ab dem 2026-09-05 ist
+>    sie wieder aussagekräftig:** wandert sie ohne Zutun weiter, feuert die
+>    Routine; tut sie es nicht, liegt es weiterhin an der Umgebung.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
 >    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
 >    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
 >    die Datenlage, sondern ein Signal.
-> 3. **`orderflow` eine Kontrolle geben oder die Strategie streichen.** Sie ist
->    die letzte ohne, und der Grund ist ein Speicherproblem, kein
->    methodisches: 27,8 MB für 59 nutzbare Tage, ein Jahr wären rund 170 MB,
->    und GitHub lehnt Dateien über 100 MB ab. Eine Strategie in der Bibliothek,
->    die sich nicht prüfen lässt, ist eine offene Rechnung.
-> 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
+> 3. **Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.** Der
+>    Research-Loop hat keine: über 38 Märkte summiert sich das Bruttoexposure
+>    auf 38× und ruiniert das Konto, bei Normierung auf 1 handelt keiner mehr
+>    (ADR-065). Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
+>    das Ergebnis der Idee zeigen würde. Vol-Targeting, Gleichgewichtung und
+>    Brutto-Cap sind drei verschiedene Strategien, nicht drei Einstellungen —
+>    das gehört **vorab** entschieden, sonst wird die Wahl davon abhängen, wie
+>    der letzte Lauf aussah.
+> 4. **Research-Loop** — der Versuchszähler steht auf 21, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
 >    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
 >    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
@@ -169,12 +219,26 @@
 > Daten — was fehlt, ist ein zweites Testfenster, und das liefert nur eine
 > breitere Datenbasis oder Vorwärtszeit.
 >
-> **Order-Flow bleibt herabgestuft, und zwar aus einem gemessenen Grund.** Der
-> Punkt stand hier lange auf Platz 2 mit der Begründung, er brauche „dieselbe
-> Sicherungslogik wie der Paper-Zustand". Das geht nicht auf: der Paper-Zustand
-> sind 2 KB JSON, die Trades sind 27,8 MB für 59 nutzbare Tage. Dazu lebt Order
-> Flow auf 4h, und ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede*
-> getestete Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen.
+> **Order-Flow bleibt herabgestuft — die Begründung dafür war aber falsch.**
+> Hier stand, ein Jahr Trades wären „rund 170 MB, und GitHub lehnt Dateien über
+> 100 MB ab". Gemessen sind es 1,26 MB am Tag, also 460 MB im Jahr, und die
+> 100-MB-Grenze fiele schon am Tag 79. Beides ist gleichgültig: die Daten
+> gehören gar nicht ins Repository, weil Kraken sie auf Zuruf nachliefert
+> (ADR-063).
+>
+> Das eigentliche Hindernis war ein anderes und stand nirgends: `write_trades`
+> schrieb die ganze Datei bei jedem Anhängen neu — rund **84 GB geschriebene
+> Bytes für 460 MB Ergebnis**. Behoben durch Tagesteile; ein abgeschlossener
+> Tag wird nie wieder angefasst.
+>
+> Was übrig bleibt und die Herabstufung trägt: Order Flow lebt auf 4h, und
+> ADR-047 hat für 4h gemessen, dass die Gebühren dort *jede* getestete
+> Strategie von positiv auf −0,65 bis −1,60 Sharpe ziehen — Gate 1 lässt seit
+> ADR-056 ohnehin nur 1d oder gröber zu.
+>
+> **Ein falscher Grund für eine richtige Entscheidung ist keine harmlose
+> Ungenauigkeit.** Er wird zitiert, und irgendwann trifft jemand auf seiner
+> Grundlage eine andere Entscheidung.
 >
 > **Was ausdrücklich nicht empfohlen wird:** noch eine Strategie-Idee. Nicht
 > weil Ideen schlecht wären, sondern weil dieses Projekt gerade achtmal
@@ -191,6 +255,15 @@ hier als 15,2 und war beim Nachrechnen 16,0, Buy & Hold als 16,8 und war
 20,1 — nichts davon war je falsch, nur undatiert (ADR-053). Dieselbe Lehre
 wie bei ADR-051/052, eine Ebene tiefer: eine Behauptung ohne Schnitt veraltet,
 ohne dass es jemandem auffällt.
+
+**Alle Renditezahlen vor dem 2026-09-04 liegen rund 0,9 % relativ zu hoch.**
+Bis ADR-068 kaufte `rebalance_order` für genau das Eigenkapital und ließ die
+Gebühr obendrauf laufen; das Konto lief mit 1,0056 Hebel. Die *Sharpe*-Zahlen
+sind davon unberührt — ein Hebel skaliert Mittelwert und Volatilität gleich —
+und damit auch jede Aussage, die an ihnen hängt. Die Tabellen unten sind
+deshalb **nicht** rückwirkend geändert: sie tragen ihren Datenstand, und ein
+nachträglich korrigiertes Feld ohne neuen Lauf wäre eine Zahl, die niemand
+mehr nachrechnen kann.
 
 ---
 

@@ -374,20 +374,21 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei **16** und vergisst nichts (ADR-032, ADR-057).
+Versuchszähler steht bei **21** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
 
 ---
 
 ## Der ehrliche Erwartungswert
 
-Neun Hypothesen, neun gescheitert. Nichts im Repo hat je eine
-Negativkontrolle bestanden — und seit ADR-059 ist das keine Beobachtung über
-drei Strategien mehr, sondern über acht: `macross`, `trend`, `meanrev`,
-`timesfm`, `crossmom` und `crossrev` liegen zwischen Perzentil 38 % und 76 %
-ihrer eigenen gewürfelten Fassungen, gefordert waren 95 %; `elliott` und
-`hashribbon` sind schon vorher gefallen. Ungeprüft ist allein `orderflow`,
-und ungeprüft ist nicht bestanden. Es gibt keinen Grund anzunehmen, dass eine
+Neun Hypothesen, neun gescheitert, dazu fünf Loop-Kandidaten, die den
+Zähler kosteten und nur die Verdrahtung geprüft haben. Nichts im Repo hat je eine
+Negativkontrolle bestanden — und seit ADR-059/064 ist das keine Beobachtung
+über drei Strategien mehr, sondern über **alle neun**: `macross`, `trend`,
+`meanrev`, `timesfm`, `crossmom`, `crossrev` und `orderflow` liegen zwischen
+Perzentil 38 % und 76 % ihrer eigenen gewürfelten Fassungen, gefordert waren
+95 %; `elliott` und `hashribbon` sind schon vorher gefallen. Es gibt keine
+ungeprüfte Strategie mehr. Es gibt keinen Grund anzunehmen, dass eine
 verbreiterte Datenbasis daran etwas ändert — sie macht nur die *Frage*
 entscheidbar, die bisher offenbleiben musste.
 

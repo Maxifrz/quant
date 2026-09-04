@@ -41,6 +41,14 @@ class Metrics:
     n_trades: int
     turnover: float
     fees_paid: float
+    #: Zeitpunkt, an dem das Eigenkapital null erreicht hat -- sonst `None`.
+    #: Steht hier und nicht nur in einer Zahl, weil ein ruiniertes Konto
+    #: keine Kennzahl mehr hat, die man vergleichen koennte (ADR-066).
+    ruined_at: object | None = None
+
+    @property
+    def ruiniert(self) -> bool:
+        return self.ruined_at is not None
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -58,6 +66,7 @@ class Metrics:
             "Trades": self.n_trades,
             "Umsatz": self.turnover,
             "Gebuehren": self.fees_paid,
+            **({"RUINIERT am": self.ruined_at} if self.ruiniert else {}),
         }
 
     def table(self) -> str:
@@ -111,6 +120,52 @@ def observed_periods_per_year(index: pd.Index, fallback: float) -> float:
     return (len(index) - 1) / (spanne / (365.25 * 86400))
 
 
+def absorbiere_ruin(equity: pd.Series) -> tuple[pd.Series, object | None]:
+    """Ein Konto, das null erreicht, bleibt dort.
+
+    **Warum das eine eigene Funktion ist und nicht eine Zeile.** ADR-026 hat
+    denselben Fehler in `qt.sim` gefunden: `prod(1+r)` ohne Untergrenze macht
+    aus zwei Bars mit -150% ein Kapital von +0,25 -- negatives Kapital, das
+    sich rechnerisch erholt. Dort wurde es korrigiert. Im Backtest nicht, und
+    dort ist es schlimmer, weil hier die Zahlen entstehen, die in ADRs landen.
+
+    Gemessen am Kandidaten `MomentumTrend` (2026-09-03): Kapitalkurve von
+    100.000 auf **-96.506**, Endwert 0, Gesamtrendite -100%, 979 von 1.751
+    Punkten unter null -- und ein gemeldeter **Sharpe von +0,59**. Der Grund
+    ist `pct_change` ueber einen Vorzeichenwechsel: von -50.000 auf -25.000
+    sind rechnerisch +50%, tatsaechlich ist das Konto laengst weg.
+
+    Zurueckgegeben wird die Kurve **und** der Zeitpunkt des Ruins, nicht nur
+    die Kurve. Wer nur abschneidet, verwandelt einen Totalverlust in eine
+    flache Linie, die wie "hat nicht gehandelt" aussieht.
+    """
+    if equity.empty:
+        return equity, None
+
+    tot = equity <= 0
+    if not tot.any():
+        return equity, None
+
+    ab = tot.idxmax()
+    bereinigt = equity.copy()
+    bereinigt.loc[ab:] = 0.0
+    return bereinigt, ab
+
+
+def _renditen(equity: pd.Series) -> pd.Series:
+    """Bar-Renditen, die den Ruin ueberleben.
+
+    `pct_change` liefert nach der Absorption `0/0 = nan`, und `dropna()`
+    macht daraus eine Reihe mit **einem** Wert: der Sharpe faellt dann auf
+    0,0 zurueck und ein ruiniertes Konto liest sich wie eines, das nichts
+    getan hat. Ein totes Konto hat Rendite **null**, nicht undefiniert --
+    also steht hier eine explizite Division mit dieser Festlegung.
+    """
+    vorher = equity.shift(1)
+    roh = (equity - vorher) / vorher
+    return roh.where(vorher != 0, 0.0).iloc[1:]
+
+
 def compute(
     equity: pd.Series,
     timeframe: str,
@@ -123,14 +178,20 @@ def compute(
     Annualisiert wird mit der **gemessenen** Bar-Dichte der Reihe, nicht mit
     der aus dem Timeframe abgeleiteten -- siehe `observed_periods_per_year`.
     `timeframe` bleibt als Rueckfallebene fuer Reihen ohne Zeitindex.
+
+    **Ruin wird zuerst absorbiert** (ADR-066). Jede Kennzahl darunter setzt
+    voraus, dass die Kurve positiv bleibt; ohne diesen Schritt meldet eine
+    Strategie, die das Konto verloren hat, einen positiven Sharpe.
     """
     equity = equity.dropna()
+    equity, ruined_at = absorbiere_ruin(equity)
     if len(equity) < 2:
         return Metrics(
-            len(equity), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, n_trades, turnover, fees_paid
+            len(equity), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, n_trades, turnover,
+            fees_paid, ruined_at,
         )
 
-    returns = equity.pct_change().dropna()
+    returns = _renditen(equity)
     py = observed_periods_per_year(equity.index, bars_per_year(timeframe))
 
     total_return = float(equity.iloc[-1] / equity.iloc[0] - 1)
@@ -184,6 +245,7 @@ def compute(
         n_trades=n_trades,
         turnover=turnover,
         fees_paid=fees_paid,
+        ruined_at=ruined_at,
     )
 
 
