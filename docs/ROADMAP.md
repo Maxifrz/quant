@@ -66,10 +66,33 @@
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
 > ```
-> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. `macross` scheitert bei
-> 8,8× am Umschlagbudget von 7× und kommt nicht bis zum Sharpe. `crossmom`
-> kommt durch bis zum Walk-Forward und steht dort bei **−0,08** gegen die
-> geforderten 0,33 (ADR-061).
+> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. **Seit ADR-069 fallen
+> alle neun Strategien am Umschlagbudget** — auch `crossmom`, das vorher als
+> einzige durchkam und dessen 2,9× eine stille Subvention des Rebalancing-
+> Bandes waren (10,8× nach der Korrektur).
+>
+> **Das Budget ist trotzdem nicht die Hürde.** Rückwärts durch die
+> Kostenidentität gerechnet, was sich jede Strategie *selbst* leisten kann
+> (ADR-071, Datenstand 2026-09-04):
+>
+> | | Umschlag ist | OOS netto | OOS brutto | erlaubt |
+> |---|---|---|---|---|
+> | `trend` BTC | 15,2× | +0,160 | **+0,459** | 6,6× |
+> | `macross` ETH | 8,7× | +0,276 | +0,403 | 5,0× |
+> | `macross` BTC | 8,7× | +0,250 | +0,418 | 4,6× |
+> | `elliott` BTC | 13,2× | +0,145 | +0,334 | 0,3× |
+> | `hashribbon` BTC | 7,1× | +0,123 | +0,224 | **0,0×** |
+> | `meanrev` ETH | 16,9× | −0,923 | −0,707 | **0,0×** |
+>
+> Keine darf 7×. Die 7 sind ein billiger Vorfilter vor dem Walk-Forward und
+> keine Aussage über eine Strategie — `hashribbon` und `meanrev` liegen schon
+> **ohne jede Kostenbelastung** unter 0,33, für sie hilft keine Frequenz.
+> Und `macross` hätte bei 6,9× das Gate bestanden und wäre am Sharpe
+> gescheitert.
+>
+> **Die schärfste Zahl im Dokument steht in der Brutto-Spalte:** die zwei
+> besten Signale des Repos liegen 0,09 bzw. 0,13 über der Nachweisgrenze, und
+> aus dieser Spanne muss die gesamte Ausführung bezahlt werden.
 >
 > ### Wofür das alles
 >

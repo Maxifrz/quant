@@ -198,6 +198,46 @@ def umschlag_pro_jahr(equity, turnover_spalte: str = "turnover") -> float:
     return float(anteil / jahre)
 
 
+def erlaubter_umschlag(
+    oos_sharpe: float,
+    ann_vol: float,
+    einweg_bps: float,
+    ist_umschlag: float,
+    mindest_sharpe: float = MIN_SHARPE,
+) -> float:
+    """Wieviel Umschlag sich **diese** Strategie leisten kann (ADR-071).
+
+    Die Identitaet aus ADR-056 rueckwaerts gelesen:
+
+        Drag p.a. = Umschlag x Einwegkosten
+        Brutto    = Netto + Drag / Vola
+        erlaubt   = (Brutto - Mindest-Sharpe) x Vola / Einwegkosten
+
+    `oos_sharpe` ist der **Netto**-Sharpe der verketteten OOS-Kurve, also die
+    Zahl, gegen die Gate 1 prueft; `ist_umschlag` der Umschlag, mit dem sie
+    zustande kam. Aus beiden ergibt sich der Brutto-Sharpe, und daraus die
+    Frequenz, bei der die Strategie gerade noch ueber der Nachweisgrenze
+    landet.
+
+    **Warum das nicht die Gate-Schwelle ersetzt.** Die 7x aus ADR-056 sind ein
+    Vorfilter *vor* dem Walk-Forward und kosten einen Bruchteil davon. Diese
+    Zahl hier braucht den Walk-Forward, den der Vorfilter gerade sparen soll.
+    Sie ist eine Diagnose, keine Huerde -- und sie ist die interessantere:
+    gemessen liegt sie fuer jede Bibliotheksstrategie **unter** 7x (ADR-071),
+    das globale Budget bindet also bei keiner.
+
+    Rueckgabe 0.0, wenn schon der Brutto-Sharpe unter der Schwelle liegt:
+    dann hilft keine Frequenz, auch nicht die Frequenz null.
+    """
+    if einweg_bps <= 0 or ann_vol <= 0 or not np.isfinite(oos_sharpe):
+        return float("nan")
+    einweg = einweg_bps / 10_000.0
+    drag = ist_umschlag * einweg
+    brutto = oos_sharpe + drag / ann_vol
+    erlaubt = (brutto - mindest_sharpe) * ann_vol / einweg
+    return float(max(erlaubt, 0.0))
+
+
 def _anlageklasse(symbol: str) -> str:
     """Grobe Zuordnung: alles mit Slash ist Krypto, der Rest kommt aus dem Korb.
 

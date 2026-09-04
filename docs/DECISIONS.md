@@ -5,6 +5,108 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-071 — Das Umschlagbudget bindet bei keiner Strategie
+**Datum:** 2026-09-04
+
+**Die Frage:** Nach ADR-069 scheitern **alle neun** Bibliotheksstrategien am
+Umschlagbudget von 7×/Jahr — keine kommt bis zum Sharpe. Der naheliegende
+Schluss wäre: das Budget ist die Hürde, und wer es senkt, kommt weiter. Der
+naheliegende Reflex wäre, eine Strategie langsamer zu stellen, bis sie
+darunter liegt.
+
+Beides ist falsch, und die Identität aus ADR-056 zeigt es, ohne dass ein
+Parameter gesucht werden muss.
+
+### Rückwärts gerechnet
+
+```
+Drag p.a. = Umschlag × Einwegkosten
+Brutto    = Netto + Drag / Vola
+erlaubt   = (Brutto − 0,33) × Vola / Einwegkosten
+```
+
+`Netto` ist der OOS-Sharpe der verketteten Walk-Forward-Kurve — die Zahl,
+gegen die Gate 1 prüft. Daraus ergibt sich der Brutto-Sharpe und damit die
+Frequenz, bei der die Strategie gerade noch über der Nachweisgrenze landet.
+
+**Datenstand 2026-09-04, 1d, `coinbase_taker`, Walk-Forward 1000/250/20:**
+
+| Strategie | Markt | Umschlag ist | OOS netto | Drag | OOS brutto | **erlaubt** |
+|---|---|---|---|---|---|---|
+| `macross` | BTC/USD | 8,7× | +0,250 | 5,68 % | +0,418 | **4,6×** |
+| `macross` | ETH/USD | 8,7× | +0,276 | 5,66 % | +0,403 | **5,0×** |
+| `trend` | BTC/USD | 15,2× | +0,160 | 9,89 % | +0,459 | **6,6×** |
+| `elliott` | BTC/USD | 13,2× | +0,145 | 8,56 % | +0,334 | **0,3×** |
+| `hashribbon` | BTC/USD | 7,1× | +0,123 | 4,60 % | +0,224 | **0,0×** |
+| `meanrev` | ETH/USD | 16,9× | −0,923 | 10,98 % | −0,707 | **0,0×** |
+
+**Keine einzige darf 7×.** Das globale Budget ist bei keiner die bindende
+Grenze — es ist durchweg *großzügiger* als das, was die Strategie sich
+tatsächlich leisten kann.
+
+### Was daraus folgt
+
+**Der Satz „scheitert nicht am Signal, sondern an der Handelsfrequenz"
+(ADR-057) ist nur halb richtig.** Richtig ist: `macross` kann sich seine 8,7×
+nicht leisten. Falsch ist die Umkehrung — bei 6,9× hätte es das Gate bestanden
+und wäre am Sharpe gescheitert, weil seine eigene Grenze bei 4,6× liegt.
+
+**Und für zwei ist es ganz falsch.** `hashribbon` (brutto +0,224) und
+`meanrev` (brutto −0,707) liegen schon **ohne jede Kostenbelastung** unter der
+Nachweisgrenze. Für sie gibt es keine Frequenz, die hilft, auch nicht die
+Frequenz null. Ihre Ablehnung ist richtig, der berichtete Grund ist es nicht.
+
+**Der Umschlag ist ein Vorfilter, keine Aussage.** Genau so ist er in ADR-056
+gedacht und in ADR-057 gebaut: er kostet einen Bruchteil eines Walk-Forward
+und fängt ab, was ohnehin nicht durchkommt. Die Zahl, die etwas über die
+Strategie sagt, braucht den Walk-Forward — also genau den Schritt, den der
+Vorfilter spart. Beides gleichzeitig geht nicht, und die Reihenfolge ist
+richtig gewählt.
+
+**Nicht geändert: die 7×.** Sie als strategiespezifische Grenze auszulegen
+hieße, den Vorfilter durch den Schritt zu ersetzen, den er spart. Und sie
+anzuheben, weil sie „ohnehin nicht bindet", wäre die Latte zu senken, ohne
+dass eine einzige Zahl besser würde.
+
+### Ein Nebenbefund, der einer Korrektur bedarf
+
+Auf **Brutto**-OOS-Sharpe ist `trend` mit **+0,459** die beste Strategie des
+Repos — vor `macross` mit +0,418. Seit ADR-035 gilt `macross` als „die einzige
+Hoffnung des Projekts"; das stimmt für den Netto-Sharpe und nicht für das
+Signal darunter.
+
+Der Vorbehalt gehört unmittelbar dazu und ist groß: Brutto-Sharpe ist eine
+**abgeleitete** Größe aus einer Näherungsidentität, kein Messwert. Und die
+Rechnung unterstellt, dass eine langsamere Fassung derselben Idee denselben
+Brutto-Sharpe hätte — was sie nicht tut, weil weniger Handeln ein anderes
+Signal ist. Wer aus dieser Zeile „bau ein langsameres `trend`" liest, hat
+einen Versuch ausgegeben, um eine Zahl anzupassen, die er selbst erzeugt hat.
+
+Der methodische Wert liegt woanders: **die 0,33 ist erreichbar, aber knapp.**
+Die zwei besten Signale des Repos liegen brutto 0,09 bzw. 0,13 darüber, und
+diese Spanne muss die gesamte Ausführung bezahlen. Das ist eine schärfere
+Formulierung des Befunds aus ZIEL.md („was fehlt, ist ein Signal") als jede
+Zählung gescheiterter Hypothesen.
+
+### Konsequenzen
+
+- **`erlaubter_umschlag()`** in `qt.research.gate`, mit vier Tests. Eine
+  Diagnose, keine Hürde — die Gate-Schwellen bleiben unverändert und
+  hartverdrahtet (ADR-057).
+- **Die Umschlagzeile in ROADMAP und ZIEL.md bekommt ihren Vorbehalt.** Ein
+  falscher Grund für eine richtige Entscheidung wird zitiert, bis jemand auf
+  seiner Grundlage anders entscheidet.
+- **Methodisch:** die Zahlen oben sind gemischt — Umschlag aus dem vollen
+  Lauf (so rechnet das Gate), Sharpe und Vola aus der OOS-Kette. Sauberer
+  wäre der Umschlag je Testfenster; die Größenordnung ändert das nicht, die
+  dritte Stelle schon.
+- **Der erste Anlauf dieser Rechnung war falsch** und hätte behauptet,
+  `macross` könne sich 56× leisten: er benutzte den In-Sample-Sharpe von
+  +1,026 statt der OOS-Zahl +0,250. Der Faktor zwischen beiden ist 4 — und
+  genau dieser Faktor ist der Grund, warum es das Gate überhaupt gibt.
+
+---
+
 ## ADR-070 — Der Spread ist messbar, die Gebühr nicht
 **Datum:** 2026-09-04
 
