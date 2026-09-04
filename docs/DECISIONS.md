@@ -145,6 +145,20 @@ beides und rechnet den Faktor aus den Config-Feldern nach statt aus
 - **Ein Test hält die Zusage der Config fest**: ein Konto mit Zielgewicht 1,0
   darf weder negatives Cash noch Bruttoexposure über 1,0 haben. Er fällt
   gegen den alten Code durch.
+- **Die beiden Paper-Konten tragen den Fehler weiter, und zwar sichtbar.**
+  Beide sind am 2026-09-02 long gegangen — gefüllt vom alten Sizing, Position
+  0,65 % zu groß, Cash −650,31 (BTC) und −656,55 (ETH). Das korrigiert sich
+  **nicht** von selbst: die Abweichung liegt innerhalb des
+  Rebalancing-Bands von 5 %, es wird also keine Ausgleichsorder erzeugt, und
+  der Rest steht bis zum nächsten echten Ausstiegssignal.
+
+  Nicht angefasst, mit Begründung: ein Neustart kostet zwei Tage Vorwärtszeit
+  und den einzigen Fill, den diese Konten je hatten, und Vorwärtszeit ist
+  genau die Ressource, wegen der sie überhaupt laufen. Ein Konto von Hand auf
+  die Größe zu setzen, die es *gehabt hätte*, wäre die andere Variante — und
+  ein handkorrigierter Kontostand ist kein beobachteter mehr. Beides ist eine
+  Entscheidung über die Beweislage und gehört ausdrücklich getroffen; hier
+  steht sie deshalb als offener Punkt und nicht als erledigte Zeile.
 - **Dritter Fund derselben Familie an einem Tag.** ADR-066: eine Kennzahl
   meldete Positives über ein ruiniertes Konto. ADR-067: die Suche nach der
   Gegenrichtung. Und jetzt einer, den ADR-067 nicht gefunden hat — weil er

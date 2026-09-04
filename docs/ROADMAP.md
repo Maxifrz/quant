@@ -22,7 +22,7 @@
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
 > uv run qt data pull --symbols "BTC/USD,ETH/USD" --tf 1h,4h --since 2019-01-01
 > uv run qt data stocks --since 2019-01-01     # 13 ETFs, braucht TIINGO_API_KEY
-> uv run qt data report                        # muss 27 Maerkte zeigen, alle "ok"
+> uv run qt data report                        # muss 39 Maerkte zeigen, alle "ok"
 > ```
 > **Zählen, nicht überfliegen.** Bis ADR-059 schrieb derselbe Befehl neun der
 > vierzehn Krypto-Märkte und meldete keinen Fehler: Coinbase antwortet für ein
@@ -61,7 +61,7 @@
 >
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
-> uv run qt trials              # Versuchszaehler der DSR -- steht bei 16
+> uv run qt trials              # Versuchszaehler der DSR -- steht bei 21
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
@@ -134,6 +134,22 @@
 > Dazu ein vollständiger Code-Audit (ADR-053): neun Funde, davon fünf, die
 > Zahlen verfälscht haben, ohne dass ein Test rot wurde.
 >
+> **Und drei Kennzahlfehler an einem Tag, keiner davon in einer Strategie.**
+> ADR-066: `compute` las jede Verschlechterung einer negativen Kapitalkurve
+> als Gewinn und meldete Sharpe +8,65 für ein ruiniertes Konto. ADR-067: die
+> Suche nach der Gegenrichtung — vier Stellen exakt nachgerechnet, drei kleine
+> pessimistische Effekte ohne Wirkung, und ein Befund *zugunsten* der Zahlen
+> (kein risikofreier Zins im Sharpe, rund 0,10). ADR-068: `rebalance_order`
+> kaufte für genau das Eigenkapital und ließ die Gebühr obendrauf laufen —
+> 1,0056 Hebel im Median und negatives Cash in 53 % der Bars, bei einer
+> Config, die „1.0 = kein Hebel" verspricht.
+>
+> **Die Reihenfolge ist die Lehre.** ADR-067 hat gezielt nach Fehlern gesucht
+> und ADR-068 nicht gefunden — weil ein Hebel Mittelwert und Volatilität
+> gleich skaliert und damit genau die Zahl in Ruhe lässt, nach der gesucht
+> wurde. Gefunden hat ihn ein Blick auf einen Kontostand, der komisch aussah.
+> Ein Audit findet, wonach es sucht.
+>
 > **Die Paper-Konten laufen trotzdem weiter, und zwar genau deswegen.** Die
 > historischen Daten können die fehlenden unabhängigen Beobachtungen nicht
 > liefern; Vorwärtszeit kann es. Was sich geändert hat, ist der Anspruch: die
@@ -142,14 +158,31 @@
 >
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Nachsehen, ob der Tick wirklich feuert.** Die Routine
->    `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in einer
->    frischen Sitzung laufen. Am 2026-09-03 war der Kontostand über einen Tag
->    alt. `scripts/paper_tick.sh` schrieb bis dahin auf einen zusammengeführten
->    Zweig und meldete „Kontostand gesichert" auch nach vier gescheiterten
->    Push-Versuchen; beides ist behoben (ADR-059). Ob damit alles behoben ist,
->    zeigt genau eine Zahl: `Letzter verarbeiteter Bar` muss von Tag zu Tag
->    weiterwandern. Tut er das nicht, ist das kein Wartefall, sondern ein Bug.
+> 1. **Der Tick feuert, aber nicht dort, wo das Repository liegt.** Die
+>    Routine `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in
+>    einer frischen Sitzung laufen. Am 2026-09-04 ist sie gelaufen — und
+>    scheiterte vor der ersten Zeile: die Sitzung startete in einem Container
+>    **ohne Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts
+>    zu ticken. Nichts wurde verändert, kein Kill-Switch berührt.
+>
+>    Das ist der dritte verschiedene Grund in Folge, aus dem derselbe Tick
+>    nicht ankommt — nach dem toten Zweig und der beschönigten Push-Meldung
+>    (beide ADR-059) jetzt einer, der gar nicht im Repository liegt: die
+>    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
+>    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
+>
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand geticktet,
+>    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
+>    nur zusammen mit der Frage, wer sie bewegt hat.
+>
+>    **Die Konten tragen den Hebel aus ADR-068.** Beide sind am 2026-09-02
+>    long gegangen, gefüllt vom fehlerhaften Sizing: Position 0,65 % zu groß,
+>    Cash −650,31 (BTC) und −656,55 (ETH). Das korrigiert sich **nicht** von
+>    selbst — die Abweichung liegt innerhalb des Rebalancing-Bands von 5 %,
+>    also bleibt sie bis zum nächsten echten Ausstiegssignal stehen. Ein
+>    Neustart der Konten würde sie beseitigen und kostet zwei Tage
+>    Vorwärtszeit und einen Fill; das ist eine Entscheidung über die
+>    Beweislage und gehört ausdrücklich getroffen, nicht nebenbei.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
@@ -164,7 +197,7 @@
 >    Brutto-Cap sind drei verschiedene Strategien, nicht drei Einstellungen —
 >    das gehört **vorab** entschieden, sonst wird die Wahl davon abhängen, wie
 >    der letzte Lauf aussah.
-> 4. **Research-Loop** — der Versuchszähler steht auf 16, und jeder Lauf
+> 4. **Research-Loop** — der Versuchszähler steht auf 21, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
 >    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
 >    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
@@ -214,6 +247,15 @@ hier als 15,2 und war beim Nachrechnen 16,0, Buy & Hold als 16,8 und war
 20,1 — nichts davon war je falsch, nur undatiert (ADR-053). Dieselbe Lehre
 wie bei ADR-051/052, eine Ebene tiefer: eine Behauptung ohne Schnitt veraltet,
 ohne dass es jemandem auffällt.
+
+**Alle Renditezahlen vor dem 2026-09-04 liegen rund 0,9 % relativ zu hoch.**
+Bis ADR-068 kaufte `rebalance_order` für genau das Eigenkapital und ließ die
+Gebühr obendrauf laufen; das Konto lief mit 1,0056 Hebel. Die *Sharpe*-Zahlen
+sind davon unberührt — ein Hebel skaliert Mittelwert und Volatilität gleich —
+und damit auch jede Aussage, die an ihnen hängt. Die Tabellen unten sind
+deshalb **nicht** rückwirkend geändert: sie tragen ihren Datenstand, und ein
+nachträglich korrigiertes Feld ohne neuen Lauf wäre eine Zahl, die niemand
+mehr nachrechnen kann.
 
 ---
 
