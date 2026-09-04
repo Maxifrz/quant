@@ -61,7 +61,7 @@
 >
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
-> uv run qt trials              # Versuchszaehler der DSR -- steht bei 21
+> uv run qt trials              # Versuchszaehler der DSR -- steht bei 24
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
@@ -114,8 +114,8 @@
 > ### Der Stand in einem Satz
 >
 > **Neun Hypothesen geprüft, neun gescheitert — und alle neun Strategien haben
-> jetzt eine Negativkontrolle, die keine besteht.** Dazu fünf Kandidaten aus
-> dem Research-Loop, die zwar den Versuchszähler kosten, aber die Verdrahtung
+> jetzt eine Negativkontrolle, die keine besteht.** Dazu acht Kandidaten aus
+> dem Research-Loop (fünf am 2026-09-03, drei am 2026-09-04), die zwar den Versuchszähler kosten, aber die Verdrahtung
 > geprüft haben und nicht ihre Idee (ADR-065) — sie als geprüfte Hypothesen zu
 > zählen wäre zu großzügig gegen uns selbst. LLM-Allokator
 > **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
@@ -238,10 +238,17 @@
 >    eine Toleranz um eine Position. Bei 39 Märkten war es damit 1,95× der
 >    eigenen Position, also 39-mal lockerer als für eine Ein-Symbol-Strategie.
 >    Dieselbe Fehlerfamilie wie ADR-053 und ADR-065, drittes Auftreten.
-> 4. **Research-Loop** — der Versuchszähler steht auf 21, und jeder Lauf
->    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
->    (ADR-032). Gemessen: 21 → 26 Versuche heben den erwarteten besten Sharpe
->    aus **reinem Rauschen** von 1,92 auf 2,01. In dieser Umgebung ist
+> 4. **Research-Loop** — am 2026-09-04 gelaufen, drei Kandidaten, keiner
+>    besteht (ADR-072). Der Versuchszähler steht damit auf 24, und jeder
+>    weitere Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen
+>    Kandidaten (ADR-032). Gemessen: 21 → 24 Versuche heben den erwarteten
+>    besten Sharpe aus **reinem Rauschen** von 1,922 auf 1,980.
+>
+>    **Der nächste billige Vorfilter ist die Kritik-Stufe.** Ein Kandidat mit
+>    307× Umschlag pro Jahr ist vollständig durch Sandbox, Kritik und
+>    Sanity-Check gelaufen; `critic_unrealistic_turnover` steht als Feld in
+>    der Registry und hat nicht angeschlagen. Das ist billiger zu reparieren
+>    als jede weitere Idee zu prüfen. In dieser Umgebung ist
 >    `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
 >    durch (ADR-060); der Blocker aus `docs/ZIEL.md` Phase C.2 gilt hier nicht
 >    mehr.

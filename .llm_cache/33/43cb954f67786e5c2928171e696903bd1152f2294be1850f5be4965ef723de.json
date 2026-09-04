@@ -1,0 +1,14 @@
+{
+ "key": "3343cb954f67786e5c2928171e696903bd1152f2294be1850f5be4965ef723de",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.15,
+  "rationale_code_mismatch": false,
+  "reasoning": "Die Strategie nutzt zwei Zeitfenster (60/250 Bars) auf log-Returns ohne Preis-bezogene Konstanten. Mit nur zwei Parametern bei 500 Out-of-Sample-Bars ist das Freiheitsgrad-Verhältnis akzeptabel. Der Code implementiert exakt die beschriebene Dual-Momentum-Logik (short > long → long, sonst short). Warmup von 260 Bars deckt das längere Fenster ab. Bei 130 bp Kosten ist der Turnover durch die langen Fenster gering genug, um testwürdig zu sein. Kein harten Befund für reject.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

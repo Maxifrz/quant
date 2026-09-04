@@ -5,6 +5,107 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-072 — Der erste Loop-Lauf, dessen Zahlen etwas bedeuten
+**Datum:** 2026-09-04
+
+Drei Kandidaten, `--provider nim`, alle 39 Märkte auf 1d, Walk-Forward
+1500/400/20. Versuchszähler **21 → 24**. Die Zahl der Kandidaten war eine
+bewusste Entscheidung eines Menschen: sie ist die einzige in diesem Repo, die
+sich nicht zurücknehmen lässt.
+
+| | OOS-Sharpe | DSR | gegen |
+|---|---|---|---|
+| `keltner_breakout` | **−0,16** | 0,013 | 22 Versuche |
+| `dual_momentum` | −0,87 | 0,000 | 24 Versuche |
+| `volume_z_momentum` | −5,01 | 0,000 | 23 Versuche |
+
+Keiner besteht. Das ist der Normalfall (ADR-005).
+
+### Warum dieser Lauf trotzdem anders ist
+
+**Die beiden Blocker aus ADR-065 sind beide weg, und beide haben gewirkt.**
+
+*Erstens, das Gedächtnis.* Am 2026-09-03 waren drei von fünf Kandidaten
+Neuauflagen von `macross`, `trend` und `meanrev` — drei Versuche für längst
+verworfene Hypothesen. Heute: Keltner-Ausbruch, Volumen-z-Momentum, Dual
+Momentum. Keine davon steht in der Bibliothek. (Ehrlich dazu: `dual_momentum`
+ist Momentum-Familie und damit thematisch in der Nähe von `trend` — es ist
+eine andere Regel, keine andere Idee.)
+
+*Zweitens, die Positionsgrößen-Schicht.* Nachgeprüft an jedem der drei, über
+alle 39 Märkte:
+
+| | Sharpe (voll) | Brutto Median | Cash min | Umschlag | ruiniert |
+|---|---|---|---|---|---|
+| `KeltnerBreakout` | +0,293 | 0,317 | −57.594 | 12,4× | nein |
+| `VolumeZMomentum` | −1,560 | 0,501 | −88.441 | **307,7×** | nein |
+| `DualMomentum` | −0,306 | 0,258 | +15.633 | 33,9× | nein |
+
+**Keiner ruiniert das Konto.** Am 2026-09-03 taten es alle fünf, und die
+kaputte Kennzahl meldete dafür Sharpe +0,59 (ADR-066).
+
+### Ein Brutto von 5,94 — nachgesehen, nicht weggewunken
+
+`VolumeZMomentum` erreicht in der Spitze ein Bruttoexposure von 5,94. Das
+sieht nach einem Versagen der Schicht aus und ist keins:
+
+```
+Maximum 5,943 am 2021-05-21
+  Eigenkapital     4.138   (Start 100.000)
+  Positionswert   24.592
+Endkapital              17
+```
+
+**Der Nenner bricht weg, nicht die Grenze reißt.** Über alle 527 Bars mit
+Brutto > 1,01 liegt das Eigenkapital im Median bei **94 USD** von ursprünglich
+100.000. In diesem Bereich ist das Verhältnis arithmetisch bedeutungslos.
+Gemessen am *Startkapital* — wo der Nenner nicht wegbrechen kann — liegt der
+Positionswert im Median bei 0,000.
+
+Die Schicht hält also, was sie verspricht: **sie verhindert Hebel, nicht
+schlechte Ideen.** Eine Strategie mit 307,7× Umschlag zahlt unter 130 bps
+Round-Trip rund 400 % des Eigenkapitals pro Jahr an Gebühren; dass davon 17
+USD übrig bleiben, ist Arithmetik und kein Fehler.
+
+### Was der Lauf über den Trichter sagt
+
+**Alle drei reißen das Umschlagbudget** (12,4×, 307,7×, 33,9× gegen 7×) — und
+nach ADR-071 wäre ihr *erlaubter* Umschlag ohnehin 0×, weil schon der
+Netto-OOS-Sharpe negativ ist. Der Vorfilter greift also nicht zufällig
+richtig.
+
+**Die Kritik-Stufe hat keinen einzigen abgelehnt.** Drei Kandidaten, von denen
+einer 307× pro Jahr umschlägt, sind vollständig durch Sandbox, Kritik und
+Sanity-Check gelaufen. `critic_unrealistic_turnover` ist ein Feld in der
+Registry — es hat hier nicht angeschlagen. Das ist der nächste billige
+Vorfilter, der offensichtlich noch nicht filtert.
+
+### Ein Vorbehalt zur Registry
+
+Die sechs Zeilen vom 2026-09-03 tragen Sharpes zwischen **+0,67 und −0,42**,
+und sie sind mit der kaputten Kennzahl aus ADR-066 gemessen — auf ruinierten
+Konten. Sie stehen bewusst unverändert da: die Registry ist ein Protokoll
+dessen, was ein Lauf gemeldet hat, kein nachgeführter Bestand. Wer sie
+zitiert, braucht diesen Absatz. Ein Neuberechnen würde den Versuchszähler
+nicht bewegen (er zählt Zeilen, nicht Läufe), aber es würde das Protokoll
+überschreiben.
+
+Damit ist **−0,16 die beste belastbare Zahl, die dieser Loop je geliefert
+hat**: die Charge vom 2026-08-31 lag zwischen −1,84 und −8,21, die vom
+2026-09-03 ist nicht verwendbar.
+
+### Konsequenzen
+
+- Versuchszähler **24**. Erwarteter bester Sharpe aus reinem Rauschen:
+  **1,980** (vorher 1,922 bei 21).
+- **Der nächste billige Vorfilter ist die Kritik-Stufe.** Ein Kandidat mit
+  307× Umschlag hätte vor dem Walk-Forward auffallen müssen und ist
+  durchgewinkt worden.
+- **Die Schicht ist im echten Lauf bestätigt**, mit einem nachgesehenen und
+  erklärten Randfall statt einer Behauptung.
+
+---
+
 ## ADR-071 — Das Umschlagbudget bindet bei keiner Strategie
 **Datum:** 2026-09-04
 

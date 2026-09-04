@@ -1,0 +1,11 @@
+{
+ "key": "62265e2b17c6b0a6b12ebdc4c160946e01ab67a56e6ece33d6b927ef850ba0c1",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "DualMomentum",
+  "code": "class DualMomentum(Strategy):\n    name = \"dual_momentum\"\n    SHORT = 60\n    LONG = 250\n    warmup_bars = 260\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        # log returns\n        log_ret = np.diff(np.log(closes))\n        short = ta.sma(log_ret, self.SHORT)\n        long = ta.sma(log_ret, self.LONG)\n        if not (math.isfinite(short) and math.isfinite(long)):\n            return math.nan\n        if short > long:\n            return 1.0\n        else:\n            return -1.0",
+  "name": "dual_momentum",
+  "rationale": "The strategy exploits time‑series momentum on two horizons: a medium‑term (≈60 bars) and a long‑term (≈250 bars) average of log returns. When the shorter‑horizon momentum exceeds the longer‑horizon momentum the market is in a persistent trend, so we stay long; otherwise we stay short. Because both windows are long, the signal changes only when the underlying trend truly shifts, yielding low turnover (well below the 7× equity per year limit) while still generating dozens of trades over a multi‑year history. This dual‑momentum concept is distinct from the single‑window cross‑over or mean‑reversion ideas that have already been tested."
+ }
+}

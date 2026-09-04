@@ -390,7 +390,7 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei **21** und vergisst nichts (ADR-032, ADR-057).
+Versuchszähler steht bei **24** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
 
 ---
