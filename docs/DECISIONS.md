@@ -5,6 +5,114 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-070 — Der Spread ist messbar, die Gebühr nicht
+**Datum:** 2026-09-04
+
+Phase B (ADR-056) endete mit drei ausdrücklich offenen Punkten: der reale
+Spread, die Warteschlangenposition bei Limit-Orders, und ob Coinbases 0,60 %
+stimmen. Für alle drei stand dort „brauchen echte Fills". Für einen davon
+stimmt das nicht.
+
+### Der Spread — vier gescheiterte Schätzungen, und warum
+
+| Versuch | Datenbasis | Ergebnis |
+|---|---|---|
+| Corwin/Schultz | Tages-OHLC | klemmt bei null (ADR-056) |
+| Abdi/Ranaldo | Tages-OHLC | zu hoch, Verzerrung wächst mit der Vola (ADR-056) |
+| Tick-Median | 1,48 Mio. Ticks | von der Tickgröße dominiert (ADR-067) |
+| Minutenweise | 1,48 Mio. Ticks | **negative** Spannen, fängt Kursdrift (ADR-067) |
+
+Vier Anläufe, ein Befund: **ohne Quotes geht es nicht.** Das ist bestätigt und
+nicht widerlegt.
+
+**Quotes gibt es.** Öffentlich, ohne Schlüssel, im Orderbuch. Was in ADR-056
+und ADR-067 fehlte, war nicht die Möglichkeit, sondern die Frage — beide Male
+wurde versucht, den Spread aus Kursreihen zu *rekonstruieren*, statt ihn dort
+zu holen, wo er steht.
+
+### Gemessen, 2026-09-04, Coinbase
+
+Nicht an der Spitze des Buchs — dort steht eine Spanne für eine unendlich
+kleine Order, und die hat noch nie jemand gehandelt. Gemessen wird der
+volumengewichtete Preis bis zur gewünschten Menge:
+
+**2.560 USD** (ein Markt von 39 bei 100k Konto):
+
+| Markt | Kauf | Verkauf | halb |
+|---|---|---|---|
+| BTC-USD | 0,001 | 0,001 | **0,001** |
+| ETH-USD | 0,188 | 0,647 | 0,418 |
+| LTC-USD | 1,648 | 2,199 | 1,924 |
+| ADA-USD | 2,456 | 2,217 | 2,337 |
+| ALGO-USD | 6,266 | 7,080 | **6,673** |
+| XLM-USD | 3,057 | 4,632 | 3,845 |
+| DOGE-USD | 2,479 | 1,915 | 2,197 |
+| **Median** | | | **2,197** |
+
+**25.000 USD** (eine konzentrierte Position): Median **6,357**, BTC 0,236,
+ALGO 22,532.
+
+### Was das heißt — und was nicht
+
+**Die Annahme von 2 bps ist auf dem Median richtig**, für die Ordergröße, die
+eine diversifizierte Strategie tatsächlich handelt: 2,197 gemessen gegen 2,0
+angenommen. ADR-067 hat sie unter „vermutlich zu hoch" geführt und den Effekt
+auf rund 0,004 Sharpe geschätzt. Das war ein Bauchgefühl in die falsche
+Richtung — sie ist eher minimal zu **niedrig**.
+
+**Falsch ist nicht ihr Niveau, sondern dass es eine einzige Zahl ist.** Über
+die Märkte streut sie um drei Größenordnungen (BTC 0,001, ALGO 6,673), und mit
+der Ordergröße verdreifacht sie sich. Das Kostenmodell kennt seit ADR-055
+bereits Gebühren je Symbol; der halbe Spread ist der verbliebene globale Wert.
+
+**Nicht geändert, und der Grund zählt.** Eine Momentaufnahme ist keine
+Historie. Gemessen ist, was heute in einem ruhigen Moment gilt — nicht was
+2019 galt und erst recht nicht, was im nächsten Absturz gilt, also genau dann,
+wenn eine Trendstrategie handelt. Den Default auf eine Momentaufnahme zu
+setzen, hieße eine belegte Annahme durch eine schlechter belegte zu ersetzen.
+Was sich ändert, ist der Status: aus „ANNAHME, nicht gemessen" wird „Annahme,
+auf dem Median einer Momentaufnahme bestätigt, streut je Markt um drei
+Größenordnungen".
+
+**Reproduzierbar statt einmalig:** `qt spread`. Eine Zahl, die nur in einem
+ADR steht, veraltet still (ADR-053).
+
+### Die Gebühr bleibt unbelegbar
+
+Die 0,60 % stehen auf drei übereinstimmenden Sekundärquellen. Vier Versuche
+an Primärquellen, heute:
+
+```
+api.exchange.coinbase.com/fees                          401
+api.coinbase.com/api/v3/brokerage/transaction_summary   401
+www.coinbase.com/advanced-fees                          403  (Cloudflare)
+api.exchange.coinbase.com/products/BTC-USD              200  (keine Gebühren)
+```
+
+**Die beiden Endpunkte, die es beantworten würden, sind genau die hinter der
+Anmeldung.** Das ist kein Netzproblem und keine Nachlässigkeit: der
+Gebührensatz ist kontoabhängig (er hängt am 30-Tage-Volumen), deshalb gibt es
+ihn nicht ohne Konto. Die Frage wird von der **ersten echten Order**
+beantwortet und von nichts davor.
+
+Der dritte Punkt, die Warteschlangenposition, bleibt aus demselben Grund
+offen: `qt maker` liefert eine Obergrenze (ADR-064), die Warteschlange selbst
+braucht eigene Fills.
+
+### Konsequenzen
+
+- **`qt spread`** misst den effektiven halben Spread am Orderbuch, bei
+  wählbarer Ordergröße. Drei Tests, keiner braucht Netz.
+- **Der Default bleibt bei 2,0 bps**, jetzt mit Beleg statt mit „ANNAHME".
+- **Ein Kandidat für später, nicht für jetzt:** halber Spread je Symbol,
+  analog zu den Gebühren. Dafür fehlt Historie, nicht Code — eine
+  Momentaufnahme je Markt wäre 39 Zahlen mit demselben Vorbehalt.
+- **Zwei der drei offenen Phase-B-Punkte bleiben offen**, und jetzt steht
+  präzise da, warum: nicht „brauchen echte Fills" als Sammelbegründung,
+  sondern zweimal HTTP 401 auf die einzigen Endpunkte, die antworten würden.
+
+---
+
 ## ADR-069 — Die Positionsgrößen-Schicht, und das Band maß die falsche Größe
 **Datum:** 2026-09-04
 

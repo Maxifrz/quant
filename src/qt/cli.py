@@ -1578,6 +1578,65 @@ def data_stocks(
 # `paper`-Befehlen. Ueber das Konsolenskript (`qt = qt.cli:app`) faellt das
 # nicht auf, weil das Modul erst vollstaendig importiert und dann `app()`
 # gerufen wird. `python src/qt/cli.py` dagegen fuehrt die Datei von oben nach
+@app.command("spread")
+def spread_cmd(
+    symbols: Annotated[
+        str, typer.Option(help="Kommagetrennt, Boersenschreibweise (BTC-USD)")
+    ] = "BTC-USD,ETH-USD,LTC-USD,ADA-USD,ALGO-USD,XLM-USD,DOGE-USD",
+    notional: Annotated[
+        str, typer.Option(help="Ordergroessen in USD, kommagetrennt")
+    ] = "2560,25000",
+) -> None:
+    """Effektiven halben Spread am Orderbuch messen (ADR-070).
+
+    Vier Schaetzversuche aus Kursreihen sind gescheitert -- zwei aus
+    Tages-OHLC (ADR-056), zwei aus 1,48 Mio. Ticks (ADR-067). Das Orderbuch
+    beantwortet die Frage direkt, oeffentlich und ohne Schluessel.
+
+    **Was der Befehl nicht kann:** Historie. Er misst diesen Moment. Der
+    Spread im naechsten Absturz ist damit nicht gemessen, und genau dann wird
+    gehandelt.
+
+    Gemessen wird bei einer Ordergroesse, nicht an der Spitze des Buchs: dort
+    steht eine Spanne fuer eine unendlich kleine Order, und die hat noch nie
+    jemand gehandelt.
+    """
+    import statistics as st
+
+    from qt.backtest.spread import miss_am_buch
+    from qt.core.config import CostConfig
+
+    maerkte = _split(symbols)
+    groessen = [float(x) for x in _split(notional)]
+    annahme = CostConfig().half_spread_bps
+
+    for groesse in groessen:
+        typer.echo(f"\n== Ordergroesse {groesse:,.0f} USD ==")
+        typer.echo(f"{'Markt':10s} {'Kauf':>9s} {'Verkauf':>9s} {'halb':>9s}")
+        werte: list[float] = []
+        for markt in maerkte:
+            try:
+                m = miss_am_buch(markt, groesse)
+            except Exception as exc:  # noqa: BLE001 -- ein Markt bricht den Lauf nicht
+                typer.echo(f"{markt:10s} {type(exc).__name__}: {exc}")
+                continue
+            if m is None:
+                typer.echo(f"{markt:10s} {'Buch zu duenn fuer diese Groesse':>29s}")
+                continue
+            werte.append(m.halb_bps)
+            typer.echo(
+                f"{markt:10s} {m.kauf_bps:>9.3f} {m.verkauf_bps:>9.3f} "
+                f"{m.halb_bps:>9.3f}"
+            )
+        if werte:
+            median = st.median(werte)
+            urteil = "zu niedrig" if median > annahme else "ausreichend"
+            typer.echo(
+                f"{'Median':10s} {'':9s} {'':9s} {median:>9.3f}   "
+                f"Annahme {annahme:.1f} -> {urteil}"
+            )
+
+
 @app.command("costs")
 def costs_cmd(
     strategy: Annotated[

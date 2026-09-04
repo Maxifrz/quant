@@ -43,9 +43,12 @@ class CostConfig(BaseModel):
     half_spread_bps: float = Field(
         default=2.0,
         ge=0,
-        description="Halber Spread in bps. ANNAHME, nicht gemessen -- der "
-        "Versuch, sie aus Tages-OHLC zu schaetzen, ist gescheitert "
-        "(qt.backtest.spread, ADR-056)",
+        description="Halber Spread in bps. Am Orderbuch bestaetigt: 2,197 "
+        "gemessen gegen 2,0 angenommen, Median ueber sieben Coinbase-Maerkte "
+        "bei 2.560 USD Ordergroesse (2026-09-04, `qt spread`, ADR-070). Die "
+        "Streuung je Markt ist drei Groessenordnungen (BTC 0,001, ALGO 6,7) "
+        "und waechst mit der Ordergroesse -- eine Momentaufnahme, keine "
+        "Historie",
     )
     slippage_bps: float = Field(
         default=3.0,

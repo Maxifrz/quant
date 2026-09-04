@@ -263,3 +263,90 @@ def schaetze(symbol: str, df: pd.DataFrame, fenster: int = MONAT) -> SpreadSchae
         anteil_geklemmt_cs=cs_neg,
         anteil_geklemmt_ar=ar_neg,
     )
+
+
+# ---------------------------------------------------------------------------
+# Und der Weg, der funktioniert: das Orderbuch fragen (ADR-070)
+# ---------------------------------------------------------------------------
+#
+# Vier Schaetzversuche aus Kursreihen sind gescheitert -- zwei hier aus
+# Tages-OHLC (oben), zwei in ADR-067 aus 1,48 Mio. Ticks. Jedesmal derselbe
+# Befund: **ohne Quotes geht es nicht.**
+#
+# Quotes gibt es. Sie sind oeffentlich, brauchen keinen Schluessel, und sie
+# stehen im Orderbuch. Was sie nicht liefern, ist Historie: eine
+# Momentaufnahme sagt, was der Spread *jetzt* ist, nicht was er 2019 war und
+# erst recht nicht, was er im naechsten Absturz sein wird. Das ist weniger,
+# als ADR-056 wollte, und mehr als eine unbelegte Zahl.
+#
+# Gemessen wird der **effektive** halbe Spread bei einer Ordergroesse, nicht
+# die Spanne an der Spitze des Buchs. Der Unterschied ist der ganze Punkt:
+# an der Spitze steht eine Spanne fuer eine unendlich kleine Order, und die
+# hat noch nie jemand gehandelt.
+
+COINBASE_BUCH = "https://api.exchange.coinbase.com/products/{}/book?level=2"
+
+
+@dataclass(frozen=True, slots=True)
+class BuchMessung:
+    """Effektiver halber Spread bei einer bestimmten Ordergroesse."""
+
+    symbol: str
+    notional: float
+    mitte: float
+    kauf_bps: float
+    verkauf_bps: float
+
+    @property
+    def halb_bps(self) -> float:
+        """Mittel aus beiden Seiten -- das Gegenstueck zu `half_spread_bps`."""
+        return (self.kauf_bps + self.verkauf_bps) / 2
+
+
+def _vwap(seite: list[tuple[float, float]], notional: float) -> float | None:
+    """Durchschnittspreis, bis `notional` gefuellt ist. `None`, wenn das Buch
+    nicht reicht -- ein zu duennes Buch ist ein Befund und keine Zahl."""
+    rest, kosten, menge = notional, 0.0, 0.0
+    for preis, qty in seite:
+        nehmen = min(qty, rest / preis)
+        if nehmen <= 0:
+            break
+        kosten += nehmen * preis
+        menge += nehmen
+        rest -= nehmen * preis
+        if rest <= 1e-9:
+            break
+    if rest > 1e-9 or menge <= 0:
+        return None
+    return kosten / menge
+
+
+def miss_am_buch(
+    produkt: str, notional: float, timeout: float = 30.0
+) -> BuchMessung | None:
+    """Eine Momentaufnahme des Coinbase-Buchs auswerten.
+
+    `produkt` in der Schreibweise der Boerse (`BTC-USD`). Rueckgabe `None`,
+    wenn das Buch die Ordergroesse nicht hergibt.
+    """
+    import requests
+
+    antwort = requests.get(COINBASE_BUCH.format(produkt), timeout=timeout)
+    antwort.raise_for_status()
+    daten = antwort.json()
+    bids = [(float(p), float(q)) for p, q, *_ in daten["bids"]]
+    asks = [(float(p), float(q)) for p, q, *_ in daten["asks"]]
+    if not bids or not asks:
+        return None
+
+    mitte = (bids[0][0] + asks[0][0]) / 2
+    kauf, verkauf = _vwap(asks, notional), _vwap(bids, notional)
+    if kauf is None or verkauf is None:
+        return None
+    return BuchMessung(
+        symbol=produkt,
+        notional=notional,
+        mitte=mitte,
+        kauf_bps=(kauf - mitte) / mitte * 1e4,
+        verkauf_bps=(mitte - verkauf) / mitte * 1e4,
+    )
