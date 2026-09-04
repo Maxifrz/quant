@@ -201,6 +201,31 @@ def one_way_bps(cfg: CostConfig) -> float:
     return cfg.taker_fee_bps + cfg.half_spread_bps + cfg.slippage_bps
 
 
+def kaufkraft_faktor(cfg: CostConfig) -> float:
+    """Um wieviel eine Order teurer ist als ihr Gegenwert zum Referenzpreis.
+
+    Wer fuer genau sein ganzes Eigenkapital kauft, kann die Gebuehr nicht mehr
+    bezahlen -- sie kommt obendrauf, und das Konto rutscht um sie ins Minus
+    (ADR-068). Die Grenzmenge ist deshalb `equity / (preis * faktor)`.
+
+    Multiplikativ und nicht `1 + one_way_bps/10_000`: die Gebuehr faellt auf
+    den bereits um Spanne und Slippage verschlechterten Ausfuehrungspreis an,
+    nicht auf den Referenzpreis. Der Unterschied ist das Produkt der beiden
+    Anteile -- bei den Defaults 3e-6, also 0,30 auf 100.000. Klein, aber
+    ausgerechnet das Vorzeichen, das ein Konto ins Minus schiebt: mit der
+    linearen Naeherung bleibt genau dieser Rest als negatives Guthaben stehen.
+
+    Exakt fuer `FlatFillModel`. Unter `SizeAwareFillModel` ist der Aufschlag
+    eine Funktion der Ordergroesse, die hier noch nicht feststeht -- dort
+    bleibt der Faktor eine Untergrenze, und ein kleiner Rest Hebel bleibt
+    moeglich. Ihn zu beseitigen hiesse, den Fixpunkt zu loesen; das ist
+    Aufwand fuer ein Modell, das nirgends der Default ist.
+    """
+    aufschlag = (cfg.half_spread_bps + cfg.slippage_bps) * BPS
+    gebuehr = cfg.taker_fee_bps * BPS
+    return (1.0 + aufschlag) * (1.0 + gebuehr)
+
+
 def round_trip_bps(cfg: CostConfig) -> float:
     """Kosten eines vollen Round-Trips in Basispunkten.
 

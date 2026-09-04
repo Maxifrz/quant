@@ -24,7 +24,7 @@ from datetime import datetime
 import pandas as pd
 
 from qt.backtest.broker_sim import SimBroker
-from qt.backtest.costs import FillModel
+from qt.backtest.costs import FillModel, kaufkraft_faktor
 from qt.core.clock import BacktestClock
 from qt.core.config import BacktestConfig
 from qt.core.events import merge_bar_streams
@@ -180,7 +180,21 @@ def rebalance_order(
         return None
 
     capped = max(-cfg.max_gross_exposure, min(cfg.max_gross_exposure, target_weight))
-    target_qty = capped * equity / reference_price
+
+    # **Die Order muss ihre eigenen Kosten mittragen** (ADR-068). Ohne diesen
+    # Nenner kostet ein Kauf ueber das volle Eigenkapital genau `equity` an
+    # Gegenwert *plus* die Gebuehr -- das Konto rutscht um die Gebuehr ins
+    # Minus und haelt damit mehr Position, als es Kapital hat.
+    #
+    # Gemessen an `macross` BTC/USD 1d: Hebel 1,0056 im Median, negatives Cash
+    # in 53 % der Bars, tiefster Stand -12.928. Die Config verspricht daneben
+    # "1.0 = kein Hebel".
+    #
+    # Der Sharpe merkt das nicht -- ein Hebel skaliert Mittelwert und Vola
+    # gleich. Eine Spot-Boerse merkt es sofort: dort gibt es kein negatives
+    # Guthaben, und die erste Live-Order haette "insufficient funds" bekommen.
+    kosten = cfg.costs_by_symbol.get(symbol, cfg.costs)
+    target_qty = capped * equity / (reference_price * kaufkraft_faktor(kosten))
     delta = target_qty - broker.qty(symbol)
     delta_notional = abs(delta) * reference_price
 

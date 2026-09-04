@@ -5,6 +5,157 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-068 — „1.0 = kein Hebel" stimmte nicht, und das Paper-Konto zeigte es
+**Datum:** 2026-09-03
+
+**Der Fehler:** `rebalance_order` rechnete `target_qty = gewicht × equity /
+preis`. Ein Kauf über das volle Eigenkapital kostet damit **genau** das
+Eigenkapital an Gegenwert — und die Gebühr kommt obendrauf. Das Konto rutscht
+um sie ins Minus und hält mehr Position, als es Kapital hat.
+
+`BacktestConfig.max_gross_exposure` beschreibt sich daneben mit
+„**1.0 = kein Hebel**".
+
+---
+
+### Wie er aufgefallen ist
+
+Nicht durch eine Suche, sondern beim Zustandscheck nach einem
+Container-Neustart. Das Paper-Konto meldete:
+
+```
+Cash: -650.31
+Positionen: BTC/USD  Menge +1.292012  Einstand 77437.40  Wert 100,568.52
+Fills gesamt 1, Gebuehren 600.30
+```
+
+Nachgerechnet: 1,292012 × 77.437,40 = 100.050,05 Gegenwert, plus 600,30
+Gebühr = **100.650,35** aus 100.000 Startkapital. Der Fehlbetrag ist exakt
+die Gebühr.
+
+Über die volle Historie von `macross` auf BTC/USD 1d:
+
+| | vorher |
+|---|---|
+| Hebel im Markt (Median) | **1,0056** |
+| Hebel maximal | 1,0085 |
+| Bars mit negativem Cash | **1.496 von 2.803** (53 %) |
+| tiefstes Cash | −12.928,47 |
+
+53 % — also jeder Bar, an dem eine Position gehalten wird.
+
+### Warum es niemandem aufgefallen ist
+
+**Der Sharpe merkt es nicht.** Ein Hebel skaliert Mittelwert und Volatilität
+mit demselben Faktor; der Quotient bleibt. Gemessen:
+
+| | vorher | nachher |
+|---|---|---|
+| Sharpe | +1,0146 | **+1,0148** |
+| Gesamtrendite | +1394,30 % | **+1381,87 %** |
+| Max Drawdown | −58,39 % | −58,19 % |
+| Trades | 67 | 67 |
+
+Und der Sharpe ist die Zahl, an der in diesem Projekt **jedes** Kriterium
+hängt — Gate 1, DSR, Permutationskontrolle. Ein Fehler, der genau ihn nicht
+bewegt, ist in dieser Umgebung praktisch unsichtbar.
+
+Die Rendite hat er bewegt, um rund 0,9 % relativ. Nach oben.
+
+### Warum es trotzdem repariert gehört
+
+**Weil eine Spot-Börse kein negatives Guthaben kennt.** Der Backtest
+modelliert etwas, das die Ausführung nicht kann: die erste echte Order über
+das volle Gewicht bekäme „insufficient funds". Genau diese Divergenz soll
+Phase D fangen (`docs/ZIEL.md`: „Divergenz hier ist ein Stopp") — nur wäre
+sie beim allerersten Fill aufgetreten, nicht nach Monaten.
+
+Der `CcxtBroker` aus ADR-062 hätte den Fehler also gefunden. Nur eben mit
+echtem Geld und einer abgelehnten Order statt hier.
+
+### Die Korrektur
+
+Die Order trägt ihre eigenen Kosten:
+
+```python
+kosten = cfg.costs_by_symbol.get(symbol, cfg.costs)
+target_qty = capped * equity / (preis * kaufkraft_faktor(kosten))
+```
+
+Der Faktor ist **multiplikativ**, nicht `1 + one_way_bps/10_000`:
+
+```python
+(1 + (half_spread + slippage)/10_000) * (1 + taker_fee/10_000)
+```
+
+Die Gebühr fällt auf den bereits um Spanne und Slippage verschlechterten
+Ausführungspreis an, nicht auf den Referenzpreis. Der Unterschied ist das
+Produkt der beiden Anteile — bei den Defaults 3·10⁻⁶, also **0,30 auf
+100.000**. Der erste Anlauf hier stand mit der linearen Näherung im Code, und
+genau diese 0,30 blieben als negatives Guthaben stehen. Der Test aus diesem
+ADR hat sie gefangen; eine Näherung ist an dieser Stelle kein Rundungsfehler,
+sondern das Vorzeichen, um das es geht.
+
+Exakt ist der Faktor für `FlatFillModel` (den Default). Unter
+`SizeAwareFillModel` hängt der Aufschlag von der Ordergröße ab, die beim
+Sizing noch nicht feststeht — dort bleibt er eine Untergrenze und ein kleiner
+Rest Hebel möglich. Ihn zu beseitigen hieße, den Fixpunkt zu lösen; das steht
+so im Docstring und ist bewusst nicht getan.
+
+Danach über die volle Historie von `macross` BTC/USD 1d:
+
+| | vorher | nachher |
+|---|---|---|
+| tiefstes Cash | −12.928,47 | **−140,98** |
+| Bars mit negativem Cash | 1.496 (53 %) | **302 (11 %)** |
+| Hebel im Markt (Median) | 1,0056 | **1,0000** |
+| Hebel maximal | 1,0085 | **1,0002** |
+
+**Der Rest ist echt und bleibt.** Was übrig bleibt, stammt aus der Lücke
+zwischen Entscheidung und Ausführung: bewertet wird mit dem Close des
+geschlossenen Bars, gefüllt wird zum Open des nächsten. Springt der Kurs
+dazwischen nach oben, kostet die Order mehr als reserviert. Das ist das
+Realismusmodell dieser Engine und kein Fehler — ein echter Broker würde dort
+teilfüllen oder ablehnen, und das zu modellieren ist eine eigene Frage.
+
+### Ein Test aus ADR-067 hat den falschen Nenner geprüft
+
+`test_ein_round_trip_kostet_genau_was_das_modell_sagt` maß den Verlust gegen
+das **Startkapital** und traf damit 130,0 bps nur, solange das Konto genau
+sein volles Eigenkapital umsetzte — also nur wegen des Fehlers. Nach der
+Korrektur wurde er rot.
+
+Nachgerechnet, ein Konto, konstanter Kurs, ein Rein und ein Raus:
+
+```
+Modell:                         130,0000 bps je Round-Trip
+Verlust / gehandeltem Notional: 130,0000 bps   <- die Aussage
+Verlust / Startkapital:         129,1601 bps   <- die Folge daraus
+```
+
+Beide Sätze sind wahr; ADR-067 hat sie verwechselt. Der Test prüft jetzt
+beides und rechnet den Faktor aus den Config-Feldern nach statt aus
+`kaufkraft_faktor` — sonst prüfte er die Funktion gegen sich selbst.
+
+### Konsequenzen
+
+- **Alle Renditezahlen des Projekts sinken um rund 0,9 % relativ.** Die
+  Sharpe-Zahlen bleiben, wo sie sind — und damit jede Aussage aus ADR-035,
+  ADR-054, ADR-058, ADR-061 und ADR-064, die an ihnen hängt.
+- **Ein Test hält die Zusage der Config fest**: ein Konto mit Zielgewicht 1,0
+  darf weder negatives Cash noch Bruttoexposure über 1,0 haben. Er fällt
+  gegen den alten Code durch.
+- **Dritter Fund derselben Familie an einem Tag.** ADR-066: eine Kennzahl
+  meldete Positives über ein ruiniertes Konto. ADR-067: die Suche nach der
+  Gegenrichtung. Und jetzt einer, den ADR-067 nicht gefunden hat — weil er
+  genau die Zahl in Ruhe lässt, nach der gesucht wurde.
+
+  Das ist die Lehre und sie ist unbequem: **ein Audit findet, wonach es
+  sucht.** Gefunden hat diesen hier ein Blick auf einen Kontostand, der
+  komisch aussah.
+
+---
+
 ## ADR-067 — Die Gegenrichtung geprüft: wo machen wir uns schlechter, als wir sind?
 **Datum:** 2026-09-03
 

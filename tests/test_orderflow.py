@@ -627,7 +627,7 @@ def test_ein_abzug_schreibt_nur_die_tage_die_er_beruehrt(tmp_path):
 
     Ein abgeschlossener Tag darf danach nie wieder angefasst werden.
     """
-    from qt.data.trades import partition_path, write_trades
+    from qt.data.trades import partition_path
 
     tag1 = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
     tag2 = datetime(2026, 1, 2, 12, tzinfo=timezone.utc)

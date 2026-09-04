@@ -297,3 +297,63 @@ def test_nach_dem_ruin_bleibt_die_kurve_auf_null():
     bereinigt, ab = absorbiere_ruin(kurve)
     assert ab == idx[2]
     assert list(bereinigt.iloc[2:]) == [0.0, 0.0, 0.0]
+
+
+# ---------------------------------------------------------------------------
+# Die Order traegt ihre eigenen Kosten (ADR-068)
+# ---------------------------------------------------------------------------
+
+
+def test_ein_vollgewicht_kauf_treibt_das_konto_nicht_ins_minus():
+    """Faellt gegen den alten Code durch: dort blieb die Gebuehr unbezahlt.
+
+    `target_qty = gewicht * equity / preis` kauft fuer **genau** das
+    Eigenkapital -- und die Gebuehr kommt obendrauf. Das Konto rutscht um sie
+    ins Minus und haelt mehr Position, als es Kapital hat.
+
+    Gemessen an `macross` BTC/USD 1d vor der Korrektur: Hebel 1,0056 im
+    Median, negatives Cash in 53 % der Bars, tiefster Stand -12.928 -- bei
+    einer Config, die daneben "1.0 = kein Hebel" verspricht.
+
+    Der Sharpe merkt das nicht: ein Hebel skaliert Mittelwert und Vola gleich
+    (1,0146 gegen 1,0148). Eine Spot-Boerse merkt es sofort -- dort gibt es
+    kein negatives Guthaben, und die erste Live-Order bekaeme "insufficient
+    funds".
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from qt.backtest.engine import run_backtest
+    from qt.core.config import BacktestConfig
+    from qt.core.types import Bar
+    from qt.strategy.base import Strategy
+
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        Bar("X/USD", "1d", t0 + timedelta(days=i), 100.0, 100.0, 100.0, 100.0, 1e9)
+        for i in range(10)
+    ]
+
+    class ImmerVoll(Strategy):
+        name = "voll"
+
+        @property
+        def warmup_bars(self) -> int:
+            return 1
+
+        def on_bar(self, symbol, store):
+            return 1.0
+
+    r = run_backtest(ImmerVoll(["X/USD"], "1d"), {"X/USD": bars}, BacktestConfig())
+    eq = r.equity
+
+    assert eq["cash"].min() >= -1e-6, (
+        f"Cash faellt auf {eq['cash'].min():,.2f} -- das Konto haelt mehr "
+        "Position als Kapital, und eine Spot-Boerse laesst das nicht zu"
+    )
+
+    im_markt = eq[eq["weight_X/USD"].abs() > 0.01]
+    hebel = (im_markt["equity"] - im_markt["cash"]) / im_markt["equity"]
+    assert hebel.max() <= 1.0 + 1e-6, (
+        f"Bruttoexposure {hebel.max():.4f} -- die Config verspricht "
+        "'1.0 = kein Hebel'"
+    )

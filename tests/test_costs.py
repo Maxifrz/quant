@@ -455,13 +455,29 @@ def test_ein_etf_zahlt_ueber_zwanzigmal_weniger_als_ein_krypto_taker():
 
 
 def test_ein_round_trip_kostet_genau_was_das_modell_sagt():
-    """Haelt die Zahl fest, gegen die ADR-067 geprueft hat.
+    """Haelt die Zahl fest, gegen die ADR-067 geprueft hat -- im richtigen Nenner.
 
     Der naheliegendste Weg zu systematisch zu schlechten Ergebnissen waere,
     Gebuehren auf das **Zielgewicht** statt auf die Differenz zu rechnen, oder
     Spanne und Slippage doppelt anzusetzen. Beides faellt hier auf: ein Konto,
     konstanter Kurs, genau ein Rein und ein Raus muss exakt den Round-Trip
     des Kostenmodells verlieren -- keinen Basispunkt mehr.
+
+    Die erste Fassung mass gegen das **Startkapital** und traf damit 130,0 bps
+    nur, solange das Konto genau sein volles Eigenkapital umsetzte. Seit
+    ADR-068 traegt die Order ihre eigene Gebuehr, kauft also fuer etwas
+    weniger -- 129,16 statt 130,0 bps vom Startkapital. Beide Saetze sind
+    wahr, die ADR-067-Formulierung hat sie verwechselt:
+
+        Verlust / gehandeltem Notional : 130,0000 bps   <- die Aussage
+        Verlust / Startkapital         : 129,1601 bps   <- die Folge daraus
+
+    Deshalb pruefen wir jetzt beides. Der zweite Wert ist kein Spielraum,
+    sondern exakt der Kehrwert des Kaufkraftfaktors: faellt der Nenner aus
+    ADR-068 wieder weg, steht dort wieder 130,0 und der Test wird rot. Der
+    Faktor wird hier aus den Config-Feldern nachgerechnet und nicht aus
+    `kaufkraft_faktor` geholt -- sonst pruefte der Test die Funktion gegen
+    sich selbst.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -491,10 +507,32 @@ def test_ein_round_trip_kostet_genau_was_das_modell_sagt():
 
     r = run_backtest(EinRoundTrip(["X/USD"], "1d"), {"X/USD": bars}, cfg)
     ek = r.equity["equity"]
-    verlust_bps = (1 - ek.iloc[-1] / ek.iloc[0]) * 10_000
+    verlust = ek.iloc[0] - ek.iloc[-1]
 
     assert len(r.fills) == 2, "genau ein Rein und ein Raus"
-    assert verlust_bps == pytest.approx(round_trip_bps(cfg.costs), abs=0.1)
+
+    # Der Verlust ist die Reibung und sonst nichts -- der Kurs steht still.
+    reibung = sum(f.total_cost for f in r.fills)
+    assert verlust == pytest.approx(reibung, abs=1e-6)
+
+    # Die eigentliche Aussage: je gehandeltem Gegenwert genau ein Round-Trip.
+    # Zwei Ausfuehrungen tragen je eine Einwegkosten ihres eigenen Notionals,
+    # deshalb *2 fuer den Round-Trip.
+    notional = sum(f.notional for f in r.fills)
+    assert reibung / notional * 2 * 10_000 == pytest.approx(
+        round_trip_bps(cfg.costs), abs=0.01
+    )
+
+    # Und die Folge daraus: gemessen am Startkapital ist es *weniger*, weil
+    # die Order seit ADR-068 ihre Gebuehr zuruecklegt statt sie zu hebeln.
+    vom_startkapital = verlust / ek.iloc[0] * 10_000
+    faktor = (1 + (cfg.costs.half_spread_bps + cfg.costs.slippage_bps) / 10_000) * (
+        1 + cfg.costs.taker_fee_bps / 10_000
+    )
+    erwartet = round_trip_bps(cfg.costs) / faktor
+    assert erwartet == pytest.approx(129.1601, abs=0.001)
+    assert vom_startkapital == pytest.approx(erwartet, abs=0.001)
+    assert vom_startkapital < round_trip_bps(cfg.costs)
 
 
 def test_der_handelskalender_wird_gemessen_und_nicht_geraten():
