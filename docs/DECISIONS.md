@@ -145,20 +145,48 @@ beides und rechnet den Faktor aus den Config-Feldern nach statt aus
 - **Ein Test hält die Zusage der Config fest**: ein Konto mit Zielgewicht 1,0
   darf weder negatives Cash noch Bruttoexposure über 1,0 haben. Er fällt
   gegen den alten Code durch.
-- **Die beiden Paper-Konten tragen den Fehler weiter, und zwar sichtbar.**
-  Beide sind am 2026-09-02 long gegangen — gefüllt vom alten Sizing, Position
-  0,65 % zu groß, Cash −650,31 (BTC) und −656,55 (ETH). Das korrigiert sich
-  **nicht** von selbst: die Abweichung liegt innerhalb des
+- **Die beiden Paper-Konten trugen den Fehler weiter und sind neu gestartet.**
+  Beide waren am 2026-09-02 long gegangen — gefüllt vom alten Sizing, Position
+  0,65 % zu groß, Cash −650,31 (BTC) und −656,55 (ETH). Das hätte sich
+  **nicht** von selbst korrigiert: die Abweichung liegt innerhalb des
   Rebalancing-Bands von 5 %, es wird also keine Ausgleichsorder erzeugt, und
-  der Rest steht bis zum nächsten echten Ausstiegssignal.
+  der Rest wäre bis zum nächsten echten Ausstiegssignal stehen geblieben —
+  bei `macross` möglicherweise Monate.
 
-  Nicht angefasst, mit Begründung: ein Neustart kostet zwei Tage Vorwärtszeit
-  und den einzigen Fill, den diese Konten je hatten, und Vorwärtszeit ist
-  genau die Ressource, wegen der sie überhaupt laufen. Ein Konto von Hand auf
-  die Größe zu setzen, die es *gehabt hätte*, wäre die andere Variante — und
-  ein handkorrigierter Kontostand ist kein beobachteter mehr. Beides ist eine
-  Entscheidung über die Beweislage und gehört ausdrücklich getroffen; hier
-  steht sie deshalb als offener Punkt und nicht als erledigte Zeile.
+  Der Zustand vor dem Neustart, damit er nachlesbar bleibt (Commit `e658ee8`):
+
+  | | BTC/USD | ETH/USD |
+  |---|---|---|
+  | Cash | −650,31 | −656,55 |
+  | Position | 1,292012 @ 77.437,40 | 41,369325 @ 2.418,61 |
+  | Fills / Gebühren | 1 / 600,30 | 1 / 600,34 |
+  | erstellt | 2026-09-01 | 2026-09-01 |
+
+  **Warum Neustart und nicht Weiterlaufen:** die Konten existieren für Phase D,
+  also für den Abgleich gegen eine echte Ausführung — und genau diesen Zustand
+  hätte eine Spot-Börse abgelehnt. Ein Konto, das der Live-Pfad nicht
+  nachbilden kann, ist als Beweismittel wertlos, egal wie lange es läuft. Der
+  Preis sind zwei Tage Vorwärtszeit und ein Fill.
+
+  **Warum nicht von Hand korrigiert:** ein auf die Größe gesetztes Konto, die
+  es *gehabt hätte*, ist kein beobachtetes mehr. Der Runner legt bei fehlendem
+  Zustand ein flaches Konto an und verankert es am jüngsten bekannten Bar
+  (`runner.py`) — es handelt also nicht rückwirkend, sondern ab jetzt.
+
+  **Was der erste Tick des neuen Kontos tun wird, ist gemessen und nicht
+  gehofft.** Dieselbe Mechanik einen Tag zurückversetzt, mit der Risk-Config
+  der CLI (Formung aus, ADR-053), gegen den echten Store:
+
+  | | BTC/USD | ETH/USD |
+  |---|---|---|
+  | Cash nach dem Einstieg | **0,00** | **0,84** |
+  | Bruttoexposure | **1,000000** | **0,999992** |
+  | Gebühr | 596,42 | 596,42 |
+
+  Der erste Anlauf dieser Messung lief ohne `risk_cfg` und landete bei 25 %
+  Gewicht — die Portfolio-Defaults der Risk-Engine. Genau der Fehler aus
+  ADR-053, diesmal im Prüfstand statt im Konto: ein Nachweis, der eine andere
+  Kontogröße misst als die, die läuft, beweist nichts.
 - **Dritter Fund derselben Familie an einem Tag.** ADR-066: eine Kennzahl
   meldete Positives über ein ruiniertes Konto. ADR-067: die Suche nach der
   Gegenrichtung. Und jetzt einer, den ADR-067 nicht gefunden hat — weil er

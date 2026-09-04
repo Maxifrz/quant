@@ -171,18 +171,26 @@
 >    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
 >    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
 >
->    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand geticktet,
->    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
->    nur zusammen mit der Frage, wer sie bewegt hat.
+>    **Beide Konten sind am 2026-09-04 neu gestartet** (ADR-068). Sie trugen
+>    den Hebel aus dem alten Sizing: am 2026-09-02 long gegangen mit 0,65 % zu
+>    großer Position, Cash −650,31 (BTC) und −656,55 (ETH). Das hätte sich
+>    nicht von selbst korrigiert — die Abweichung liegt innerhalb des
+>    Rebalancing-Bands von 5 %, also wäre sie bis zum nächsten echten
+>    Ausstiegssignal stehen geblieben, bei `macross` möglicherweise Monate.
+>    Ein Zustand, den eine Spot-Börse ablehnt, taugt nicht als Beweismittel
+>    für Phase D, egal wie lange er läuft. Preis: zwei Tage Vorwärtszeit und
+>    ein Fill. Der alte Stand liegt in Commit `e658ee8`.
 >
->    **Die Konten tragen den Hebel aus ADR-068.** Beide sind am 2026-09-02
->    long gegangen, gefüllt vom fehlerhaften Sizing: Position 0,65 % zu groß,
->    Cash −650,31 (BTC) und −656,55 (ETH). Das korrigiert sich **nicht** von
->    selbst — die Abweichung liegt innerhalb des Rebalancing-Bands von 5 %,
->    also bleibt sie bis zum nächsten echten Ausstiegssignal stehen. Ein
->    Neustart der Konten würde sie beseitigen und kostet zwei Tage
->    Vorwärtszeit und einen Fill; das ist eine Entscheidung über die
->    Beweislage und gehört ausdrücklich getroffen, nicht nebenbei.
+>    Die Konten stehen jetzt flach bei 100.000, verankert am 2026-09-04, und
+>    handeln **ab jetzt** statt rückwirkend. Der erste Einstieg wird gemessen
+>    bei Cash 0,00 (BTC) bzw. 0,84 (ETH) und Bruttoexposure 1,000000 landen —
+>    nachgestellt mit derselben Mechanik einen Tag zurückversetzt.
+>
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand gesetzt,
+>    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
+>    nur zusammen mit der Frage, wer sie bewegt hat. **Ab dem 2026-09-05 ist
+>    sie wieder aussagekräftig:** wandert sie ohne Zutun weiter, feuert die
+>    Routine; tut sie es nicht, liegt es weiterhin an der Umgebung.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
