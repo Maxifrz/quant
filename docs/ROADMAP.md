@@ -194,6 +194,12 @@
 >    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
 >    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
 >
+>    `scripts/paper_tick.sh` erkennt seit 2026-09-04 auch den Fall, dass
+>    dieser Zweig **zusammengeführt** ist: dann geht der Kontostand nach
+>    `main`, weil die nächste frische Sitzung dort liest. Das ist ADR-059 zum
+>    dritten Mal — dort war der Zweigname fest verdrahtet, hier ist er richtig
+>    und trotzdem tot.
+>
 >    **Beide Konten sind am 2026-09-04 neu gestartet** (ADR-068). Sie trugen
 >    den Hebel aus dem alten Sizing: am 2026-09-02 long gegangen mit 0,65 % zu
 >    großer Position, Cash −650,31 (BTC) und −656,55 (ETH). Das hätte sich
@@ -220,21 +226,32 @@
 >    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
 >    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
 >    die Datenlage, sondern ein Signal.
-> 3. **Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.** Der
->    Research-Loop hat keine: über 38 Märkte summiert sich das Bruttoexposure
->    auf 38× und ruiniert das Konto, bei Normierung auf 1 handelt keiner mehr
->    (ADR-065). Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
->    das Ergebnis der Idee zeigen würde. Vol-Targeting, Gleichgewichtung und
->    Brutto-Cap sind drei verschiedene Strategien, nicht drei Einstellungen —
->    das gehört **vorab** entschieden, sonst wird die Wahl davon abhängen, wie
->    der letzte Lauf aussah.
+> 3. ~~**Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.**~~
+>    **Erledigt am 2026-09-04 (ADR-069):** proportional auf das Bruttobudget
+>    skalieren. Vol-Targeting und 1/n sind vorab verworfen und begründet, die
+>    Grenze ist keine Option des Loops — wer sie ändert, hinterlässt einen
+>    Diff (wie bei den Gate-Schwellen, ADR-057).
+>
+>    Die Schicht allein reichte nicht: danach handelte der Kandidat fast nicht
+>    mehr, Brutto 0,502 statt 1,0. Die Ursache war ein **Kategorienfehler im
+>    Rebalancing-Band** — es war ein Anteil des Eigenkapitals, beschreibt aber
+>    eine Toleranz um eine Position. Bei 39 Märkten war es damit 1,95× der
+>    eigenen Position, also 39-mal lockerer als für eine Ein-Symbol-Strategie.
+>    Dieselbe Fehlerfamilie wie ADR-053 und ADR-065, drittes Auftreten.
 > 4. **Research-Loop** — der Versuchszähler steht auf 21, und jeder Lauf
 >    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
->    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
->    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
->    `docs/ZIEL.md` in Phase C.2 nennt, gilt hier nicht mehr. Das Budget ist
->    trotzdem nicht gratis — und `qt alloc --stub` nennt vorher in der
->    Telemetriezeile, was ein echter Lauf kostet.
+>    (ADR-032). Gemessen: 21 → 26 Versuche heben den erwarteten besten Sharpe
+>    aus **reinem Rauschen** von 1,92 auf 2,01. In dieser Umgebung ist
+>    `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
+>    durch (ADR-060); der Blocker aus `docs/ZIEL.md` Phase C.2 gilt hier nicht
+>    mehr.
+>
+>    **Ein Lauf gegen die Stubs kostet nichts** — er schreibt nach
+>    `registry_stub.duckdb` und nicht in die Registry (ADR-057). Damit lässt
+>    sich die Kette über alle 39 Märkte prüfen, ohne einen Versuch auszugeben.
+>    Die Entscheidung, wie viele Kandidaten ein echter Lauf erzeugt, gehört
+>    einem Menschen: sie ist die einzige in diesem Repo, die sich nicht
+>    zurücknehmen lässt.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
