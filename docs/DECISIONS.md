@@ -5,6 +5,196 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-069 — Die Positionsgrößen-Schicht, und das Band maß die falsche Größe
+**Datum:** 2026-09-04
+
+**Die Aufgabe:** ADR-065 hat den Zustand so beschrieben — über 38 Märkte
+summiert sich das Bruttoexposure auf 38× und ruiniert das Konto, bei
+Normierung auf 1 handelt keiner mehr, und **dazwischen liege keine
+Einstellung, die das Ergebnis der Idee zeigen würde.** Das war der letzte
+offene Punkt vor dem nächsten Research-Loop.
+
+Es gibt sie. Sie besteht aus zwei Teilen, und der zweite stand nicht in der
+Aufgabe.
+
+---
+
+### Teil 1 — Die Regel, vorab entschieden
+
+**Proportional auf das Bruttobudget skalieren, sonst nichts:**
+
+```
+w_i  ->  w_i * grenze / Σ|w|   , falls Σ|w| > grenze
+w_i  ->  w_i                   , sonst
+```
+
+Damit teilen sich die Märkte, in denen ein Kandidat eine Meinung hat, das
+Konto gleichmäßig — und ein Kandidat mit einer Meinung in einem einzigen
+Markt bekommt dort das volle Gewicht.
+
+Zwei Alternativen sind **vorab** verworfen, damit die Entscheidung nicht davon
+abhängt, wie der nächste Lauf ausgeht:
+
+| | verworfen, weil |
+|---|---|
+| **Vol-Targeting** | braucht Schätzer, Rückschaufenster und Zielvola — drei Freiheitsgrade, die jeder im DSR-Nenner bezahlt werden (ADR-005). Und es hat einen eigenen Effekt auf den Sharpe: ein Ergebnis aus Signal *und* Größensteuerung beantwortet keine der beiden Fragen. |
+| **Gleichgewichtung 1/n** | bestraft Selektivität. Ein Kandidat mit einer Position in 1 von 38 Märkten bekäme 1/38 Exposure — von Rauschen nicht zu unterscheiden, egal wie gut das Signal ist. |
+
+Der ausschlaggebende Punkt: **das ist keine Strategieentscheidung, sondern die
+Bilanz.** `max_gross_exposure` heißt laut Config „1.0 = kein Hebel". Von den
+drei Kandidaten setzt nur die proportionale Skalierung genau diese Grenze
+durch, statt nebenbei eine Meinung zu haben. Sie ist auch nicht neu:
+`CrossSectionalStrategy.gewichte_aus_score` teilt seit ADR-058 durch Σ|w|.
+Diese Schicht macht daraus die Regel für alle statt für eine Familie.
+
+### Wo sie sitzt — nach zwei gemessenen Fehlversuchen
+
+Der naheliegende Ort war `rebalance_order`. Beide Anläufe dort sind
+gescheitert, und beide Male hat die Messung es gezeigt, nicht das Nachdenken:
+
+**Anlauf 1, Skalierung des Ziel-Dicts der Engine.** Die Engine arbeitet die
+Bars eines Zeitpunkts nacheinander ab; währenddessen ist das Ziel-Dict eine
+Mischung aus alten und neuen Gewichten. Bei `crossmom` liegt diese Mischung im
+Median bei **1,09** Brutto, obwohl weder der alte noch der neue Stand 1,0
+reißt. Die Grenze griff in **77,7 %** der Bars, sparte Gebühren und hob den
+Sharpe von **0,21 auf 0,38** — über die Gate-Schwelle von 0,33.
+
+Das ist der Grund, warum dieser Anlauf im Papierkorb liegt und nicht im Code:
+**eine Verbesserung aus einem Messartefakt**, genau die Sorte Fund, vor der
+ADR-066 warnt. Aufgefallen ist sie, weil die Zahl in die angenehme Richtung
+sprang.
+
+**Anlauf 2, Budget gegen die gehaltenen Positionen.** Kein Artefakt mehr, aber
+`crossmom` zielt konstruktionsbedingt auf Brutto genau 1,0. Eine harte Grenze
+auf demselben Wert liegt dauernd auf der Kante: jede Kursbewegung beschneidet
+die nächste Order, das erzeugt eine Gegenbewegung. Ausführungen 308 → 923,
+Sharpe 0,21 → −0,21.
+
+Beide Male dieselbe Ursache: **die Engine sieht nie einen kohärenten
+Zielvektor.** Die Querschnittsfamilie löst das seit ADR-058 selbst, die
+Bibliotheksstrategien halten je ein Symbol. Übrig bleibt genau der Fall, für
+den die Schicht da ist — ein Kandidat, dessen Gewichte je Symbol unabhängig
+entstehen. Für den ist die Mischung kein Artefakt, sondern der Zustand: 38
+Märkte mit je 1,0 summieren sich zu 38, egal aus welchem Bar der einzelne Wert
+stammt.
+
+Deshalb sitzt sie als Hülle um den Kandidaten, im Research-Loop, hinter dem
+Probelauf und vor allem, was eine Zahl erzeugt.
+
+---
+
+### Teil 2 — Und dann handelte er nicht mehr
+
+Die Schicht allein reproduzierte die andere Hälfte des ADR-065-Satzes. Über 39
+Märkte, `immer_long` als Kandidat:
+
+| | ohne Schicht | mit Schicht |
+|---|---|---|
+| Brutto im Median | **16,2** | 0,502 |
+| Brutto maximal | 25.505 | 2,31 |
+| tiefstes Cash | −25.353.646 | −128.439 |
+| Konto ruiniert | **ja** | nein |
+| Endwert | −30 | 215.256 |
+
+Brutto **0,502** bei einem Ziel von 1,0: ein Portfolio, das die Hälfte dessen
+hält, was es will — eingefroren aus der Anlaufphase, 49 Ausführungen in 7,7
+Jahren.
+
+**Die Ursache ist ein Kategorienfehler im Rebalancing-Band.** Es war ein
+Anteil des **Eigenkapitals** (5 %). Was es aber beschreibt, ist eine Toleranz
+um eine **Position**. Solange ein Konto ein Symbol mit Gewicht 1,0 hält, ist
+das dasselbe. Sonst nicht:
+
+| Märkte | Position | altes Band, in Vielfachen der Position |
+|---|---|---|
+| 1 | 100,00 % | **0,05×** |
+| 13 | 7,69 % | 0,65× |
+| 26 | 3,85 % | 1,30× |
+| 39 | 2,56 % | **1,95×** |
+
+Eine Position musste sich also fast verdreifachen oder verschwinden, bevor
+gehandelt wurde. Das ist dieselbe Fehlerfamilie wie ADR-053 und ADR-065:
+**eine Größe, die für ein Symbol gedacht ist, wird gegen ein Portfolio
+geprüft.** Drittes Auftreten, dritter Ort.
+
+Behoben, indem das Band misst, was es beschreibt:
+
+```python
+bezug = max(|ziel_menge|, |ist_menge|) * preis
+schwelle = max(min_trade_notional, rebalance_band * bezug)
+```
+
+Bei Vollgewicht auf einem Symbol ist das **exakt** die alte Zahl. Danach hält
+derselbe Kandidat Brutto **0,995** statt 0,502, bei 3,90× Umschlag gegen ein
+Budget von 7 — die Einstellung zwischen Bankrott und Untätigkeit, die es laut
+ADR-065 nicht gab.
+
+---
+
+### Was das an bestehenden Zahlen bewegt
+
+**Bitgleich geblieben**, weil sie nur Gewicht 1,0 oder 0 handeln:
+
+| | Sharpe vorher | nachher | Fills |
+|---|---|---|---|
+| `macross` BTC/USD | +1,0263 | +1,0263 | 67 → 67 |
+| `macross` ETH/USD | +1,0091 | +1,0091 | 67 → 67 |
+| `hashribbon` BTC/USD | +0,7467 | +0,7467 | 54 → 54 |
+
+**Leicht bewegt**, weil sie Bruchgewichte handeln — alle drei nach unten, also
+in die unbequeme Richtung:
+
+| | vorher | nachher | Δ |
+|---|---|---|---|
+| `trend` BTC/USD | +0,4291 | +0,4284 | −0,0007 |
+| `meanrev` ETH/USD | −1,0724 | −1,0743 | −0,0019 |
+| `elliott` BTC/USD | +0,1318 | +0,1284 | −0,0034 |
+
+**Und einer deutlich — mit einer unbequemen Folge.**
+
+`crossmom` war die einzige Strategie des Projekts, die das Umschlagbudget
+bestand (2,9× gegen 7×) und bis in den Walk-Forward kam. Mit dem korrigierten
+Band schlägt sie **10,8×** um und bricht vor dem Sharpe ab. `crossrev` geht
+von 13,5× auf 27,0×.
+
+Der Grund ist kein neues Verhalten der Strategie, sondern das Ende einer
+stillen Subvention: bei 2,56 % Positionsgröße bekam sie eine Toleranz von
+1,95× ihrer eigenen Position, also das **39-fache** dessen, was `macross`
+bekam. Ihre 2,9× Umschlag waren nicht die Kosten ihrer Idee, sondern die
+Kosten des Rebalancings, das die Engine nicht ausgeführt hat.
+
+**Damit steht die Schlussfolgerung aus ADR-058 weiter, aber mit anderem
+Grund.** Dort scheiterte `crossmom` am OOS-Sharpe von −0,24. Jetzt kommt sie
+gar nicht mehr so weit: sie kann sich ihre eigene Umschichtung nicht leisten —
+dieselbe Diagnose wie bei `macross` (ADR-057). Ein falscher Grund für eine
+richtige Entscheidung wird zitiert, bis jemand auf seiner Grundlage eine
+andere Entscheidung trifft; deshalb steht er hier.
+
+### Konsequenzen
+
+- **Der Research-Loop hat jetzt eine Positionsgrößen-Schicht** (`BRUTTOGRENZE
+  = 1.0`, `qt.research.groesse`) — bewusst **keine** Option des Loops. Wer sie
+  ändert, hinterlässt einen Diff, so wie bei den Gate-Schwellen (ADR-057).
+- **Der Bestand ist damit vollständig durch das Umschlagbudget gefallen.**
+  Neun Strategien, keine unter 7× — die knappste ist `hashribbon` mit 7,1×.
+  Was Gate 1 heute blockiert, ist nicht der Sharpe, sondern die
+  Handelsfrequenz.
+- **Die Hülle behält den Namen des Kandidaten.** Ein zweiter Name wäre eine
+  zweite Hypothese im Versuchszähler und damit eine Erhöhung der DSR-Hürde
+  durch die Hintertür (ADR-032).
+- **Elf Tests**, davon einer, der den Ausgangszustand festhält: ohne Schicht
+  muss ein Kandidat über 20 Märkte das Konto ruinieren. Fällt er, misst die
+  Korrektur nicht mehr, was sie soll.
+- **Offen benannte Grenze:** ein generierter Kandidat, der seinen ganzen
+  Vektor auf einmal umschichtet, fällt in dieselbe Falle wie Anlauf 1. Ein
+  solcher ist bisher nicht aufgetreten; taucht einer auf, gehört die Frage neu
+  entschieden und nicht stillschweigend gelöst.
+- **Kein einziger Test wurde rot,** als das Band die Bedeutung wechselte —
+  eine Änderung, die die Order-Schwelle jedes Backtests im Repo betrifft. Die
+  Semantik des Bandes war nirgends festgehalten. Jetzt ist sie es.
+
+---
+
 ## ADR-068 — „1.0 = kein Hebel" stimmte nicht, und das Paper-Konto zeigte es
 **Datum:** 2026-09-03
 
