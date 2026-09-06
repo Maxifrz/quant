@@ -1,18 +1,27 @@
 {
-  "bars_seen": {},
-  "cash": 100000.0,
+  "bars_seen": {
+    "BTC/USD": 2805
+  },
+  "cash": -1.4551915228366852e-11,
   "created_at": "2026-09-04T09:54:12.575214+00:00",
-  "fees_paid": 0.0,
+  "fees_paid": 596.4214711729624,
   "halt_reasons": [],
   "halted": false,
-  "last_processed_ts": "2026-09-04T00:00:00+00:00",
-  "n_fills": 0,
+  "last_processed_ts": "2026-09-06T00:00:00+00:00",
+  "n_fills": 1,
   "peak_equity": 100000.0,
   "pending": [],
-  "positions": {},
+  "positions": {
+    "BTC/USD": {
+      "avg_price": 79714.95756,
+      "qty": 1.2469877871290065
+    }
+  },
   "risk_notes": [],
-  "target": {},
-  "turnover": 0.0,
-  "updated_at": "2026-09-04T09:54:12.575246+00:00",
-  "warmup_end": null
+  "target": {
+    "BTC/USD": 1.0
+  },
+  "turnover": 99403.57852882706,
+  "updated_at": "2026-09-06T07:26:56.839997+00:00",
+  "warmup_end": "2026-09-05T00:00:00+00:00"
 }

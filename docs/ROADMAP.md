@@ -181,18 +181,38 @@
 >
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Der Tick feuert, aber nicht dort, wo das Repository liegt.** Die
->    Routine `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in
->    einer frischen Sitzung laufen. Am 2026-09-04 ist sie gelaufen — und
->    scheiterte vor der ersten Zeile: die Sitzung startete in einem Container
->    **ohne Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts
->    zu ticken. Nichts wurde verändert, kein Kill-Switch berührt.
+> 1. **Der Tick feuert und meldet Erfolg, ohne stattzufinden.** Die Routine
+>    `Paper-Tick macross BTC+ETH (taeglich)` läuft täglich 01:00 UTC in einer
+>    frischen Sitzung. Am 2026-09-04 und am 2026-09-06 ist sie gelaufen und
+>    scheiterte vor der ersten Zeile: der Container hatte **keine
+>    Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts zu
+>    ticken. Der Lauf vom 2026-09-06 steht in der Routinen-Historie trotzdem
+>    als `SUCCEEDED`.
 >
->    Das ist der dritte verschiedene Grund in Folge, aus dem derselbe Tick
->    nicht ankommt — nach dem toten Zweig und der beschönigten Push-Meldung
->    (beide ADR-059) jetzt einer, der gar nicht im Repository liegt: die
->    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
->    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
+>    **Am 2026-09-06 nachgesehen statt vermutet** (ADR-073). Zwei Ursachen,
+>    beide belegt aus der Trigger-Konfiguration:
+>
+>    - `session_request.config.sources` ist **leer**. Der Routine ist kein
+>      Repository hinterlegt; diese Sitzung hier hat eins, die gefeuerte nicht.
+>      Über die MCP-Oberfläche lässt sich das **nicht** setzen — `update_trigger`
+>      kennt nur Name, Zeitplan, Zustand, Modell und Prompt. Der dauerhafte
+>      Fix gehört in die Routinen-Oberfläche und ist Handarbeit.
+>    - Im Prompt stand: *„Falls das Repo im Container fehlt oder data/ohlcv
+>      leer ist: das ist erwartet und kein Fehler."* Der Satz vermengte einen
+>      **kalten Datenspeicher** (tatsächlich normal, das Skript zieht nach) mit
+>      einem **fehlenden Repository** (fatal, es gibt nichts auszuführen). Er
+>      hat aus dem Ausfall eine Erfolgsmeldung gemacht.
+>
+>    Der Prompt ist korrigiert: ein fehlendes Repository ist jetzt ein Fehler,
+>    die Sitzung holt es über `add_repo` selbst, und sie prüft am Ende
+>    `Letzter verarbeiteter Bar` gegen den Vortag — Erfolg wird an der
+>    bewegten Zahl gemessen und nicht am Exit-Code.
+>
+>    Damit ist es der **dritte** verschiedene Grund, aus dem derselbe Tick
+>    nicht ankommt: toter Zweig, beschönigte Push-Meldung (beide ADR-059),
+>    jetzt eine fehlende Quelle plus ein Satz, der sie für normal erklärte.
+>    Alle drei sahen nicht nach einem Fehler aus. **Das ist das Muster, nicht
+>    der Zufall.**
 >
 >    `scripts/paper_tick.sh` erkennt seit 2026-09-04 auch den Fall, dass
 >    dieser Zweig **zusammengeführt** ist: dann geht der Kontostand nach
@@ -210,16 +230,24 @@
 >    für Phase D, egal wie lange er läuft. Preis: zwei Tage Vorwärtszeit und
 >    ein Fill. Der alte Stand liegt in Commit `e658ee8`.
 >
->    Die Konten stehen jetzt flach bei 100.000, verankert am 2026-09-04, und
->    handeln **ab jetzt** statt rückwirkend. Der erste Einstieg wird gemessen
->    bei Cash 0,00 (BTC) bzw. 0,84 (ETH) und Bruttoexposure 1,000000 landen —
->    nachgestellt mit derselben Mechanik einen Tag zurückversetzt.
+>    **Der erste Einstieg ist am 2026-09-06 erfolgt, und er bestätigt
+>    ADR-068 im Vorwärtsbetrieb.** Vorhergesagt war Cash 0,00 bzw. 0,84 aus
+>    einem Replay; gemessen wurde **−0,00 (BTC) und 0,00 (ETH)**. Vor der
+>    Korrektur ergab derselbe Einstieg −650,31 und −656,55. Das ist der Punkt,
+>    an dem Phase D eine Divergenz gefangen hätte, wenn noch eine da wäre.
 >
->    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand gesetzt,
->    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
->    nur zusammen mit der Frage, wer sie bewegt hat. **Ab dem 2026-09-05 ist
->    sie wieder aussagekräftig:** wandert sie ohne Zutun weiter, feuert die
->    Routine; tut sie es nicht, liegt es weiterhin an der Umgebung.
+>    | | BTC/USD | ETH/USD |
+>    |---|---|---|
+>    | Menge | +1,246988 @ 79.714,96 | +40,443663 @ 2.457,83 |
+>    | Cash danach | **−0,00** | **0,00** |
+>    | Gebühr | 596,42 | 596,42 |
+>
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-06** — von Hand
+>    nachgeholt, nicht von der Routine. Die Zahl allein beweist also nichts;
+>    sie beweist nur zusammen mit der Frage, wer sie bewegt hat. **Der erste
+>    aussagekräftige Lauf ist der vom 2026-09-07:** wandert sie ohne Zutun
+>    weiter, greift der reparierte Prompt; tut sie es nicht, hilft nur noch
+>    die hinterlegte Quelle.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von

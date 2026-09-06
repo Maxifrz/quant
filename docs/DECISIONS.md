@@ -5,6 +5,114 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-073 — Ein Ausfall, der sich als Erfolg meldete
+**Datum:** 2026-09-06
+
+Die tägliche Paper-Tick-Routine ist am 2026-09-06 um 01:08 UTC gefeuert, lief
+5 Stunden 38 Minuten und wurde als **`SUCCEEDED`** protokolliert. Getickt hat
+sie nichts: beide Konten standen danach noch auf dem `Letzter verarbeiteter
+Bar` vom 2026-09-04.
+
+Das ist das dritte Mal, dass derselbe Tick nicht ankommt, und das dritte Mal
+mit einer anderen Ursache. Nach dem toten Zweig und der beschönigten
+Push-Meldung (beide ADR-059) jetzt zwei, die zusammenwirken.
+
+### Ursache 1: der Routine ist kein Repository hinterlegt
+
+Aus der Trigger-Konfiguration, nachgesehen statt vermutet:
+
+```
+session_request.config.sources = []
+```
+
+Die Routine startet je Firing eine **frische** Sitzung
+(`persist_session: false`). Ohne Quelle ist der Container leer — kein `.git`,
+kein `scripts/paper_tick.sh`. Diese Sitzung hier hat dieselbe Umgebung
+(`env_01JAALC8vcs6kZEYZGJpbDy7`) und trägt die Quelle in ihrem eigenen
+`session_context`; die Umgebung liefert sie also nicht mit.
+
+**Von hier aus nicht behebbar.** `update_trigger` kennt Name, Zeitplan,
+Zustand, Modell und Prompt — `sources` nicht. Der dauerhafte Fix gehört in
+die Routinen-Oberfläche und ist Handarbeit.
+
+### Ursache 2: ein Satz, der den Ausfall für normal erklärte
+
+Im Prompt der Routine stand, seit ihrer Anlage am 2026-09-02:
+
+> „Falls das Repo im Container fehlt oder data/ohlcv leer ist: das ist
+> erwartet und kein Fehler. Das Skript zieht bei kaltem Store selbst genug
+> Historie nach."
+
+Der Satz vermengt zwei Dinge, die nichts miteinander zu tun haben:
+
+| | Bedeutung |
+|---|---|
+| **leerer Datenspeicher** | tatsächlich normal — `COLD_START_BUFFER` zieht nach |
+| **fehlendes Repository** | fatal — es gibt nichts auszuführen |
+
+Weil beides in einem Satz stand und die zweite Hälfte des Satzes nur die
+erste Hälfte begründet, hat die gefeuerte Sitzung den leeren Container
+korrekt gegen ihre Anweisung geprüft, ihn für erwartet befunden und sich ohne
+Kommentar beendet. **Der Prompt war nicht nur falsch, er war eine Anleitung
+zum Wegsehen.**
+
+### Was das teuer macht
+
+Ursache 1 allein wäre ein sichtbarer Fehlschlag gewesen: ein Lauf, der
+`bash: scripts/paper_tick.sh: No such file` meldet, fällt auf. Ursache 2 hat
+daraus eine grüne Zeile in der Routinen-Historie gemacht. **Ein Ausfall, der
+sich als Erfolg meldet, ist teurer als einer, der abstürzt** — er verbraucht
+kein Vertrauen, er baut falsches auf.
+
+Dasselbe Muster wie ADR-051 (das Paper-Konto lief wochenlang nicht, während
+die Prosa sagte, es laufe) und ADR-059 (vier gescheiterte Push-Versuche,
+gemeldet als „Kontostand gesichert"). Dreimal derselbe Bauplan: eine
+Behauptung über den Zustand, die den Zustand nicht prüft.
+
+### Die Korrektur am Prompt
+
+- Ein **fehlendes Repository ist ein Fehler**, kein erwarteter Zustand. Der
+  leere Datenspeicher bleibt ausdrücklich normal — die beiden Fälle stehen
+  jetzt getrennt und mit dem Grund für die Unterscheidung.
+- Die Sitzung **holt das Repository selbst** (`add_repo`, klonen,
+  `register_repo_root`, `main` auschecken), bevor sie irgendetwas anderes
+  tut. Gelingt das nicht, ist der Lauf gescheitert und wird so gemeldet.
+- **Erfolg wird an der bewegten Zahl gemessen, nicht am Exit-Code.** Schritt 3
+  liest `Letzter verarbeiteter Bar` und verlangt, dass er weitergewandert ist.
+- Der Zweigname ist raus. Er nannte noch
+  `claude/llm-quant-algo-planning-f1ohgo` — den Zweig aus ADR-059, dessen
+  Pull Request längst zusammengeführt ist. Das Skript wählt seit ADR-069
+  selbst, wohin es schreibt.
+
+### Ein Nebenertrag: ADR-068 ist im Vorwärtsbetrieb bestätigt
+
+Die zwei nachgeholten Bars haben beide Konten long gehen lassen — der erste
+echte Einstieg seit dem Neustart, und damit der erste Test der
+Kaufkraft-Korrektur außerhalb eines Replays.
+
+| | BTC/USD | ETH/USD |
+|---|---|---|
+| Menge | +1,246988 @ 79.714,96 | +40,443663 @ 2.457,83 |
+| Cash danach | **−0,00** | **0,00** |
+| vorhergesagt (Replay) | 0,00 | 0,84 |
+| vor der Korrektur | −650,31 | −656,55 |
+
+Genau an dieser Stelle hätte Phase D eine Divergenz zwischen Backtest und
+Ausführung gefangen. Es ist keine mehr da.
+
+### Konsequenzen
+
+- **Der Prompt ist repariert, die fehlende Quelle nicht.** Solange
+  `sources: []` bleibt, hängt die Routine daran, dass die Sitzung sich das
+  Repository selbst holt. Das ist eine Notlösung, kein Fix.
+- **Der erste aussagekräftige Lauf ist der vom 2026-09-07.** Wandert
+  `Letzter verarbeiteter Bar` ohne Zutun weiter, greift der Prompt.
+- **Für die Prompts automatischer Routinen gilt dieselbe Regel wie für
+  Prosa im ROADMAP** (ADR-052): kein Satz, der einen Zustand behauptet, ohne
+  ihn zu prüfen. Ein Prompt ist Code mit schlechterem Werkzeug.
+
+---
+
 ## ADR-072 — Der erste Loop-Lauf, dessen Zahlen etwas bedeuten
 **Datum:** 2026-09-04
 
