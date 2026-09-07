@@ -100,16 +100,53 @@ Kaufkraft-Korrektur außerhalb eines Replays.
 Genau an dieser Stelle hätte Phase D eine Divergenz zwischen Backtest und
 Ausführung gefangen. Es ist keine mehr da.
 
+### Nachtrag 2026-09-07: die Notlösung trägt nicht
+
+Der Lauf vom 2026-09-07 um 01:09 ist der Test des korrigierten Prompts. Er
+fällt zweigeteilt aus.
+
+**Was funktioniert hat:** der Ausfall ist sichtbar. Am 2026-09-06 lief
+dieselbe Routine 5 Stunden 38 Minuten und meldete Erfolg; am 2026-09-07 bricht
+sie nach **2 Minuten** mit einem Fehler ab, den der Nutzer gemeldet bekommt.
+Genau dafür war die Änderung da, und mehr war von einer Prompt-Änderung auch
+nicht zu erwarten.
+
+**Was nicht funktioniert hat:** die Selbstheilung. Die Anweisung, das
+Repository über `add_repo` selbst zu holen, führt nicht zu einem
+Arbeitsverzeichnis — die Sitzung trägt weiterhin `sources: []` und den Tag
+`config:routine-lineage-none`, und eine Sitzung ohne hinterlegte Quelle kommt
+so nicht an das Repository heran. Die Konten standen danach unverändert auf
+dem Bar vom 2026-09-06, und auf `main` liegt kein Tick-Commit.
+
+**Damit ist der Weg über den Prompt ausgereizt.** Er kann einen Ausfall
+sichtbar machen; er kann keine fehlende Quelle ersetzen. Die
+`add_repo`-Anleitung ist wieder heraus — sie kostet zwei Minuten und
+verwässert den Fehlerbericht. An ihrer Stelle steht jetzt der Satz, den
+derjenige liest, der den Fehler bekommt: *„Der Fix gehört in die
+Routinen-Oberfläche: `Maxifrz/quant` als Quelle der Routine eintragen."*
+
+Eine Alternative wäre gewesen, die Routine an eine **dauerhafte** Sitzung zu
+binden, die das Repository trägt (`persistent_session_id`). Verworfen nach
+Rücksprache: das hält eine Sitzung auf unbestimmte Zeit am Leben, deren
+Kontext mit jedem Tick wächst, und tauscht ein Konfigurationsproblem gegen
+eine Sonderkonstruktion mit eigener Wartung.
+
 ### Konsequenzen
 
-- **Der Prompt ist repariert, die fehlende Quelle nicht.** Solange
-  `sources: []` bleibt, hängt die Routine daran, dass die Sitzung sich das
-  Repository selbst holt. Das ist eine Notlösung, kein Fix.
-- **Der erste aussagekräftige Lauf ist der vom 2026-09-07.** Wandert
-  `Letzter verarbeiteter Bar` ohne Zutun weiter, greift der Prompt.
+- **Der Prompt ist repariert, die fehlende Quelle nicht** — und sie ist von
+  innen auch nicht reparierbar. `update_trigger` kennt Name, Zeitplan,
+  Zustand, Modell und Prompt; `sources` gehört zur Session-Konfiguration der
+  Routine und wird in ihrer Oberfläche gesetzt. **Bis das geschieht, tickt
+  die Routine nicht**, und die Konten hängen an Handarbeit.
+- **Vier Ausfälle, vier Ursachen, ein Muster.** Toter Zweig, beschönigte
+  Push-Meldung (beide ADR-059), fehlende Quelle plus ein Satz, der sie für
+  normal erklärte, und jetzt eine Notlösung, die nicht greifen konnte. Keiner
+  davon war ein Fehler im getesteten Code — alle vier saßen im Drumherum, das
+  kein Test abdeckt.
 - **Für die Prompts automatischer Routinen gilt dieselbe Regel wie für
   Prosa im ROADMAP** (ADR-052): kein Satz, der einen Zustand behauptet, ohne
-  ihn zu prüfen. Ein Prompt ist Code mit schlechterem Werkzeug.
+  ihn zu prüfen. Ein Prompt ist Code mit schlechterem Werkzeug — und ohne
+  Test.
 
 ---
 

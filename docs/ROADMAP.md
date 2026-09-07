@@ -204,9 +204,19 @@
 >      hat aus dem Ausfall eine Erfolgsmeldung gemacht.
 >
 >    Der Prompt ist korrigiert: ein fehlendes Repository ist jetzt ein Fehler,
->    die Sitzung holt es über `add_repo` selbst, und sie prüft am Ende
->    `Letzter verarbeiteter Bar` gegen den Vortag — Erfolg wird an der
->    bewegten Zahl gemessen und nicht am Exit-Code.
+>    und Erfolg wird an `Letzter verarbeiteter Bar` gemessen, nicht am
+>    Exit-Code.
+>
+>    **Am 2026-09-07 getestet, halb bestanden.** Der Ausfall ist jetzt
+>    sichtbar — 2 Minuten und ein gemeldeter Fehler statt 5 h 38 min und
+>    „SUCCEEDED". Die eingebaute Selbstheilung (`add_repo`) trägt dagegen
+>    nicht: eine Sitzung ohne hinterlegte Quelle kommt so nicht an das
+>    Repository. Sie ist wieder heraus; an ihrer Stelle steht der Satz, den
+>    derjenige liest, der den Fehler bekommt.
+>
+>    **Damit ist der Weg über den Prompt ausgereizt.** Er macht einen Ausfall
+>    sichtbar, er ersetzt keine fehlende Quelle. Solange `sources: []` bleibt,
+>    tickt die Routine nicht und die Konten hängen an Handarbeit.
 >
 >    Damit ist es der **dritte** verschiedene Grund, aus dem derselbe Tick
 >    nicht ankommt: toter Zweig, beschönigte Push-Meldung (beide ADR-059),
@@ -242,12 +252,11 @@
 >    | Cash danach | **−0,00** | **0,00** |
 >    | Gebühr | 596,42 | 596,42 |
 >
->    `Letzter verarbeiteter Bar` steht auf **2026-09-06** — von Hand
->    nachgeholt, nicht von der Routine. Die Zahl allein beweist also nichts;
->    sie beweist nur zusammen mit der Frage, wer sie bewegt hat. **Der erste
->    aussagekräftige Lauf ist der vom 2026-09-07:** wandert sie ohne Zutun
->    weiter, greift der reparierte Prompt; tut sie es nicht, hilft nur noch
->    die hinterlegte Quelle.
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-07** — von Hand
+>    nachgeholt, nicht von der Routine, jetzt zum dritten Mal. Die Zahl allein
+>    beweist nichts; sie beweist nur zusammen mit der Frage, wer sie bewegt
+>    hat. **Der Test ist gelaufen und die Antwort steht:** nur die hinterlegte
+>    Quelle hilft.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
