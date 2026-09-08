@@ -322,7 +322,21 @@ def test_eine_charge_stirbt_nicht_am_ausfall_eines_einzelnen_aufrufs():
 
 
 def _bars(n: int = 4000):
-    from qt.data.store import read_bars, to_bars
+    """Echte BTC-Bars, sonst uebersprungen.
+
+    `/data/` ist nicht versioniert, ein frischer Klon hat den Store also
+    nicht. Ohne diese Bedingung faellt der Test dort mit `FileNotFoundError`
+    durch und meldet damit die **Umgebung** als Fehler statt den Code --
+    dieselbe Sorte Test wie der `timesfm`-Fall aus ADR-063, nur andersherum.
+
+    Uebersprungen und nicht mit synthetischen Bars ersetzt: diese vier Tests
+    sind der End-to-End-Beleg der Pipeline gegen echte Daten. Ein Ersatz
+    waere ein anderer Test, der so tut, als waere er dieser.
+    """
+    from qt.data.store import parquet_path, read_bars, to_bars
+
+    if not parquet_path("BTC/USD", "4h").exists():
+        pytest.skip("Keine gespeicherten Daten -- qt data pull")
 
     return {"BTC/USD": to_bars("BTC/USD", "4h", read_bars("BTC/USD", "4h"))[:n]}
 

@@ -1,0 +1,54 @@
+# Die 1047 Tests liefen bis zum 2026-09-08 nur dort, wo jemand sie startete.
+#
+# Der Anlass steht in ADR-073: vier Ausfaelle in Folge, vier verschiedene
+# Ursachen, und **keine davon war ein Fehler im getesteten Code** -- alle
+# sassen im Drumherum. Eine gruene Suite auf einem Rechner beweist wenig,
+# wenn niemand sie ausfuehrt.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Ein zweiter Push auf denselben Zweig macht den ersten Lauf gegenstandslos.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv einrichten
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Abhaengigkeiten
+        # `--extra dev` ist nicht optional, auch wenn es so aussieht: `dev`
+        # steht in `[project.optional-dependencies]`, und ein blosses
+        # `uv sync` laesst pytest weg. `uv run pytest` greift dann auf ein
+        # pytest ausserhalb der Umgebung zurueck und scheitert an fehlendem
+        # numpy -- ein Fehler, der wie ein Codefehler aussieht und keiner ist.
+        # Gemessen im frischen Klon am 2026-09-08.
+        run: uv sync --extra dev
+
+      - name: ruff
+        run: uv run ruff check src tests
+
+      - name: pytest
+        # **Ohne Datenspeicher und ohne Schluessel.** `/data/ohlcv` ist nicht
+        # versioniert und `NVIDIA_API_KEY` steht hier nicht zur Verfuegung;
+        # die Tests, die beides brauchen, ueberspringen sich selbst und
+        # nennen dabei den Grund. Ein Test, dessen Ergebnis davon abhaengt,
+        # was zufaellig in der Umgebung liegt, prueft die Umgebung und nicht
+        # den Code -- dieselbe Lehre wie beim `timesfm`-Test (ADR-063).
+        #
+        # `-p no:randomly` haelt die Reihenfolge fest: ein Lauf, der mal
+        # gruen und mal rot ist, kostet mehr Vertrauen als er einbringt.
+        run: uv run pytest -q -p no:randomly
