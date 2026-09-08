@@ -5,6 +5,668 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-073 — Ein Ausfall, der sich als Erfolg meldete
+**Datum:** 2026-09-06
+
+Die tägliche Paper-Tick-Routine ist am 2026-09-06 um 01:08 UTC gefeuert, lief
+5 Stunden 38 Minuten und wurde als **`SUCCEEDED`** protokolliert. Getickt hat
+sie nichts: beide Konten standen danach noch auf dem `Letzter verarbeiteter
+Bar` vom 2026-09-04.
+
+Das ist das dritte Mal, dass derselbe Tick nicht ankommt, und das dritte Mal
+mit einer anderen Ursache. Nach dem toten Zweig und der beschönigten
+Push-Meldung (beide ADR-059) jetzt zwei, die zusammenwirken.
+
+### Ursache 1: der Routine ist kein Repository hinterlegt
+
+Aus der Trigger-Konfiguration, nachgesehen statt vermutet:
+
+```
+session_request.config.sources = []
+```
+
+Die Routine startet je Firing eine **frische** Sitzung
+(`persist_session: false`). Ohne Quelle ist der Container leer — kein `.git`,
+kein `scripts/paper_tick.sh`. Diese Sitzung hier hat dieselbe Umgebung
+(`env_01JAALC8vcs6kZEYZGJpbDy7`) und trägt die Quelle in ihrem eigenen
+`session_context`; die Umgebung liefert sie also nicht mit.
+
+**Von hier aus nicht behebbar.** `update_trigger` kennt Name, Zeitplan,
+Zustand, Modell und Prompt — `sources` nicht. Der dauerhafte Fix gehört in
+die Routinen-Oberfläche und ist Handarbeit.
+
+### Ursache 2: ein Satz, der den Ausfall für normal erklärte
+
+Im Prompt der Routine stand, seit ihrer Anlage am 2026-09-02:
+
+> „Falls das Repo im Container fehlt oder data/ohlcv leer ist: das ist
+> erwartet und kein Fehler. Das Skript zieht bei kaltem Store selbst genug
+> Historie nach."
+
+Der Satz vermengt zwei Dinge, die nichts miteinander zu tun haben:
+
+| | Bedeutung |
+|---|---|
+| **leerer Datenspeicher** | tatsächlich normal — `COLD_START_BUFFER` zieht nach |
+| **fehlendes Repository** | fatal — es gibt nichts auszuführen |
+
+Weil beides in einem Satz stand und die zweite Hälfte des Satzes nur die
+erste Hälfte begründet, hat die gefeuerte Sitzung den leeren Container
+korrekt gegen ihre Anweisung geprüft, ihn für erwartet befunden und sich ohne
+Kommentar beendet. **Der Prompt war nicht nur falsch, er war eine Anleitung
+zum Wegsehen.**
+
+### Was das teuer macht
+
+Ursache 1 allein wäre ein sichtbarer Fehlschlag gewesen: ein Lauf, der
+`bash: scripts/paper_tick.sh: No such file` meldet, fällt auf. Ursache 2 hat
+daraus eine grüne Zeile in der Routinen-Historie gemacht. **Ein Ausfall, der
+sich als Erfolg meldet, ist teurer als einer, der abstürzt** — er verbraucht
+kein Vertrauen, er baut falsches auf.
+
+Dasselbe Muster wie ADR-051 (das Paper-Konto lief wochenlang nicht, während
+die Prosa sagte, es laufe) und ADR-059 (vier gescheiterte Push-Versuche,
+gemeldet als „Kontostand gesichert"). Dreimal derselbe Bauplan: eine
+Behauptung über den Zustand, die den Zustand nicht prüft.
+
+**Die grüne Zeile bedeutet ohnehin nicht, was sie zu bedeuten scheint.** Das
+ist keine Schlussfolgerung aus dem Verhalten, sondern steht so in der
+Dokumentation der Routinen:
+
+> „A green status in the run list means the session started and exited
+> without an infrastructure error. **It does not mean the task in your prompt
+> succeeded.** Open the run to read the transcript and confirm what Claude
+> actually did."
+>
+> — [code.claude.com/docs/en/routines](https://code.claude.com/docs/en/routines)
+
+Der Status beantwortet also eine Frage über die *Infrastruktur*, und gelesen
+wurde er als Antwort über die *Aufgabe*. Genau deshalb prüft der korrigierte
+Prompt jetzt selbst nach (Schritt 3): die einzige Zusage, die der Status
+gibt, ist die, die uns nicht interessiert.
+
+### Die Korrektur am Prompt
+
+- Ein **fehlendes Repository ist ein Fehler**, kein erwarteter Zustand. Der
+  leere Datenspeicher bleibt ausdrücklich normal — die beiden Fälle stehen
+  jetzt getrennt und mit dem Grund für die Unterscheidung.
+- Die Sitzung **holt das Repository selbst** (`add_repo`, klonen,
+  `register_repo_root`, `main` auschecken), bevor sie irgendetwas anderes
+  tut. Gelingt das nicht, ist der Lauf gescheitert und wird so gemeldet.
+- **Erfolg wird an der bewegten Zahl gemessen, nicht am Exit-Code.** Schritt 3
+  liest `Letzter verarbeiteter Bar` und verlangt, dass er weitergewandert ist.
+- Der Zweigname ist raus. Er nannte noch
+  `claude/llm-quant-algo-planning-f1ohgo` — den Zweig aus ADR-059, dessen
+  Pull Request längst zusammengeführt ist. Das Skript wählt seit ADR-069
+  selbst, wohin es schreibt.
+
+### Ein Nebenertrag: ADR-068 ist im Vorwärtsbetrieb bestätigt
+
+Die zwei nachgeholten Bars haben beide Konten long gehen lassen — der erste
+echte Einstieg seit dem Neustart, und damit der erste Test der
+Kaufkraft-Korrektur außerhalb eines Replays.
+
+| | BTC/USD | ETH/USD |
+|---|---|---|
+| Menge | +1,246988 @ 79.714,96 | +40,443663 @ 2.457,83 |
+| Cash danach | **−0,00** | **0,00** |
+| vorhergesagt (Replay) | 0,00 | 0,84 |
+| vor der Korrektur | −650,31 | −656,55 |
+
+Genau an dieser Stelle hätte Phase D eine Divergenz zwischen Backtest und
+Ausführung gefangen. Es ist keine mehr da.
+
+### Nachtrag 2026-09-07: die Notlösung trägt nicht
+
+Der Lauf vom 2026-09-07 um 01:09 ist der Test des korrigierten Prompts. Er
+fällt zweigeteilt aus.
+
+**Was funktioniert hat:** der Ausfall ist sichtbar. Am 2026-09-06 lief
+dieselbe Routine 5 Stunden 38 Minuten und meldete Erfolg; am 2026-09-07 bricht
+sie nach **2 Minuten** mit einem Fehler ab, den der Nutzer gemeldet bekommt.
+Genau dafür war die Änderung da, und mehr war von einer Prompt-Änderung auch
+nicht zu erwarten.
+
+**Was nicht funktioniert hat:** die Selbstheilung. Die Anweisung, das
+Repository über `add_repo` selbst zu holen, führt nicht zu einem
+Arbeitsverzeichnis — die Sitzung trägt weiterhin `sources: []` und den Tag
+`config:routine-lineage-none`, und eine Sitzung ohne hinterlegte Quelle kommt
+so nicht an das Repository heran. Die Konten standen danach unverändert auf
+dem Bar vom 2026-09-06, und auf `main` liegt kein Tick-Commit.
+
+**Damit ist der Weg über den Prompt ausgereizt.** Er kann einen Ausfall
+sichtbar machen; er kann keine fehlende Quelle ersetzen. Die
+`add_repo`-Anleitung ist wieder heraus — sie kostet zwei Minuten und
+verwässert den Fehlerbericht. An ihrer Stelle steht jetzt der Satz, den
+derjenige liest, der den Fehler bekommt: *„Der Fix gehört in die
+Routinen-Oberfläche: `Maxifrz/quant` als Quelle der Routine eintragen."*
+
+Eine Alternative wäre gewesen, die Routine an eine **dauerhafte** Sitzung zu
+binden, die das Repository trägt (`persistent_session_id`). Verworfen nach
+Rücksprache: das hält eine Sitzung auf unbestimmte Zeit am Leben, deren
+Kontext mit jedem Tick wächst, und tauscht ein Konfigurationsproblem gegen
+eine Sonderkonstruktion mit eigener Wartung.
+
+### Konsequenzen
+
+- **Der Prompt ist repariert, die fehlende Quelle nicht** — und sie ist von
+  innen auch nicht reparierbar. `update_trigger` kennt Name, Zeitplan,
+  Zustand, Modell und Prompt; `sources` gehört zur Session-Konfiguration der
+  Routine und wird in ihrer Oberfläche gesetzt. **Bis das geschieht, tickt
+  die Routine nicht**, und die Konten hängen an Handarbeit.
+- **Vier Ausfälle, vier Ursachen, ein Muster.** Toter Zweig, beschönigte
+  Push-Meldung (beide ADR-059), fehlende Quelle plus ein Satz, der sie für
+  normal erklärte, und jetzt eine Notlösung, die nicht greifen konnte. Keiner
+  davon war ein Fehler im getesteten Code — alle vier saßen im Drumherum, das
+  kein Test abdeckt.
+- **Für die Prompts automatischer Routinen gilt dieselbe Regel wie für
+  Prosa im ROADMAP** (ADR-052): kein Satz, der einen Zustand behauptet, ohne
+  ihn zu prüfen. Ein Prompt ist Code mit schlechterem Werkzeug — und ohne
+  Test.
+
+---
+
+## ADR-072 — Der erste Loop-Lauf, dessen Zahlen etwas bedeuten
+**Datum:** 2026-09-04
+
+Drei Kandidaten, `--provider nim`, alle 39 Märkte auf 1d, Walk-Forward
+1500/400/20. Versuchszähler **21 → 24**. Die Zahl der Kandidaten war eine
+bewusste Entscheidung eines Menschen: sie ist die einzige in diesem Repo, die
+sich nicht zurücknehmen lässt.
+
+| | OOS-Sharpe | DSR | gegen |
+|---|---|---|---|
+| `keltner_breakout` | **−0,16** | 0,013 | 22 Versuche |
+| `dual_momentum` | −0,87 | 0,000 | 24 Versuche |
+| `volume_z_momentum` | −5,01 | 0,000 | 23 Versuche |
+
+Keiner besteht. Das ist der Normalfall (ADR-005).
+
+### Warum dieser Lauf trotzdem anders ist
+
+**Die beiden Blocker aus ADR-065 sind beide weg, und beide haben gewirkt.**
+
+*Erstens, das Gedächtnis.* Am 2026-09-03 waren drei von fünf Kandidaten
+Neuauflagen von `macross`, `trend` und `meanrev` — drei Versuche für längst
+verworfene Hypothesen. Heute: Keltner-Ausbruch, Volumen-z-Momentum, Dual
+Momentum. Keine davon steht in der Bibliothek. (Ehrlich dazu: `dual_momentum`
+ist Momentum-Familie und damit thematisch in der Nähe von `trend` — es ist
+eine andere Regel, keine andere Idee.)
+
+*Zweitens, die Positionsgrößen-Schicht.* Nachgeprüft an jedem der drei, über
+alle 39 Märkte:
+
+| | Sharpe (voll) | Brutto Median | Cash min | Umschlag | ruiniert |
+|---|---|---|---|---|---|
+| `KeltnerBreakout` | +0,293 | 0,317 | −57.594 | 12,4× | nein |
+| `VolumeZMomentum` | −1,560 | 0,501 | −88.441 | **307,7×** | nein |
+| `DualMomentum` | −0,306 | 0,258 | +15.633 | 33,9× | nein |
+
+**Keiner ruiniert das Konto.** Am 2026-09-03 taten es alle fünf, und die
+kaputte Kennzahl meldete dafür Sharpe +0,59 (ADR-066).
+
+### Ein Brutto von 5,94 — nachgesehen, nicht weggewunken
+
+`VolumeZMomentum` erreicht in der Spitze ein Bruttoexposure von 5,94. Das
+sieht nach einem Versagen der Schicht aus und ist keins:
+
+```
+Maximum 5,943 am 2021-05-21
+  Eigenkapital     4.138   (Start 100.000)
+  Positionswert   24.592
+Endkapital              17
+```
+
+**Der Nenner bricht weg, nicht die Grenze reißt.** Über alle 527 Bars mit
+Brutto > 1,01 liegt das Eigenkapital im Median bei **94 USD** von ursprünglich
+100.000. In diesem Bereich ist das Verhältnis arithmetisch bedeutungslos.
+Gemessen am *Startkapital* — wo der Nenner nicht wegbrechen kann — liegt der
+Positionswert im Median bei 0,000.
+
+Die Schicht hält also, was sie verspricht: **sie verhindert Hebel, nicht
+schlechte Ideen.** Eine Strategie mit 307,7× Umschlag zahlt unter 130 bps
+Round-Trip rund 400 % des Eigenkapitals pro Jahr an Gebühren; dass davon 17
+USD übrig bleiben, ist Arithmetik und kein Fehler.
+
+### Was der Lauf über den Trichter sagt
+
+**Alle drei reißen das Umschlagbudget** (12,4×, 307,7×, 33,9× gegen 7×) — und
+nach ADR-071 wäre ihr *erlaubter* Umschlag ohnehin 0×, weil schon der
+Netto-OOS-Sharpe negativ ist. Der Vorfilter greift also nicht zufällig
+richtig.
+
+**Die Kritik-Stufe hat keinen einzigen abgelehnt.** Drei Kandidaten, von denen
+einer 307× pro Jahr umschlägt, sind vollständig durch Sandbox, Kritik und
+Sanity-Check gelaufen. `critic_unrealistic_turnover` ist ein Feld in der
+Registry — es hat hier nicht angeschlagen. Das ist der nächste billige
+Vorfilter, der offensichtlich noch nicht filtert.
+
+### Ein Vorbehalt zur Registry
+
+Die sechs Zeilen vom 2026-09-03 tragen Sharpes zwischen **+0,67 und −0,42**,
+und sie sind mit der kaputten Kennzahl aus ADR-066 gemessen — auf ruinierten
+Konten. Sie stehen bewusst unverändert da: die Registry ist ein Protokoll
+dessen, was ein Lauf gemeldet hat, kein nachgeführter Bestand. Wer sie
+zitiert, braucht diesen Absatz. Ein Neuberechnen würde den Versuchszähler
+nicht bewegen (er zählt Zeilen, nicht Läufe), aber es würde das Protokoll
+überschreiben.
+
+Damit ist **−0,16 die beste belastbare Zahl, die dieser Loop je geliefert
+hat**: die Charge vom 2026-08-31 lag zwischen −1,84 und −8,21, die vom
+2026-09-03 ist nicht verwendbar.
+
+### Konsequenzen
+
+- Versuchszähler **24**. Erwarteter bester Sharpe aus reinem Rauschen:
+  **1,980** (vorher 1,922 bei 21).
+- **Der nächste billige Vorfilter ist die Kritik-Stufe.** Ein Kandidat mit
+  307× Umschlag hätte vor dem Walk-Forward auffallen müssen und ist
+  durchgewinkt worden.
+- **Die Schicht ist im echten Lauf bestätigt**, mit einem nachgesehenen und
+  erklärten Randfall statt einer Behauptung.
+
+---
+
+## ADR-071 — Das Umschlagbudget bindet bei keiner Strategie
+**Datum:** 2026-09-04
+
+**Die Frage:** Nach ADR-069 scheitern **alle neun** Bibliotheksstrategien am
+Umschlagbudget von 7×/Jahr — keine kommt bis zum Sharpe. Der naheliegende
+Schluss wäre: das Budget ist die Hürde, und wer es senkt, kommt weiter. Der
+naheliegende Reflex wäre, eine Strategie langsamer zu stellen, bis sie
+darunter liegt.
+
+Beides ist falsch, und die Identität aus ADR-056 zeigt es, ohne dass ein
+Parameter gesucht werden muss.
+
+### Rückwärts gerechnet
+
+```
+Drag p.a. = Umschlag × Einwegkosten
+Brutto    = Netto + Drag / Vola
+erlaubt   = (Brutto − 0,33) × Vola / Einwegkosten
+```
+
+`Netto` ist der OOS-Sharpe der verketteten Walk-Forward-Kurve — die Zahl,
+gegen die Gate 1 prüft. Daraus ergibt sich der Brutto-Sharpe und damit die
+Frequenz, bei der die Strategie gerade noch über der Nachweisgrenze landet.
+
+**Datenstand 2026-09-04, 1d, `coinbase_taker`, Walk-Forward 1000/250/20:**
+
+| Strategie | Markt | Umschlag ist | OOS netto | Drag | OOS brutto | **erlaubt** |
+|---|---|---|---|---|---|---|
+| `macross` | BTC/USD | 8,7× | +0,250 | 5,68 % | +0,418 | **4,6×** |
+| `macross` | ETH/USD | 8,7× | +0,276 | 5,66 % | +0,403 | **5,0×** |
+| `trend` | BTC/USD | 15,2× | +0,160 | 9,89 % | +0,459 | **6,6×** |
+| `elliott` | BTC/USD | 13,2× | +0,145 | 8,56 % | +0,334 | **0,3×** |
+| `hashribbon` | BTC/USD | 7,1× | +0,123 | 4,60 % | +0,224 | **0,0×** |
+| `meanrev` | ETH/USD | 16,9× | −0,923 | 10,98 % | −0,707 | **0,0×** |
+
+**Keine einzige darf 7×.** Das globale Budget ist bei keiner die bindende
+Grenze — es ist durchweg *großzügiger* als das, was die Strategie sich
+tatsächlich leisten kann.
+
+### Was daraus folgt
+
+**Der Satz „scheitert nicht am Signal, sondern an der Handelsfrequenz"
+(ADR-057) ist nur halb richtig.** Richtig ist: `macross` kann sich seine 8,7×
+nicht leisten. Falsch ist die Umkehrung — bei 6,9× hätte es das Gate bestanden
+und wäre am Sharpe gescheitert, weil seine eigene Grenze bei 4,6× liegt.
+
+**Und für zwei ist es ganz falsch.** `hashribbon` (brutto +0,224) und
+`meanrev` (brutto −0,707) liegen schon **ohne jede Kostenbelastung** unter der
+Nachweisgrenze. Für sie gibt es keine Frequenz, die hilft, auch nicht die
+Frequenz null. Ihre Ablehnung ist richtig, der berichtete Grund ist es nicht.
+
+**Der Umschlag ist ein Vorfilter, keine Aussage.** Genau so ist er in ADR-056
+gedacht und in ADR-057 gebaut: er kostet einen Bruchteil eines Walk-Forward
+und fängt ab, was ohnehin nicht durchkommt. Die Zahl, die etwas über die
+Strategie sagt, braucht den Walk-Forward — also genau den Schritt, den der
+Vorfilter spart. Beides gleichzeitig geht nicht, und die Reihenfolge ist
+richtig gewählt.
+
+**Nicht geändert: die 7×.** Sie als strategiespezifische Grenze auszulegen
+hieße, den Vorfilter durch den Schritt zu ersetzen, den er spart. Und sie
+anzuheben, weil sie „ohnehin nicht bindet", wäre die Latte zu senken, ohne
+dass eine einzige Zahl besser würde.
+
+### Ein Nebenbefund, der einer Korrektur bedarf
+
+Auf **Brutto**-OOS-Sharpe ist `trend` mit **+0,459** die beste Strategie des
+Repos — vor `macross` mit +0,418. Seit ADR-035 gilt `macross` als „die einzige
+Hoffnung des Projekts"; das stimmt für den Netto-Sharpe und nicht für das
+Signal darunter.
+
+Der Vorbehalt gehört unmittelbar dazu und ist groß: Brutto-Sharpe ist eine
+**abgeleitete** Größe aus einer Näherungsidentität, kein Messwert. Und die
+Rechnung unterstellt, dass eine langsamere Fassung derselben Idee denselben
+Brutto-Sharpe hätte — was sie nicht tut, weil weniger Handeln ein anderes
+Signal ist. Wer aus dieser Zeile „bau ein langsameres `trend`" liest, hat
+einen Versuch ausgegeben, um eine Zahl anzupassen, die er selbst erzeugt hat.
+
+Der methodische Wert liegt woanders: **die 0,33 ist erreichbar, aber knapp.**
+Die zwei besten Signale des Repos liegen brutto 0,09 bzw. 0,13 darüber, und
+diese Spanne muss die gesamte Ausführung bezahlen. Das ist eine schärfere
+Formulierung des Befunds aus ZIEL.md („was fehlt, ist ein Signal") als jede
+Zählung gescheiterter Hypothesen.
+
+### Konsequenzen
+
+- **`erlaubter_umschlag()`** in `qt.research.gate`, mit vier Tests. Eine
+  Diagnose, keine Hürde — die Gate-Schwellen bleiben unverändert und
+  hartverdrahtet (ADR-057).
+- **Die Umschlagzeile in ROADMAP und ZIEL.md bekommt ihren Vorbehalt.** Ein
+  falscher Grund für eine richtige Entscheidung wird zitiert, bis jemand auf
+  seiner Grundlage anders entscheidet.
+- **Methodisch:** die Zahlen oben sind gemischt — Umschlag aus dem vollen
+  Lauf (so rechnet das Gate), Sharpe und Vola aus der OOS-Kette. Sauberer
+  wäre der Umschlag je Testfenster; die Größenordnung ändert das nicht, die
+  dritte Stelle schon.
+- **Der erste Anlauf dieser Rechnung war falsch** und hätte behauptet,
+  `macross` könne sich 56× leisten: er benutzte den In-Sample-Sharpe von
+  +1,026 statt der OOS-Zahl +0,250. Der Faktor zwischen beiden ist 4 — und
+  genau dieser Faktor ist der Grund, warum es das Gate überhaupt gibt.
+
+---
+
+## ADR-070 — Der Spread ist messbar, die Gebühr nicht
+**Datum:** 2026-09-04
+
+Phase B (ADR-056) endete mit drei ausdrücklich offenen Punkten: der reale
+Spread, die Warteschlangenposition bei Limit-Orders, und ob Coinbases 0,60 %
+stimmen. Für alle drei stand dort „brauchen echte Fills". Für einen davon
+stimmt das nicht.
+
+### Der Spread — vier gescheiterte Schätzungen, und warum
+
+| Versuch | Datenbasis | Ergebnis |
+|---|---|---|
+| Corwin/Schultz | Tages-OHLC | klemmt bei null (ADR-056) |
+| Abdi/Ranaldo | Tages-OHLC | zu hoch, Verzerrung wächst mit der Vola (ADR-056) |
+| Tick-Median | 1,48 Mio. Ticks | von der Tickgröße dominiert (ADR-067) |
+| Minutenweise | 1,48 Mio. Ticks | **negative** Spannen, fängt Kursdrift (ADR-067) |
+
+Vier Anläufe, ein Befund: **ohne Quotes geht es nicht.** Das ist bestätigt und
+nicht widerlegt.
+
+**Quotes gibt es.** Öffentlich, ohne Schlüssel, im Orderbuch. Was in ADR-056
+und ADR-067 fehlte, war nicht die Möglichkeit, sondern die Frage — beide Male
+wurde versucht, den Spread aus Kursreihen zu *rekonstruieren*, statt ihn dort
+zu holen, wo er steht.
+
+### Gemessen, 2026-09-04, Coinbase
+
+Nicht an der Spitze des Buchs — dort steht eine Spanne für eine unendlich
+kleine Order, und die hat noch nie jemand gehandelt. Gemessen wird der
+volumengewichtete Preis bis zur gewünschten Menge:
+
+**2.560 USD** (ein Markt von 39 bei 100k Konto):
+
+| Markt | Kauf | Verkauf | halb |
+|---|---|---|---|
+| BTC-USD | 0,001 | 0,001 | **0,001** |
+| ETH-USD | 0,188 | 0,647 | 0,418 |
+| LTC-USD | 1,648 | 2,199 | 1,924 |
+| ADA-USD | 2,456 | 2,217 | 2,337 |
+| ALGO-USD | 6,266 | 7,080 | **6,673** |
+| XLM-USD | 3,057 | 4,632 | 3,845 |
+| DOGE-USD | 2,479 | 1,915 | 2,197 |
+| **Median** | | | **2,197** |
+
+**25.000 USD** (eine konzentrierte Position): Median **6,357**, BTC 0,236,
+ALGO 22,532.
+
+### Was das heißt — und was nicht
+
+**Die Annahme von 2 bps ist auf dem Median richtig**, für die Ordergröße, die
+eine diversifizierte Strategie tatsächlich handelt: 2,197 gemessen gegen 2,0
+angenommen. ADR-067 hat sie unter „vermutlich zu hoch" geführt und den Effekt
+auf rund 0,004 Sharpe geschätzt. Das war ein Bauchgefühl in die falsche
+Richtung — sie ist eher minimal zu **niedrig**.
+
+**Falsch ist nicht ihr Niveau, sondern dass es eine einzige Zahl ist.** Über
+die Märkte streut sie um drei Größenordnungen (BTC 0,001, ALGO 6,673), und mit
+der Ordergröße verdreifacht sie sich. Das Kostenmodell kennt seit ADR-055
+bereits Gebühren je Symbol; der halbe Spread ist der verbliebene globale Wert.
+
+**Nicht geändert, und der Grund zählt.** Eine Momentaufnahme ist keine
+Historie. Gemessen ist, was heute in einem ruhigen Moment gilt — nicht was
+2019 galt und erst recht nicht, was im nächsten Absturz gilt, also genau dann,
+wenn eine Trendstrategie handelt. Den Default auf eine Momentaufnahme zu
+setzen, hieße eine belegte Annahme durch eine schlechter belegte zu ersetzen.
+Was sich ändert, ist der Status: aus „ANNAHME, nicht gemessen" wird „Annahme,
+auf dem Median einer Momentaufnahme bestätigt, streut je Markt um drei
+Größenordnungen".
+
+**Reproduzierbar statt einmalig:** `qt spread`. Eine Zahl, die nur in einem
+ADR steht, veraltet still (ADR-053).
+
+### Die Gebühr bleibt unbelegbar
+
+Die 0,60 % stehen auf drei übereinstimmenden Sekundärquellen. Vier Versuche
+an Primärquellen, heute:
+
+```
+api.exchange.coinbase.com/fees                          401
+api.coinbase.com/api/v3/brokerage/transaction_summary   401
+www.coinbase.com/advanced-fees                          403  (Cloudflare)
+api.exchange.coinbase.com/products/BTC-USD              200  (keine Gebühren)
+```
+
+**Die beiden Endpunkte, die es beantworten würden, sind genau die hinter der
+Anmeldung.** Das ist kein Netzproblem und keine Nachlässigkeit: der
+Gebührensatz ist kontoabhängig (er hängt am 30-Tage-Volumen), deshalb gibt es
+ihn nicht ohne Konto. Die Frage wird von der **ersten echten Order**
+beantwortet und von nichts davor.
+
+Der dritte Punkt, die Warteschlangenposition, bleibt aus demselben Grund
+offen: `qt maker` liefert eine Obergrenze (ADR-064), die Warteschlange selbst
+braucht eigene Fills.
+
+### Konsequenzen
+
+- **`qt spread`** misst den effektiven halben Spread am Orderbuch, bei
+  wählbarer Ordergröße. Drei Tests, keiner braucht Netz.
+- **Der Default bleibt bei 2,0 bps**, jetzt mit Beleg statt mit „ANNAHME".
+- **Ein Kandidat für später, nicht für jetzt:** halber Spread je Symbol,
+  analog zu den Gebühren. Dafür fehlt Historie, nicht Code — eine
+  Momentaufnahme je Markt wäre 39 Zahlen mit demselben Vorbehalt.
+- **Zwei der drei offenen Phase-B-Punkte bleiben offen**, und jetzt steht
+  präzise da, warum: nicht „brauchen echte Fills" als Sammelbegründung,
+  sondern zweimal HTTP 401 auf die einzigen Endpunkte, die antworten würden.
+
+---
+
+## ADR-069 — Die Positionsgrößen-Schicht, und das Band maß die falsche Größe
+**Datum:** 2026-09-04
+
+**Die Aufgabe:** ADR-065 hat den Zustand so beschrieben — über 38 Märkte
+summiert sich das Bruttoexposure auf 38× und ruiniert das Konto, bei
+Normierung auf 1 handelt keiner mehr, und **dazwischen liege keine
+Einstellung, die das Ergebnis der Idee zeigen würde.** Das war der letzte
+offene Punkt vor dem nächsten Research-Loop.
+
+Es gibt sie. Sie besteht aus zwei Teilen, und der zweite stand nicht in der
+Aufgabe.
+
+---
+
+### Teil 1 — Die Regel, vorab entschieden
+
+**Proportional auf das Bruttobudget skalieren, sonst nichts:**
+
+```
+w_i  ->  w_i * grenze / Σ|w|   , falls Σ|w| > grenze
+w_i  ->  w_i                   , sonst
+```
+
+Damit teilen sich die Märkte, in denen ein Kandidat eine Meinung hat, das
+Konto gleichmäßig — und ein Kandidat mit einer Meinung in einem einzigen
+Markt bekommt dort das volle Gewicht.
+
+Zwei Alternativen sind **vorab** verworfen, damit die Entscheidung nicht davon
+abhängt, wie der nächste Lauf ausgeht:
+
+| | verworfen, weil |
+|---|---|
+| **Vol-Targeting** | braucht Schätzer, Rückschaufenster und Zielvola — drei Freiheitsgrade, die jeder im DSR-Nenner bezahlt werden (ADR-005). Und es hat einen eigenen Effekt auf den Sharpe: ein Ergebnis aus Signal *und* Größensteuerung beantwortet keine der beiden Fragen. |
+| **Gleichgewichtung 1/n** | bestraft Selektivität. Ein Kandidat mit einer Position in 1 von 38 Märkten bekäme 1/38 Exposure — von Rauschen nicht zu unterscheiden, egal wie gut das Signal ist. |
+
+Der ausschlaggebende Punkt: **das ist keine Strategieentscheidung, sondern die
+Bilanz.** `max_gross_exposure` heißt laut Config „1.0 = kein Hebel". Von den
+drei Kandidaten setzt nur die proportionale Skalierung genau diese Grenze
+durch, statt nebenbei eine Meinung zu haben. Sie ist auch nicht neu:
+`CrossSectionalStrategy.gewichte_aus_score` teilt seit ADR-058 durch Σ|w|.
+Diese Schicht macht daraus die Regel für alle statt für eine Familie.
+
+### Wo sie sitzt — nach zwei gemessenen Fehlversuchen
+
+Der naheliegende Ort war `rebalance_order`. Beide Anläufe dort sind
+gescheitert, und beide Male hat die Messung es gezeigt, nicht das Nachdenken:
+
+**Anlauf 1, Skalierung des Ziel-Dicts der Engine.** Die Engine arbeitet die
+Bars eines Zeitpunkts nacheinander ab; währenddessen ist das Ziel-Dict eine
+Mischung aus alten und neuen Gewichten. Bei `crossmom` liegt diese Mischung im
+Median bei **1,09** Brutto, obwohl weder der alte noch der neue Stand 1,0
+reißt. Die Grenze griff in **77,7 %** der Bars, sparte Gebühren und hob den
+Sharpe von **0,21 auf 0,38** — über die Gate-Schwelle von 0,33.
+
+Das ist der Grund, warum dieser Anlauf im Papierkorb liegt und nicht im Code:
+**eine Verbesserung aus einem Messartefakt**, genau die Sorte Fund, vor der
+ADR-066 warnt. Aufgefallen ist sie, weil die Zahl in die angenehme Richtung
+sprang.
+
+**Anlauf 2, Budget gegen die gehaltenen Positionen.** Kein Artefakt mehr, aber
+`crossmom` zielt konstruktionsbedingt auf Brutto genau 1,0. Eine harte Grenze
+auf demselben Wert liegt dauernd auf der Kante: jede Kursbewegung beschneidet
+die nächste Order, das erzeugt eine Gegenbewegung. Ausführungen 308 → 923,
+Sharpe 0,21 → −0,21.
+
+Beide Male dieselbe Ursache: **die Engine sieht nie einen kohärenten
+Zielvektor.** Die Querschnittsfamilie löst das seit ADR-058 selbst, die
+Bibliotheksstrategien halten je ein Symbol. Übrig bleibt genau der Fall, für
+den die Schicht da ist — ein Kandidat, dessen Gewichte je Symbol unabhängig
+entstehen. Für den ist die Mischung kein Artefakt, sondern der Zustand: 38
+Märkte mit je 1,0 summieren sich zu 38, egal aus welchem Bar der einzelne Wert
+stammt.
+
+Deshalb sitzt sie als Hülle um den Kandidaten, im Research-Loop, hinter dem
+Probelauf und vor allem, was eine Zahl erzeugt.
+
+---
+
+### Teil 2 — Und dann handelte er nicht mehr
+
+Die Schicht allein reproduzierte die andere Hälfte des ADR-065-Satzes. Über 39
+Märkte, `immer_long` als Kandidat:
+
+| | ohne Schicht | mit Schicht |
+|---|---|---|
+| Brutto im Median | **16,2** | 0,502 |
+| Brutto maximal | 25.505 | 2,31 |
+| tiefstes Cash | −25.353.646 | −128.439 |
+| Konto ruiniert | **ja** | nein |
+| Endwert | −30 | 215.256 |
+
+Brutto **0,502** bei einem Ziel von 1,0: ein Portfolio, das die Hälfte dessen
+hält, was es will — eingefroren aus der Anlaufphase, 49 Ausführungen in 7,7
+Jahren.
+
+**Die Ursache ist ein Kategorienfehler im Rebalancing-Band.** Es war ein
+Anteil des **Eigenkapitals** (5 %). Was es aber beschreibt, ist eine Toleranz
+um eine **Position**. Solange ein Konto ein Symbol mit Gewicht 1,0 hält, ist
+das dasselbe. Sonst nicht:
+
+| Märkte | Position | altes Band, in Vielfachen der Position |
+|---|---|---|
+| 1 | 100,00 % | **0,05×** |
+| 13 | 7,69 % | 0,65× |
+| 26 | 3,85 % | 1,30× |
+| 39 | 2,56 % | **1,95×** |
+
+Eine Position musste sich also fast verdreifachen oder verschwinden, bevor
+gehandelt wurde. Das ist dieselbe Fehlerfamilie wie ADR-053 und ADR-065:
+**eine Größe, die für ein Symbol gedacht ist, wird gegen ein Portfolio
+geprüft.** Drittes Auftreten, dritter Ort.
+
+Behoben, indem das Band misst, was es beschreibt:
+
+```python
+bezug = max(|ziel_menge|, |ist_menge|) * preis
+schwelle = max(min_trade_notional, rebalance_band * bezug)
+```
+
+Bei Vollgewicht auf einem Symbol ist das **exakt** die alte Zahl. Danach hält
+derselbe Kandidat Brutto **0,995** statt 0,502, bei 3,90× Umschlag gegen ein
+Budget von 7 — die Einstellung zwischen Bankrott und Untätigkeit, die es laut
+ADR-065 nicht gab.
+
+---
+
+### Was das an bestehenden Zahlen bewegt
+
+**Bitgleich geblieben**, weil sie nur Gewicht 1,0 oder 0 handeln:
+
+| | Sharpe vorher | nachher | Fills |
+|---|---|---|---|
+| `macross` BTC/USD | +1,0263 | +1,0263 | 67 → 67 |
+| `macross` ETH/USD | +1,0091 | +1,0091 | 67 → 67 |
+| `hashribbon` BTC/USD | +0,7467 | +0,7467 | 54 → 54 |
+
+**Leicht bewegt**, weil sie Bruchgewichte handeln — alle drei nach unten, also
+in die unbequeme Richtung:
+
+| | vorher | nachher | Δ |
+|---|---|---|---|
+| `trend` BTC/USD | +0,4291 | +0,4284 | −0,0007 |
+| `meanrev` ETH/USD | −1,0724 | −1,0743 | −0,0019 |
+| `elliott` BTC/USD | +0,1318 | +0,1284 | −0,0034 |
+
+**Und einer deutlich — mit einer unbequemen Folge.**
+
+`crossmom` war die einzige Strategie des Projekts, die das Umschlagbudget
+bestand (2,9× gegen 7×) und bis in den Walk-Forward kam. Mit dem korrigierten
+Band schlägt sie **10,8×** um und bricht vor dem Sharpe ab. `crossrev` geht
+von 13,5× auf 27,0×.
+
+Der Grund ist kein neues Verhalten der Strategie, sondern das Ende einer
+stillen Subvention: bei 2,56 % Positionsgröße bekam sie eine Toleranz von
+1,95× ihrer eigenen Position, also das **39-fache** dessen, was `macross`
+bekam. Ihre 2,9× Umschlag waren nicht die Kosten ihrer Idee, sondern die
+Kosten des Rebalancings, das die Engine nicht ausgeführt hat.
+
+**Damit steht die Schlussfolgerung aus ADR-058 weiter, aber mit anderem
+Grund.** Dort scheiterte `crossmom` am OOS-Sharpe von −0,24. Jetzt kommt sie
+gar nicht mehr so weit: sie kann sich ihre eigene Umschichtung nicht leisten —
+dieselbe Diagnose wie bei `macross` (ADR-057). Ein falscher Grund für eine
+richtige Entscheidung wird zitiert, bis jemand auf seiner Grundlage eine
+andere Entscheidung trifft; deshalb steht er hier.
+
+### Konsequenzen
+
+- **Der Research-Loop hat jetzt eine Positionsgrößen-Schicht** (`BRUTTOGRENZE
+  = 1.0`, `qt.research.groesse`) — bewusst **keine** Option des Loops. Wer sie
+  ändert, hinterlässt einen Diff, so wie bei den Gate-Schwellen (ADR-057).
+- **Der Bestand ist damit vollständig durch das Umschlagbudget gefallen.**
+  Neun Strategien, keine unter 7× — die knappste ist `hashribbon` mit 7,1×.
+  Was Gate 1 heute blockiert, ist nicht der Sharpe, sondern die
+  Handelsfrequenz.
+- **Die Hülle behält den Namen des Kandidaten.** Ein zweiter Name wäre eine
+  zweite Hypothese im Versuchszähler und damit eine Erhöhung der DSR-Hürde
+  durch die Hintertür (ADR-032).
+- **Elf Tests**, davon einer, der den Ausgangszustand festhält: ohne Schicht
+  muss ein Kandidat über 20 Märkte das Konto ruinieren. Fällt er, misst die
+  Korrektur nicht mehr, was sie soll.
+- **Offen benannte Grenze:** ein generierter Kandidat, der seinen ganzen
+  Vektor auf einmal umschichtet, fällt in dieselbe Falle wie Anlauf 1. Ein
+  solcher ist bisher nicht aufgetreten; taucht einer auf, gehört die Frage neu
+  entschieden und nicht stillschweigend gelöst.
+- **Kein einziger Test wurde rot,** als das Band die Bedeutung wechselte —
+  eine Änderung, die die Order-Schwelle jedes Backtests im Repo betrifft. Die
+  Semantik des Bandes war nirgends festgehalten. Jetzt ist sie es.
+
+---
+
 ## ADR-068 — „1.0 = kein Hebel" stimmte nicht, und das Paper-Konto zeigte es
 **Datum:** 2026-09-03
 

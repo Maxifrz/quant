@@ -61,15 +61,38 @@
 >
 > ```bash
 > bash scripts/paper_tick.sh    # sicher wiederholbar, sichert den Zustand ins Repo
-> uv run qt trials              # Versuchszaehler der DSR -- steht bei 21
+> uv run qt trials              # Versuchszaehler der DSR -- steht bei 24
 > uv run qt gate --strategy macross --tf 1d   # Gate 1, alle Kriterien auf einmal
 > uv run qt ic --strategy crossmom --tf 1d    # Querschnitts-Rank-IC (ADR-058)
 > uv run qt placebo shuffle --strategy <name> --tf 1d   # Negativkontrolle
 > ```
-> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. `macross` scheitert bei
-> 8,8× am Umschlagbudget von 7× und kommt nicht bis zum Sharpe. `crossmom`
-> kommt durch bis zum Walk-Forward und steht dort bei **−0,08** gegen die
-> geforderten 0,33 (ADR-061).
+> Gate 1 ist seit ADR-057 ein Programm, keine Prosa. **Seit ADR-069 fallen
+> alle neun Strategien am Umschlagbudget** — auch `crossmom`, das vorher als
+> einzige durchkam und dessen 2,9× eine stille Subvention des Rebalancing-
+> Bandes waren (10,8× nach der Korrektur).
+>
+> **Das Budget ist trotzdem nicht die Hürde.** Rückwärts durch die
+> Kostenidentität gerechnet, was sich jede Strategie *selbst* leisten kann
+> (ADR-071, Datenstand 2026-09-04):
+>
+> | | Umschlag ist | OOS netto | OOS brutto | erlaubt |
+> |---|---|---|---|---|
+> | `trend` BTC | 15,2× | +0,160 | **+0,459** | 6,6× |
+> | `macross` ETH | 8,7× | +0,276 | +0,403 | 5,0× |
+> | `macross` BTC | 8,7× | +0,250 | +0,418 | 4,6× |
+> | `elliott` BTC | 13,2× | +0,145 | +0,334 | 0,3× |
+> | `hashribbon` BTC | 7,1× | +0,123 | +0,224 | **0,0×** |
+> | `meanrev` ETH | 16,9× | −0,923 | −0,707 | **0,0×** |
+>
+> Keine darf 7×. Die 7 sind ein billiger Vorfilter vor dem Walk-Forward und
+> keine Aussage über eine Strategie — `hashribbon` und `meanrev` liegen schon
+> **ohne jede Kostenbelastung** unter 0,33, für sie hilft keine Frequenz.
+> Und `macross` hätte bei 6,9× das Gate bestanden und wäre am Sharpe
+> gescheitert.
+>
+> **Die schärfste Zahl im Dokument steht in der Brutto-Spalte:** die zwei
+> besten Signale des Repos liegen 0,09 bzw. 0,13 über der Nachweisgrenze, und
+> aus dieser Spanne muss die gesamte Ausführung bezahlt werden.
 >
 > ### Wofür das alles
 >
@@ -91,8 +114,8 @@
 > ### Der Stand in einem Satz
 >
 > **Neun Hypothesen geprüft, neun gescheitert — und alle neun Strategien haben
-> jetzt eine Negativkontrolle, die keine besteht.** Dazu fünf Kandidaten aus
-> dem Research-Loop, die zwar den Versuchszähler kosten, aber die Verdrahtung
+> jetzt eine Negativkontrolle, die keine besteht.** Dazu acht Kandidaten aus
+> dem Research-Loop (fünf am 2026-09-03, drei am 2026-09-04), die zwar den Versuchszähler kosten, aber die Verdrahtung
 > geprüft haben und nicht ihre Idee (ADR-065) — sie als geprüfte Hypothesen zu
 > zählen wäre zu großzügig gegen uns selbst. LLM-Allokator
 > **dreimal** (ADR-045/046/060), `hashribbon` (ADR-048), echtes ML (ADR-050),
@@ -158,18 +181,54 @@
 >
 > ### Was als Nächstes Sinn ergibt
 >
-> 1. **Der Tick feuert, aber nicht dort, wo das Repository liegt.** Die
->    Routine `Paper-Tick macross BTC+ETH (taeglich)` soll täglich 01:00 UTC in
->    einer frischen Sitzung laufen. Am 2026-09-04 ist sie gelaufen — und
->    scheiterte vor der ersten Zeile: die Sitzung startete in einem Container
->    **ohne Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts
->    zu ticken. Nichts wurde verändert, kein Kill-Switch berührt.
+> 1. **Der Tick feuert und meldet Erfolg, ohne stattzufinden.** Die Routine
+>    `Paper-Tick macross BTC+ETH (taeglich)` läuft täglich 01:00 UTC in einer
+>    frischen Sitzung. Am 2026-09-04 und am 2026-09-06 ist sie gelaufen und
+>    scheiterte vor der ersten Zeile: der Container hatte **keine
+>    Arbeitskopie**. Kein `.git`, kein `scripts/paper_tick.sh`, nichts zu
+>    ticken. Der Lauf vom 2026-09-06 steht in der Routinen-Historie trotzdem
+>    als `SUCCEEDED`.
 >
->    Das ist der dritte verschiedene Grund in Folge, aus dem derselbe Tick
->    nicht ankommt — nach dem toten Zweig und der beschönigten Push-Meldung
->    (beide ADR-059) jetzt einer, der gar nicht im Repository liegt: die
->    Routine bekommt keine Quelle mitgegeben. Das ist Einrichtung der
->    Umgebung, kein Codefehler, und von hier aus nicht behebbar.
+>    **Am 2026-09-06 nachgesehen statt vermutet** (ADR-073). Zwei Ursachen,
+>    beide belegt aus der Trigger-Konfiguration:
+>
+>    - `session_request.config.sources` ist **leer**. Der Routine ist kein
+>      Repository hinterlegt; diese Sitzung hier hat eins, die gefeuerte nicht.
+>      Über die MCP-Oberfläche lässt sich das **nicht** setzen — `update_trigger`
+>      kennt nur Name, Zeitplan, Zustand, Modell und Prompt. Der dauerhafte
+>      Fix gehört in die Routinen-Oberfläche und ist Handarbeit.
+>    - Im Prompt stand: *„Falls das Repo im Container fehlt oder data/ohlcv
+>      leer ist: das ist erwartet und kein Fehler."* Der Satz vermengte einen
+>      **kalten Datenspeicher** (tatsächlich normal, das Skript zieht nach) mit
+>      einem **fehlenden Repository** (fatal, es gibt nichts auszuführen). Er
+>      hat aus dem Ausfall eine Erfolgsmeldung gemacht.
+>
+>    Der Prompt ist korrigiert: ein fehlendes Repository ist jetzt ein Fehler,
+>    und Erfolg wird an `Letzter verarbeiteter Bar` gemessen, nicht am
+>    Exit-Code.
+>
+>    **Am 2026-09-07 getestet, halb bestanden.** Der Ausfall ist jetzt
+>    sichtbar — 2 Minuten und ein gemeldeter Fehler statt 5 h 38 min und
+>    „SUCCEEDED". Die eingebaute Selbstheilung (`add_repo`) trägt dagegen
+>    nicht: eine Sitzung ohne hinterlegte Quelle kommt so nicht an das
+>    Repository. Sie ist wieder heraus; an ihrer Stelle steht der Satz, den
+>    derjenige liest, der den Fehler bekommt.
+>
+>    **Damit ist der Weg über den Prompt ausgereizt.** Er macht einen Ausfall
+>    sichtbar, er ersetzt keine fehlende Quelle. Solange `sources: []` bleibt,
+>    tickt die Routine nicht und die Konten hängen an Handarbeit.
+>
+>    Damit ist es der **dritte** verschiedene Grund, aus dem derselbe Tick
+>    nicht ankommt: toter Zweig, beschönigte Push-Meldung (beide ADR-059),
+>    jetzt eine fehlende Quelle plus ein Satz, der sie für normal erklärte.
+>    Alle drei sahen nicht nach einem Fehler aus. **Das ist das Muster, nicht
+>    der Zufall.**
+>
+>    `scripts/paper_tick.sh` erkennt seit 2026-09-04 auch den Fall, dass
+>    dieser Zweig **zusammengeführt** ist: dann geht der Kontostand nach
+>    `main`, weil die nächste frische Sitzung dort liest. Das ist ADR-059 zum
+>    dritten Mal — dort war der Zweigname fest verdrahtet, hier ist er richtig
+>    und trotzdem tot.
 >
 >    **Beide Konten sind am 2026-09-04 neu gestartet** (ADR-068). Sie trugen
 >    den Hebel aus dem alten Sizing: am 2026-09-02 long gegangen mit 0,65 % zu
@@ -181,37 +240,62 @@
 >    für Phase D, egal wie lange er läuft. Preis: zwei Tage Vorwärtszeit und
 >    ein Fill. Der alte Stand liegt in Commit `e658ee8`.
 >
->    Die Konten stehen jetzt flach bei 100.000, verankert am 2026-09-04, und
->    handeln **ab jetzt** statt rückwirkend. Der erste Einstieg wird gemessen
->    bei Cash 0,00 (BTC) bzw. 0,84 (ETH) und Bruttoexposure 1,000000 landen —
->    nachgestellt mit derselben Mechanik einen Tag zurückversetzt.
+>    **Der erste Einstieg ist am 2026-09-06 erfolgt, und er bestätigt
+>    ADR-068 im Vorwärtsbetrieb.** Vorhergesagt war Cash 0,00 bzw. 0,84 aus
+>    einem Replay; gemessen wurde **−0,00 (BTC) und 0,00 (ETH)**. Vor der
+>    Korrektur ergab derselbe Einstieg −650,31 und −656,55. Das ist der Punkt,
+>    an dem Phase D eine Divergenz gefangen hätte, wenn noch eine da wäre.
 >
->    `Letzter verarbeiteter Bar` steht auf **2026-09-04** — von Hand gesetzt,
->    nicht von der Routine. Die Zahl allein beweist also nichts; sie beweist
->    nur zusammen mit der Frage, wer sie bewegt hat. **Ab dem 2026-09-05 ist
->    sie wieder aussagekräftig:** wandert sie ohne Zutun weiter, feuert die
->    Routine; tut sie es nicht, liegt es weiterhin an der Umgebung.
+>    | | BTC/USD | ETH/USD |
+>    |---|---|---|
+>    | Menge | +1,246988 @ 79.714,96 | +40,443663 @ 2.457,83 |
+>    | Cash danach | **−0,00** | **0,00** |
+>    | Gebühr | 596,42 | 596,42 |
+>
+>    `Letzter verarbeiteter Bar` steht auf **2026-09-07** — von Hand
+>    nachgeholt, nicht von der Routine, jetzt zum dritten Mal. Die Zahl allein
+>    beweist nichts; sie beweist nur zusammen mit der Frage, wer sie bewegt
+>    hat. **Der Test ist gelaufen und die Antwort steht:** nur die hinterlegte
+>    Quelle hilft.
 > 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
 >    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
 >    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
 >    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
 >    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
 >    die Datenlage, sondern ein Signal.
-> 3. **Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.** Der
->    Research-Loop hat keine: über 38 Märkte summiert sich das Bruttoexposure
->    auf 38× und ruiniert das Konto, bei Normierung auf 1 handelt keiner mehr
->    (ADR-065). Zwischen Bankrott und Untätigkeit liegt keine Einstellung, die
->    das Ergebnis der Idee zeigen würde. Vol-Targeting, Gleichgewichtung und
->    Brutto-Cap sind drei verschiedene Strategien, nicht drei Einstellungen —
->    das gehört **vorab** entschieden, sonst wird die Wahl davon abhängen, wie
->    der letzte Lauf aussah.
-> 4. **Research-Loop** — der Versuchszähler steht auf 21, und jeder Lauf
->    verschärft die DSR-Schwelle dauerhaft für alle künftigen Kandidaten
->    (ADR-032). In dieser Umgebung ist `NVIDIA_API_KEY` gesetzt und ein
->    Gate-Lauf über `--provider nim` kommt durch (ADR-060); der Blocker, den
->    `docs/ZIEL.md` in Phase C.2 nennt, gilt hier nicht mehr. Das Budget ist
->    trotzdem nicht gratis — und `qt alloc --stub` nennt vorher in der
->    Telemetriezeile, was ein echter Lauf kostet.
+> 3. ~~**Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.**~~
+>    **Erledigt am 2026-09-04 (ADR-069):** proportional auf das Bruttobudget
+>    skalieren. Vol-Targeting und 1/n sind vorab verworfen und begründet, die
+>    Grenze ist keine Option des Loops — wer sie ändert, hinterlässt einen
+>    Diff (wie bei den Gate-Schwellen, ADR-057).
+>
+>    Die Schicht allein reichte nicht: danach handelte der Kandidat fast nicht
+>    mehr, Brutto 0,502 statt 1,0. Die Ursache war ein **Kategorienfehler im
+>    Rebalancing-Band** — es war ein Anteil des Eigenkapitals, beschreibt aber
+>    eine Toleranz um eine Position. Bei 39 Märkten war es damit 1,95× der
+>    eigenen Position, also 39-mal lockerer als für eine Ein-Symbol-Strategie.
+>    Dieselbe Fehlerfamilie wie ADR-053 und ADR-065, drittes Auftreten.
+> 4. **Research-Loop** — am 2026-09-04 gelaufen, drei Kandidaten, keiner
+>    besteht (ADR-072). Der Versuchszähler steht damit auf 24, und jeder
+>    weitere Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen
+>    Kandidaten (ADR-032). Gemessen: 21 → 24 Versuche heben den erwarteten
+>    besten Sharpe aus **reinem Rauschen** von 1,922 auf 1,980.
+>
+>    **Der nächste billige Vorfilter ist die Kritik-Stufe.** Ein Kandidat mit
+>    307× Umschlag pro Jahr ist vollständig durch Sandbox, Kritik und
+>    Sanity-Check gelaufen; `critic_unrealistic_turnover` steht als Feld in
+>    der Registry und hat nicht angeschlagen. Das ist billiger zu reparieren
+>    als jede weitere Idee zu prüfen. In dieser Umgebung ist
+>    `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
+>    durch (ADR-060); der Blocker aus `docs/ZIEL.md` Phase C.2 gilt hier nicht
+>    mehr.
+>
+>    **Ein Lauf gegen die Stubs kostet nichts** — er schreibt nach
+>    `registry_stub.duckdb` und nicht in die Registry (ADR-057). Damit lässt
+>    sich die Kette über alle 39 Märkte prüfen, ohne einen Versuch auszugeben.
+>    Die Entscheidung, wie viele Kandidaten ein echter Lauf erzeugt, gehört
+>    einem Menschen: sie ist die einzige in diesem Repo, die sich nicht
+>    zurücknehmen lässt.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt

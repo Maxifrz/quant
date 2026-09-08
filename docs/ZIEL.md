@@ -1,6 +1,6 @@
 # Das Ziel, und was bis dahin fehlt
 
-Stand 2026-09-03. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
+Stand 2026-09-04. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
 
 ---
 
@@ -268,14 +268,30 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    hinterlässt einen Diff.
 
    > **Der Bestand ist durch — und niemand kommt bis zum Walk-Forward.**
-   > Fünf der sieben Bibliotheksstrategien scheitern am Umschlagbudget
-   > (`trend` 15,4×, `meanrev` 15,7×, `elliott` 13,3×, `macross` 8,8×,
-   > `hashribbon` 7,1×), zwei daran, dass sie mangels Datenquelle gar nicht
-   > handeln. Kein Lauf hat einen Versuch gekostet.
+   > Seit ADR-069 fallen **alle neun** am Umschlagbudget; vorher kam
+   > `crossmom` mit 2,9× durch, was sich als Subvention eines falsch
+   > bezogenen Rebalancing-Bandes herausstellte (10,8× nach der Korrektur).
+   > Kein Lauf hat einen Versuch gekostet.
    >
-   > `macross`, seit ADR-035 die einzige Hoffnung des Projekts, scheitert
-   > damit **nicht am Signal**, sondern daran, dass es sich seine eigene
-   > Handelsfrequenz nicht leisten kann.
+   > **Das Budget ist aber nicht die Hürde** (ADR-071). Rückwärts durch die
+   > Kostenidentität gerechnet, darf sich keine der sechs prüfbaren
+   > Strategien 7× leisten — `macross` 4,6×, `trend` 6,6×, `elliott` 0,3×,
+   > `hashribbon` und `meanrev` **0,0×**. Die 7 sind ein billiger Vorfilter
+   > vor dem Walk-Forward, keine Aussage über eine Strategie.
+   >
+   > Der Satz „`macross` scheitert **nicht am Signal**, sondern an seiner
+   > Handelsfrequenz" stand hier und ist nur halb richtig: bei 6,9× hätte es
+   > das Gate bestanden und wäre am Sharpe gescheitert. Für `hashribbon`
+   > (brutto +0,224) und `meanrev` (−0,707) ist er ganz falsch — sie liegen
+   > **ohne jede Kostenbelastung** unter der Nachweisgrenze.
+   >
+   > Was dabei sichtbar wird: auf Brutto-OOS-Sharpe ist **`trend` mit +0,459
+   > das beste Signal des Repos**, vor `macross` mit +0,418. Beides sind
+   > abgeleitete Größen aus einer Näherung, und eine langsamere Fassung
+   > derselben Idee hätte nicht denselben Brutto-Sharpe — wer daraus „bau ein
+   > langsameres `trend`" liest, gibt einen Versuch für eine selbst erzeugte
+   > Zahl aus. Der belastbare Teil: **0,33 ist erreichbar, aber knapp**, und
+   > aus 0,09 bis 0,13 Sharpe muss die gesamte Ausführung bezahlt werden.
    >
    > Nebenbefund, der die Latte für alle hebt: der Versuchszähler kannte die
    > sieben handgeschriebenen Hypothesen nicht und stand bei 8. Er steht
@@ -374,7 +390,7 @@ die meisten positiven Ergebnisse in diesem Feld.
 
 Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
-Versuchszähler steht bei **21** und vergisst nichts (ADR-032, ADR-057).
+Versuchszähler steht bei **24** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
 
 ---

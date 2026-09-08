@@ -198,7 +198,8 @@ def rebalance_order(
     delta = target_qty - broker.qty(symbol)
     delta_notional = abs(delta) * reference_price
 
-    threshold = max(cfg.min_trade_notional, cfg.rebalance_band * equity)
+    bezug = max(abs(target_qty), abs(broker.qty(symbol))) * reference_price
+    threshold = max(cfg.min_trade_notional, cfg.rebalance_band * bezug)
     if delta_notional < threshold:
         return None
     return Order(symbol=symbol, qty=delta, reason=f"target_weight={capped:.4f}")

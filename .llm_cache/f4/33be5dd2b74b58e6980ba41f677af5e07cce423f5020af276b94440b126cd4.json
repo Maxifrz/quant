@@ -1,0 +1,14 @@
+{
+ "key": "f433be5dd2b74b58e6980ba41f677af5e07cce423f5020af276b94440b126cd4",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.2,
+  "rationale_code_mismatch": false,
+  "reasoning": "Kein harter Ausschlussgrund. Der Code nutzt keine absoluten Preiskonstanten (upper/lower werden aus SMA und ATR berechnet). Drei Parameter (LOOKBACK_SMA=50, LOOKBACK_ATR=20, MULT=2.0) bei ~500 OOS-Bars sind im grünen Bereich (Faustregel: mind. 100–200 Bars pro Freiheitsgrad). Die Logik (Breakout bei Banddurchbruch, sonst Vorheriger Gewicht) entspricht exakt der Begründung. Turnover wird durch die langsamen Fenster (50/20) und 130 bp Kosten realistisch begrenzt; ein Backtest wird zeigen, ob die Anzahl Trades >0 ist. Warmup 60 Bars deckt beide Lookbacks ab. Empfehlung: proceed.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

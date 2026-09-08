@@ -1,0 +1,14 @@
+{
+ "key": "f9d6686e91d2a6c44e341007fe4b9db805116fed4e8d9e5a1b0dd4eae92ca351",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "excess_degrees_of_freedom": false,
+  "magic_price_constants": false,
+  "overfitting_risk": 0.2,
+  "rationale_code_mismatch": false,
+  "reasoning": "Der Kandidat wirkt sauber: keine festen Preis-Levels, nur volumenbasierte z-Scores (LOOKBACK=48, THRESHOLD=2.0) -- beide plausibel und nicht ueberfit-optimiert (keine Nachkommastellen). Die Logik liefert 0/1/-1 Signale nur bei seltenen Volumen-Spikes, was eher niedrigen Turnover impliziert (nicht pro Bar umschichten). 2 Parameter bei ~500 OOS-Bars ist unkritisch (Regel: mind. 10-20x Bars pro Parameter). Warmup=50 passt zu LOOKBACK=48. Kein Widerspruch zwischen Begruendung (volumen-getriggerter, low-frequency Momentum) und Code. Einziges kleines Manko: nur current bar close>open als Richtungsfilter -- kann in Seitwaertsmaerkten falsche Signale geben, aber das ist Backtest-Sache, kein Ablehnungsgrund.",
+  "recommendation": "proceed",
+  "unrealistic_turnover": false
+ }
+}

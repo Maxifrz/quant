@@ -1,0 +1,11 @@
+{
+ "key": "88e1157578e931a212266cff8c4fbf4665a7c29ae6e9569706aa78e340e678ab",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "KeltnerBreakout",
+  "code": "class KeltnerBreakout(Strategy):\n    name = \"keltner_breakout\"\n    LOOKBACK_SMA = 50\n    LOOKBACK_ATR = 20\n    MULT = 2.0\n    warmup_bars = 60\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        closes = window.closes()\n        highs = window.highs()\n        lows = window.lows()\n        sma = ta.sma(closes, self.LOOKBACK_SMA)\n        atr = ta.atr(highs, lows, closes, self.LOOKBACK_ATR)\n        if not (math.isfinite(sma) and math.isfinite(atr)):\n            return math.nan\n        upper = sma + self.MULT * atr\n        lower = sma - self.MULT * atr\n        close = closes[-1]\n        state = self._state.setdefault(symbol, {\"weight\": 0.0})\n        prev = state[\"weight\"]\n        if close > upper:\n            weight = 1.0\n        elif close < lower:\n            weight = -1.0\n        else:\n            weight = prev\n        state[\"weight\"] = weight\n        return weight",
+  "name": "keltner_breakout",
+  "rationale": "Keltner channels combine a slow SMA centre with an ATR‑based envelope, adapting width to recent volatility. When price pierces the upper band it signals a volatility‑adjusted breakout to the upside; a lower‑band pierce signals the opposite. Because both the centre (50‑bar SMA) and the envelope (20‑bar ATR) are slow, crossings are infrequent, naturally limiting turnover to well under the 7×‑per‑year ceiling while still producing dozens of trades over a multi‑year history. The regime‑adaptive width should keep the edge alive across varying market conditions without over‑fitting to a fixed price level."
+ }
+}

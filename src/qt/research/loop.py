@@ -42,6 +42,7 @@ from qt.research import critic as critic_mod
 from qt.research import sandbox
 from qt.research.dsr import DEFAULT_THRESHOLD
 from qt.research.generator import build_generation_briefing
+from qt.research.groesse import mit_groessenschicht
 from qt.research.registry import (
     SCREENING_PASSED,
     SCREENING_REJECTED,
@@ -95,6 +96,13 @@ class ResearchTelemetry:
         )
         width = max(len(label) for label, _ in rows)
         return "\n".join(f"  {label:<{width}}  {value:>5}" for label, value in rows)
+
+
+#: Bruttobudget der Positionsgroessen-Schicht (ADR-069). Dieselbe Zahl wie
+#: `BacktestConfig.max_gross_exposure` -- und bewusst **keine** Option des
+#: Loops: wer sie aendert, hinterlaesst einen Diff, so wie bei den
+#: Gate-Schwellen (ADR-057).
+BRUTTOGRENZE = 1.0
 
 
 def run_research_loop(
@@ -196,6 +204,14 @@ def run_research_loop(
             )
             _say(echo, f"      Probelauf: {probe.reason}")
             continue
+
+        # **Ab hier mit Positionsgroessen-Schicht** (ADR-069). Der Probelauf
+        # oben hat den Kandidaten nackt geprueft -- dort geht es um seine
+        # Verdrahtung. Alles, was danach eine *Zahl* erzeugt, laeuft mit der
+        # Bruttogrenze, weil ein Ergebnis ohne sie ueber 38 Maerkte ein Konto
+        # mit 38x Hebel misst und damit keine Aussage ueber die Idee macht
+        # (ADR-065).
+        strategy_cls = mit_groessenschicht(strategy_cls, BRUTTOGRENZE)
 
         # --- Stufe 3: die Kritik, billiger Vorfilter vor dem Backtest -----
         if use_critic and critic_client is not None:

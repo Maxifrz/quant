@@ -145,3 +145,55 @@ def test_fehlende_spalten_werfen_statt_still_zu_rechnen():
 def test_fenster_unter_zwei_ist_ein_fehler():
     with pytest.raises(ValueError, match="zu klein"):
         schaetze("sim", simuliere(0.0, tage=100), fenster=1)
+
+
+# ---------------------------------------------------------------------------
+# Der Weg, der funktioniert: das Orderbuch (ADR-070)
+# ---------------------------------------------------------------------------
+
+
+def test_der_effektive_spread_waechst_mit_der_ordergroesse():
+    """Der ganze Grund, warum nicht an der Spitze des Buchs gemessen wird.
+
+    Dort steht eine Spanne fuer eine unendlich kleine Order. Wer 25.000 USD
+    handelt, isst sich durch mehrere Ebenen und zahlt mehr -- gemessen an
+    ALGO-USD am 2026-09-04: 6,9 bps bei 2.560 USD, 21,7 bps bei 25.000.
+    """
+    from qt.backtest.spread import _vwap
+
+    # Drei Ebenen, jede 1.000 USD tief, je 10 bps schlechter.
+    asks = [(100.0, 10.0), (100.1, 10.0), (100.2, 10.0)]
+
+    klein = _vwap(asks, 1_000.0)
+    gross = _vwap(asks, 3_000.0)
+
+    assert klein == pytest.approx(100.0)
+    assert gross > klein
+
+
+def test_ein_zu_duennes_buch_liefert_keine_zahl():
+    """Ein Buch, das die Ordergroesse nicht hergibt, ist ein Befund.
+
+    Die Alternative waere, den letzten bekannten Preis fortzuschreiben -- das
+    ergaebe eine Zahl, die aussieht wie eine Messung und keine ist.
+    """
+    from qt.backtest.spread import _vwap
+
+    assert _vwap([(100.0, 1.0)], 1_000_000.0) is None
+    assert _vwap([], 100.0) is None
+
+
+def test_die_messung_mittelt_beide_seiten_und_rechnet_gegen_die_mitte():
+    """`halb_bps` ist das Gegenstueck zu `CostConfig.half_spread_bps`.
+
+    Kauf und Verkauf getrennt zu berichten ist kein Detail: an einem
+    einseitigen Buch weichen sie stark voneinander ab, und ein Mittelwert
+    allein verdeckt das.
+    """
+    from qt.backtest.spread import BuchMessung
+
+    m = BuchMessung(
+        symbol="X-USD", notional=1000.0, mitte=100.0, kauf_bps=4.0, verkauf_bps=2.0
+    )
+
+    assert m.halb_bps == pytest.approx(3.0)

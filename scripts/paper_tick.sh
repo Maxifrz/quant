@@ -26,6 +26,43 @@ if [ "$ZWEIG" = "HEAD" ]; then
   echo "   ueberlebt. Erst auschecken, dann ticken."
   exit 1
 fi
+
+# **Und wenn dieser Zweig laengst zusammengefuehrt ist?** Dann ist "dorthin
+# zurueckschreiben, wo gelesen wurde" nicht mehr dieselbe Regel, sondern eine
+# Sackgasse: der Zustand landet auf einem Zweig, den niemand mehr
+# zusammenfuehrt, waehrend die naechste frische Sitzung den Standardzweig
+# auscheckt und einen Kontostand von vor der Zusammenfuehrung vorfindet.
+#
+# Das ist ADR-059 zum dritten Mal, mit einem neuen Grund: dort war der
+# Zweigname fest verdrahtet, hier ist er richtig und trotzdem tot. Beide Male
+# sieht das Ergebnis nicht nach einem Fehler aus -- der Push gelingt, die
+# Meldung sagt "gesichert", und der Zustand ist weg.
+#
+# Entschieden wird nach dem einzigen Kriterium, das zaehlt: **wo liest der
+# naechste Tick?** Eine frische Sitzung bekommt den Standardzweig. Enthaelt
+# der bereits alles, was auf diesem Zweig liegt, gehoert der Kontostand
+# dorthin.
+git fetch -q origin main 2>/dev/null || true
+STANDARD="main"
+ZIEL="$ZWEIG"
+if git rev-parse --verify -q origin/"$STANDARD" >/dev/null; then
+  if [ "$ZWEIG" != "$STANDARD" ] && \
+     git merge-base --is-ancestor HEAD origin/"$STANDARD" 2>/dev/null; then
+    if git merge-base --is-ancestor origin/"$STANDARD" HEAD 2>/dev/null; then
+      # Zweig und Standard stehen auf demselben Commit: der Zweig ist
+      # erschoepft, der Zustand gehoert dorthin, wo er gefunden wird.
+      ZIEL="$STANDARD"
+      echo "Hinweis: '${ZWEIG}' ist zusammengefuehrt und deckungsgleich mit"
+      echo "         '${STANDARD}'. Der Kontostand geht nach '${STANDARD}',"
+      echo "         weil die naechste frische Sitzung dort liest."
+    else
+      echo "!! '${ZWEIG}' ist in '${STANDARD}' enthalten, aber aelter als"
+      echo "   dieser. Dieser Checkout ist veraltet; der Kontostand wird"
+      echo "   trotzdem gesichert, aber eine frische Sitzung sieht ihn nicht."
+      echo "   Erst '${STANDARD}' auschecken, dann ticken."
+    fi
+  fi
+fi
 KONTEN=("BTC/USD" "ETH/USD")
 gemeldet=0
 
@@ -56,25 +93,37 @@ Automatischer Tick von scripts/paper_tick.sh. Der Kontostand ist das einzige
 im Datenverzeichnis, das sich nicht rekonstruieren laesst.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01Mv9TxGF52xLNLFA7qmQTmM"
+Claude-Session: https://claude.ai/code/session_0151sxRxJe3uZnwCgVP5PMWT"
 
 gesichert=1
 for warte in 2 4 8 16; do
-  if git push -u origin "$ZWEIG"; then
+  if git push origin "HEAD:${ZIEL}"; then
     gesichert=0
     break
   fi
   sleep "$warte"
 done
 
+# Ein geschuetzter Standardzweig lehnt den Push ab. Dann ist der Zweig immer
+# noch besser als nichts -- aber die Meldung muss sagen, dass der Zustand
+# nicht dort liegt, wo die naechste Sitzung liest.
+if [ "$gesichert" -ne 0 ] && [ "$ZIEL" != "$ZWEIG" ]; then
+  echo "!! Push nach '${ZIEL}' gescheitert -- Rueckfall auf '${ZWEIG}'."
+  echo "   Der Kontostand ueberlebt dort, aber eine frische Sitzung auf"
+  echo "   '${ZIEL}' findet ihn nicht. Das ist ein Fall fuer einen Menschen."
+  if git push -u origin "$ZWEIG"; then
+    gesichert=0
+  fi
+fi
+
 # Bis ADR-059 stand hier unbedingt "Kontostand gesichert." -- auch wenn alle
 # vier Versuche gescheitert waren. Ein Commit ohne Push ueberlebt den
 # Container nicht, und die Zeile behauptete das Gegenteil.
 if [ "$gesichert" -ne 0 ]; then
-  echo "!! Vier Push-Versuche auf ${ZWEIG} gescheitert -- der Commit liegt nur"
+  echo "!! Vier Push-Versuche auf ${ZIEL} gescheitert -- der Commit liegt nur"
   echo "   lokal und ist mit dem Container weg. Das ist der einzige Zustand"
   echo "   im Datenverzeichnis, der sich nicht rekonstruieren laesst."
   exit 1
 fi
-echo "Kontostand auf ${ZWEIG} gesichert."
+echo "Kontostand auf ${ZIEL} gesichert."
 exit "$gemeldet"

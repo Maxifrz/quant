@@ -1,0 +1,11 @@
+{
+ "key": "95565b4b6c08576624cda53d3ace54298582f065bd0b8d5f6caee34ea303aa74",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_version": 1,
+ "value": {
+  "class_name": "VolumeZMomentum",
+  "code": "class VolumeZMomentum(Strategy):\n    name = \"volume_z_momentum\"\n    LOOKBACK = 48\n    THRESHOLD = 2.0\n    warmup_bars = 50\n\n    def on_bar(self, symbol, store):\n        window = store.window(symbol, self.timeframe)\n        if len(window) < self.warmup_bars:\n            return math.nan\n        vols = window.volumes()\n        closes = window.closes()\n        opens = window.opens()\n        vol_z = ta.zscore(vols, self.LOOKBACK)\n        if not math.isfinite(vol_z):\n            return math.nan\n        if vol_z > self.THRESHOLD:\n            if closes[-1] > opens[-1]:\n                return 1.0\n            else:\n                return -1.0\n        return 0.0",
+  "name": "volume_z_momentum",
+  "rationale": "Unusually high volume often signals the start of a sustained move. By measuring volume with a z‑score over a moderate look‑back, we only act on statistically rare spikes. The direction is taken from the current bar's close‑vs‑open, giving a low‑frequency, regime‑aware momentum signal that avoids the high turnover of pure price‑based breakouts."
+ }
+}

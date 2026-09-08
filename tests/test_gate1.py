@@ -8,6 +8,7 @@ aendern -- jedes abgeschlossene Screening erhoeht den DSR-Nenner dauerhaft
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -19,6 +20,7 @@ from qt.research.gate import (
     MAX_UMSCHLAG_PRO_JAHR,
     MIN_FILLS,
     MIN_SHARPE,
+    erlaubter_umschlag,
     umschlag_pro_jahr,
 )
 
@@ -225,3 +227,55 @@ def test_das_urteil_ist_nur_bestanden_wenn_jedes_kriterium_geprueft_wurde():
         "beides zeigen"
     )
     assert "ABGEBROCHEN" in halb.table()
+
+
+# ---------------------------------------------------------------------------
+# Was sich eine Strategie an Umschlag leisten kann (ADR-071)
+# ---------------------------------------------------------------------------
+
+
+def test_wer_brutto_schon_unter_der_schwelle_liegt_bekommt_null():
+    """Keine Frequenz rettet ein Signal, das auch ohne Kosten nicht reicht.
+
+    Gemessen an `hashribbon`: OOS netto +0,123 bei 7,1x Umschlag und 45,5 %
+    Vola ergibt brutto +0,224 -- unter 0,33. Sein erlaubter Umschlag ist 0,
+    und das Gate weist ihn bei 7,1x gegen 7x ab. Die richtige Entscheidung,
+    aber nicht aus dem berichteten Grund (ADR-071).
+    """
+    erlaubt = erlaubter_umschlag(
+        oos_sharpe=0.123, ann_vol=0.455, einweg_bps=65.0, ist_umschlag=7.1
+    )
+    assert erlaubt == 0.0
+
+
+def test_die_identitaet_rechnet_sich_zurueck():
+    """Setzt man den erlaubten Umschlag ein, landet der Netto-Sharpe exakt
+    auf der Schwelle. Sonst misst die Funktion etwas anderes als sie sagt."""
+    vol, einweg_bps, ist = 0.339, 65.0, 8.7
+    erlaubt = erlaubter_umschlag(0.250, vol, einweg_bps, ist)
+
+    einweg = einweg_bps / 10_000
+    brutto = 0.250 + ist * einweg / vol
+    netto_bei_erlaubt = brutto - erlaubt * einweg / vol
+
+    assert netto_bei_erlaubt == pytest.approx(MIN_SHARPE, abs=1e-9)
+
+
+def test_macross_darf_weniger_als_das_globale_budget():
+    """Der Kern von ADR-071: die 7x binden bei keiner Bibliotheksstrategie.
+
+    `macross` BTC/USD kaeme mit 4,6x gerade auf die Schwelle -- ein Lauf bei
+    6,9x haette das Gate bestanden und waere trotzdem am Sharpe gescheitert.
+    Das globale Budget ist ein Vorfilter, keine Aussage ueber die Strategie.
+    """
+    erlaubt = erlaubter_umschlag(0.250, 0.339, 65.0, 8.7)
+
+    assert 4.0 < erlaubt < 5.0, f"erlaubt {erlaubt:.2f}x -- erwartet rund 4,6x"
+    assert erlaubt < 7.0
+
+
+def test_ohne_kosten_ist_die_frage_sinnlos():
+    """Bei Einwegkosten null gibt es keine Frequenzgrenze -- und keine Zahl,
+    die man ausrechnen koennte. `nan` sagt das, 0 oder inf wuerden luegen."""
+    assert math.isnan(erlaubter_umschlag(0.5, 0.4, 0.0, 5.0))
+    assert math.isnan(erlaubter_umschlag(float("nan"), 0.4, 65.0, 5.0))
