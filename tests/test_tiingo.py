@@ -13,6 +13,7 @@ und ein Kostensatz, der fuer beide Klassen gleichzeitig gilt.
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
 from datetime import datetime, timezone
@@ -349,4 +350,57 @@ def test_der_korb_enthaelt_nichts_was_n_eff_billig_macht():
     treffer = {t: grund for t, grund in verboten.items() if t in tiingo.BASKET}
     assert not treffer, (
         f"Diese Ticker heben n_eff, ohne Evidenz zu liefern: {treffer}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Die Kalenderspanne (ADR-075)
+# ---------------------------------------------------------------------------
+
+
+def test_der_abzug_schneidet_die_historie_nicht_auf_das_kryptofenster():
+    """Der teuerste Default des Projekts, als Test statt als Kommentar.
+
+    `--since` stand auf 2019-01-01, weil Krypto auf Coinbase dort anfaengt.
+    Fuer die ETFs war das keine Eigenschaft der Quelle, sondern ein Schnitt:
+    Tiingo liefert SPY ab 1993-01-29, EWJ ab 1996, QQQ ab 1999. Gespeichert
+    waren dadurch 7,7 Jahre statt bis zu 33 -- und die Nachweisgrenze haengt
+    an der Spanne (ADR-075).
+
+    Der Test prueft den Default und nicht den Store: ein leerer Container hat
+    keine Bars, aber dieselbe falsche Voreinstellung.
+    """
+    from qt.cli import data_stocks
+
+    default = inspect.signature(data_stocks).parameters["since"].default
+    gezogen_ab = datetime.fromisoformat(default).replace(tzinfo=timezone.utc)
+    aeltester_etf = datetime(1993, 1, 29, tzinfo=timezone.utc)  # SPY
+
+    assert gezogen_ab <= aeltester_etf, (
+        f"Der Default zieht erst ab {default} und wirft damit Historie weg, "
+        "die die Quelle hergibt. Welches Fenster eine Auswertung nimmt, "
+        "entscheidet die Auswertung -- nicht der Abzug."
+    )
+
+
+def test_der_store_haelt_mehr_als_das_kryptofenster():
+    """Die Gegenprobe am echten Bestand, wenn einer da ist.
+
+    Der Test oben kann nur die Voreinstellung sichern. Wer mit einem
+    ausdruecklichen `--since 2019-01-01` zieht, bekommt trotzdem den alten
+    Zustand -- und der faellt sonst erst auf, wenn eine Schwelle daran haengt.
+    """
+    from qt.data.store import parquet_path
+
+    pfad = parquet_path("SPY", "1d")
+    if not pfad.exists():
+        pytest.skip("Keine gespeicherten Daten -- qt data stocks")
+
+    bars = read_bars("SPY", "1d")
+    beginn = pd.to_datetime(bars["ts"].iloc[0], utc=True)
+
+    assert beginn < pd.Timestamp("2011-11-15", tz="UTC"), (
+        f"SPY beginnt im Store am {beginn.date()}. Die 25 ETFs gibt es "
+        "gemeinsam ab 2011-11-15; wenn selbst SPY spaeter anfaengt, ist die "
+        "Historie beim Abzug abgeschnitten worden (ADR-075)."
     )

@@ -21,9 +21,20 @@
 > KRYPTO="$KRYPTO,ALGO/USD,ADA/USD,DOGE/USD,DOT/USD,SOL/USD,AVAX/USD,XRP/USD"
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
 > uv run qt data pull --symbols "BTC/USD,ETH/USD" --tf 1h,4h --since 2019-01-01
-> uv run qt data stocks --since 2019-01-01     # 13 ETFs, braucht TIINGO_API_KEY
+> uv run qt data stocks                        # 25 ETFs, braucht TIINGO_API_KEY
 > uv run qt data report                        # muss 39 Maerkte zeigen, alle "ok"
 > ```
+> **Bei `qt data stocks` kein `--since` setzen.** Der Default zieht ab 1993
+> und damit alles, was Tiingo hergibt — rund 130.000 Bars. Bis ADR-075 stand
+> dort `--since 2019-01-01`, das Krypto-Startdatum, und es schnitt jede
+> ETF-Reihe auf 7,7 Jahre. Das war der teuerste Default im Projekt: die
+> Nachweisgrenze hängt an der Kalenderspanne, und die stand nie in den Daten,
+> sondern in dieser Zeile.
+>
+> Die Lücken, die `qt data report` bei den ETFs meldet, sind **echte**
+> Börsenschließungen und kein Fehler: 2001-09-10 → 2001-09-17 (NYSE nach dem
+> 11. September), 2012-10-26 → 2012-10-31 (Hurrikan Sandy),
+> 2006-12-29 → 2007-01-03 (Staatstrauer Gerald Ford).
 > **Zählen, nicht überfliegen.** Bis ADR-059 schrieb derselbe Befehl neun der
 > vierzehn Krypto-Märkte und meldete keinen Fehler: Coinbase antwortet für ein
 > Fenster vor der Notierung mit einer leeren Seite, und die galt als Ende der
@@ -101,15 +112,36 @@
 > ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
 > bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
 >
-> Die Zahl, die den Plan diktiert: bei 7,7 Jahren Historie und **5,1** effektiv
-> unabhängigen Märkten ist ein **Sharpe ab 0,33** beweisbar (ADR-061).
-> `macross` hat 0,25 — immer noch darunter.
+> Die Zahl, die den Plan diktiert: bei **14,8 Jahren** Historie und **6,6**
+> effektiv unabhängigen Märkten wäre ein **Sharpe ab 0,205** beweisbar
+> (ADR-075, vorher 0,33 aus 7,7 Jahren und n_eff 5,1).
 >
-> **Der billige Hebel ist damit gezogen.** Das Verbreitern der Datenbasis stand
-> hier lange vor jeder Strategie-Idee, weil es rechenbar war: von 1,4 auf 5,1
-> effektive Märkte hat die Schwelle von 0,67 auf 0,33 halbiert. Der nächste
-> Schritt brächte 0,33 → 0,26 und bräuchte Anlageklassen, die es nicht gibt.
-> Ab hier hilft nur noch ein stärkerer Edge.
+> **`MIN_SHARPE` steht trotzdem weiter auf 0,33**, und das ist keine
+> Vorsicht, sondern ein Messergebnis: die Konstante hat noch nie eine
+> Entscheidung getroffen. Von 16 durchgerechneten Kandidaten scheiterte
+> **keiner** allein an ihr — jede Ablehnung kam von der DSR. Eine Schwelle zu
+> senken, die nicht bindet, ändert kein Urteil und sieht nur wie Fortschritt
+> aus.
+>
+> **Die Hürde, die wirklich bindet, ist die DSR**, und sie hängt fast nur an
+> der Spanne: ihr Maßstab fällt mit √T, und über die Märkte ist längst
+> aggregiert, n_eff kommt darin gar nicht vor. Nötiger Sharpe für DSR ≥ 0,95
+> bei 25 Versuchen: **1,32** bei 1.928 OOS-Bars (der alte Stand), **0,95** bei
+> 3.722, **0,78** bei 5.501. Halbiert, ohne eine einzige neue Idee.
+>
+> **Der billige Hebel war noch nicht gezogen — hier stand das Gegenteil.**
+> Bis ADR-075 hieß es an dieser Stelle: *„Der nächste Schritt brächte
+> 0,33 → 0,26 und bräuchte Anlageklassen, die es nicht gibt. Ab hier hilft nur
+> noch ein stärkerer Edge."* Er brauchte keine neue Anlageklasse, sondern ein
+> anderes Datum in einem `--since`-Default, und er bringt 0,33 → 0,205, also
+> mehr als die 0,26, die als unerreichbar galten. Der Satz war plausibel,
+> falsch, und er hat den billigsten verbliebenen Hebel für erledigt erklärt.
+>
+> Was jetzt wirklich ausgereizt ist: das **Verbreitern**. Von 1,4 auf 6,6
+> effektive Märkte ist der Weg gegangen, und der Krypto-Block **senkt** n_eff
+> inzwischen (25 ETFs allein 7,1, mit den 14 Paaren zusammen 5,4). Offen ist
+> nur noch das **Verlängern** nach hinten: acht ETFs gibt es ab 2003-04-14,
+> das wären 23,4 Jahre statt 14,8.
 >
 > ### Der Stand in einem Satz
 >

@@ -1527,7 +1527,18 @@ def data_stocks(
         str | None,
         typer.Option(help="Kommagetrennt. Ohne Angabe der Korb aus docs/ZIEL.md."),
     ] = None,
-    since: Annotated[str, typer.Option(help="Startdatum YYYY-MM-DD")] = "2019-01-01",
+    # **Nicht 2019-01-01, und das war der teuerste Default im Projekt.**
+    # Er stand hier, weil Krypto auf Coinbase 2019 anfaengt -- und schnitt
+    # damit jede ETF-Reihe auf ein Fenster, das die *andere* Anlageklasse
+    # vorgab. SPY liefert ab 1993. Gemessen hat der Default 7,7 Jahre
+    # gespeichert statt 33, und die Nachweisgrenze haengt an der Spanne
+    # (ADR-075).
+    #
+    # Gezogen wird jetzt alles, was die Quelle hat; welches Fenster eine
+    # Auswertung benutzt, entscheidet die Auswertung. Ein Ingest, der
+    # Historie wegwirft, nimmt diese Entscheidung vorweg, und zwar
+    # unsichtbar: im Store steht danach nur noch das Ergebnis.
+    since: Annotated[str, typer.Option(help="Startdatum YYYY-MM-DD")] = "1993-01-01",
     until: Annotated[str | None, typer.Option(help="Enddatum YYYY-MM-DD")] = None,
 ) -> None:
     """Aktien-, Anleihen-, Rohstoff- und FX-ETFs von Tiingo ziehen.
@@ -1536,6 +1547,11 @@ def data_stocks(
     Sharpe-Schwelle wirklich senkt: bei 1,4 effektiv unabhaengigen Maerkten
     liegt sie bei 0,67, bei 5 nur noch bei 0,33 (docs/ZIEL.md). Weitere
     Krypto-Paare bringen bei einer Korrelation von 0,67 fast nichts.
+
+    Der zweite Hebel ist die **Kalenderspanne**, und er war lange durch den
+    Default oben zugedreht: 25 ETFs stehen ab 2011-11-15 gemeinsam zur
+    Verfuegung, das sind 14,8 statt 7,7 Jahre und n_eff 6,6 statt 4,9
+    (ADR-075).
 
     Geladen werden **adjustierte** OHLC -- eine Dividende ist sonst ein
     Uebernachtsprung, den ein Trendfolger als Signal handelt. Neben jede Reihe

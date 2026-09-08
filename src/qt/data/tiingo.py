@@ -10,6 +10,16 @@ zweite Anlageklasse bringt fast eine ganze (docs/ZIEL.md).
 `ccxt` kann nur Krypto. Tiingo deckt US-Aktien und ETFs ab, und darueber --
 per ETF -- auch Anleihen, Rohstoffe und Waehrungen.
 
+**Und sie decken einen laengeren Zeitraum ab, was hier lange niemand genutzt
+hat.** Der Absatz oben nennt 7,7 Jahre als Datenlage. Das war nie eine
+Eigenschaft der Quelle: SPY liefert ab 1993-01-29, EWJ ab 1996, QQQ ab 1999,
+die drei Staatsanleihen-ETFs ab 2002. Die 7,7 Jahre kamen aus dem
+`--since`-Default des Abrufs, der auf das Krypto-Fenster gesetzt war. Alle 25
+Reihen zusammen gibt es ab 2011-11-15, also 14,8 Jahre; die mittlere
+paarweise Korrelation faellt auf diesem Fenster von 0,18 auf 0,12 und n_eff
+steigt von 4,9 auf 6,6 (ADR-075). Der Store haelt jetzt die volle Historie,
+und welches Fenster eine Auswertung nimmt, entscheidet die Auswertung.
+
 **Warum ETFs und nicht Spot-Feeds.** Zwei Gruende, und der zweite wiegt mehr:
 
 1. Eine Quelle, eine Konvention, eine Adjustierungsmethode. ADR-034 hat den
