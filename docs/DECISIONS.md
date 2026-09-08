@@ -69,6 +69,22 @@ die Prosa sagte, es laufe) und ADR-059 (vier gescheiterte Push-Versuche,
 gemeldet als „Kontostand gesichert"). Dreimal derselbe Bauplan: eine
 Behauptung über den Zustand, die den Zustand nicht prüft.
 
+**Die grüne Zeile bedeutet ohnehin nicht, was sie zu bedeuten scheint.** Das
+ist keine Schlussfolgerung aus dem Verhalten, sondern steht so in der
+Dokumentation der Routinen:
+
+> „A green status in the run list means the session started and exited
+> without an infrastructure error. **It does not mean the task in your prompt
+> succeeded.** Open the run to read the transcript and confirm what Claude
+> actually did."
+>
+> — [code.claude.com/docs/en/routines](https://code.claude.com/docs/en/routines)
+
+Der Status beantwortet also eine Frage über die *Infrastruktur*, und gelesen
+wurde er als Antwort über die *Aufgabe*. Genau deshalb prüft der korrigierte
+Prompt jetzt selbst nach (Schritt 3): die einzige Zusage, die der Status
+gibt, ist die, die uns nicht interessiert.
+
 ### Die Korrektur am Prompt
 
 - Ein **fehlendes Repository ist ein Fehler**, kein erwarteter Zustand. Der
