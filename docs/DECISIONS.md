@@ -5,6 +5,110 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-074 — Die Tests laufen jetzt auch, wenn niemand sie startet
+**Datum:** 2026-09-08
+
+**Der Anlass steht in ADR-073:** vier Ausfälle in Folge, vier verschiedene
+Ursachen, und **keiner war ein Fehler im getesteten Code** — alle saßen im
+Drumherum. Bei 1047 grünen Tests ist die Fehlerquelle nicht mehr die Engine,
+sondern alles, was sie startet. Und die 1047 liefen bis heute nur dort, wo
+jemand sie von Hand ausführte.
+
+### Was der Probelauf gefunden hat
+
+Bevor irgendetwas gepusht wurde: ein **frischer Klon von `main`**, also genau
+das, was die Action sieht. Ergebnis **7 rot** — und keiner davon aus dem Code.
+
+**1. `uv sync` installiert `pytest` nicht.** `dev` steht in
+`[project.optional-dependencies]`, ist also ein *Extra* und keine
+Abhängigkeitsgruppe. Ohne `--extra dev` fehlt pytest in der Umgebung,
+`uv run pytest` greift auf ein pytest **außerhalb** davon zurück, und der
+Lauf stirbt an `ModuleNotFoundError: No module named 'numpy'` — obwohl numpy
+2.4.6 installiert und importierbar ist.
+
+Das ist die unangenehmste Sorte Fehlermeldung: sie zeigt auf eine fehlende
+Bibliothek, und die Ursache ist ein fehlendes Kommandozeilen-Flag.
+
+**2. Vier Tests lasen den echten Bar-Store.** `test_research_pipeline.py`
+holte sich BTC/USD 4h über `read_bars` und fiel im Klon mit
+`FileNotFoundError` durch. `/data/` ist nicht versioniert; ein frischer
+Checkout hat den Store nie.
+
+**3. Drei Tests sind gar kein CI-Problem gewesen.** `test_nim_live.py`
+überspringt sich schon selbst, wenn kein Schlüssel gesetzt ist. Im Probelauf
+lief es trotzdem los, weil die Testumgebung den Schlüssel aus dem Container
+geerbt hatte — die drei Fehlschläge waren echte API-Aufrufe, die scheiterten.
+In der Action gibt es keinen Schlüssel, also überspringen sie.
+
+Bemerkenswert daran ist die Reihenfolge: hätte ich die Action ohne Probelauf
+gepusht, wäre sie rot geworden, und zwei der drei Ursachen hätten wie
+Codefehler ausgesehen.
+
+### Die Korrektur
+
+Punkt 2 folgt der Konvention, die im Repo **schon steht** —
+`test_walkforward.py` und `test_macross.py` machen es seit jeher so:
+
+```python
+if not parquet_path("BTC/USD", "4h").exists():
+    pytest.skip("Keine gespeicherten Daten -- qt data pull")
+```
+
+Bewusst *übersprungen* und nicht durch synthetische Bars ersetzt: diese vier
+sind der End-to-End-Beleg der Pipeline gegen echte Daten. Ein Ersatz wäre ein
+anderer Test, der so tut, als wäre er dieser.
+
+Dieselbe Lehre wie beim `timesfm`-Test (ADR-063), nur andersherum: dort hing
+ein Test daran, dass ein Paket **fehlt**, hier daran, dass Daten **da sind**.
+Beide Male prüfte er die Umgebung statt den Code.
+
+### Was die Action tut
+
+`push` auf `main` und **jeder** Pull Request, 20 Minuten Zeitlimit,
+`concurrency` mit `cancel-in-progress` (ein zweiter Push macht den ersten Lauf
+gegenstandslos). Drei Schritte: `uv sync --extra dev`, `ruff check src tests`,
+`pytest -q -p no:randomly`.
+
+Die feste Reihenfolge ist Absicht: ein Lauf, der mal grün und mal rot ist,
+kostet mehr Vertrauen, als er einbringt.
+
+**Gemessen unter genau den Bedingungen der Action** — frischer Klon, kein
+Store, kein Schlüssel:
+
+| | |
+|---|---|
+| Ergebnis | **1036 grün, 11 übersprungen, 0 rot** |
+| Laufzeit | 32 Sekunden |
+| lokal, mit Store und Schlüssel | 1047 grün in 4:23 |
+
+Die 11 Übersprungenen nennen jeweils ihren Grund. Das ist der Unterschied
+zwischen „läuft nicht" und „läuft hier nicht, und zwar deshalb".
+
+### Was sie ausdrücklich nicht tut
+
+- **Keine Secrets.** Die Live-Tests gegen NIM kosten Geld und 90 bis 155
+  Sekunden pro Aufruf (ADR-040). Sie gehören an eine Hand, nicht an einen
+  Zeitplan.
+- **Keinen Datenspeicher nachziehen.** Ein `qt data pull` in der Action wäre
+  20 Minuten und ein Abhängigkeit von zwei Börsen-APIs bei jedem Commit. Die
+  vier Tests, die ihn brauchen, laufen dort, wo er liegt.
+- **Nichts erzwingen.** Die Action meldet, sie blockiert nicht. Ob ein roter
+  Lauf einen Merge verhindert, ist eine Einstellung am Repository und eine
+  Entscheidung des Menschen, dem es gehört.
+
+### Die Grenze, offen benannt
+
+Die Action fängt genau die Fehlerklasse **nicht**, die ADR-073 beschreibt.
+Kein Test der Welt hätte gemeldet, dass der Routine keine Quelle hinterlegt
+ist oder dass ein Prompt einen fatalen Zustand für normal erklärt — das steht
+in der Konfiguration einer Plattform, nicht im Repository.
+
+Was sie leistet, ist bescheidener und trotzdem neu: **die 1047 Tests sind ab
+jetzt eine Zusage und keine Momentaufnahme.** Bisher galt „grün", weil ich es
+zuletzt gesehen hatte.
+
+---
+
 ## ADR-073 — Ein Ausfall, der sich als Erfolg meldete
 **Datum:** 2026-09-06
 
