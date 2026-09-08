@@ -96,6 +96,55 @@ zwischen „läuft nicht" und „läuft hier nicht, und zwar deshalb".
   Lauf einen Merge verhindert, ist eine Einstellung am Repository und eine
   Entscheidung des Menschen, dem es gehört.
 
+### Nachtrag: der erste echte Lauf war rot, und das war verdient
+
+Der Probelauf oben hat `pytest` unter CI-Bedingungen geprüft — und `ruff`
+**nicht**. Den habe ich im Arbeitsverzeichnis laufen lassen, wo er global
+installiert ist. Der erste Lauf der Action starb nach 15 Sekunden:
+
+```
+error: Failed to spawn: `ruff`
+  Caused by: No such file or directory (os error 2)
+```
+
+`ruff` stand nirgends in `pyproject.toml`. `uv run ruff` fiel auf den PATH
+durch, und ein GitHub-Runner hat dort keinen. **Genau derselbe Fehler, den
+dieses ADR eine Seite weiter oben beschreibt** — ein Werkzeug, dessen
+Verfügbarkeit davon abhängt, wer es startet. Ich habe ihn beim Prüfen
+wiederholt, statt ihn zu vermeiden.
+
+Beim Eintragen kam der zweite Fund. `uv lock` wählte **ruff 0.16.6**, und
+damit meldet derselbe unveränderte Code **183 Befunde** statt null. Das
+Projekt hat keine `[tool.ruff]`-Sektion, ruff läuft also auf Standardregeln,
+und die ändern sich zwischen Nebenversionen.
+
+Das sind keine Funde am Code, sondern ein **neuer Maßstab**. Deshalb steht in
+`pyproject.toml` eine Obergrenze:
+
+```toml
+dev = ["pytest>=8.0", "ruff>=0.15,<0.16"]
+```
+
+Einen Maßstab zu wechseln ist eine eigene Entscheidung mit eigenem Diff —
+dieselbe Regel wie für die Gate-Schwellen (ADR-057). Wer 0.16 will, hebt die
+Grenze und räumt die 183 auf, in einem Commit, den man lesen kann. Sie hier
+nebenbei mitzunehmen hätte 183 Änderungen in einen PR geschmuggelt, der von
+CI handelt.
+
+**Danach im Klon, alle drei Schritte:**
+
+```
+uv sync --extra dev   ->  ruff==0.15.22
+ruff check src tests  ->  All checks passed!
+pytest                ->  1036 passed, 11 skipped   (35 s)
+```
+
+Die Lehre ist unbequem und passt zum Rest: **eine Prüfung, die nur den Teil
+abdeckt, an den man gedacht hat, ist keine.** Der Probelauf hat sieben
+Fehler gefunden und einen achten übersehen, weil ich `ruff` für
+selbstverständlich hielt. Gefunden hat ihn die Action, in ihrem ersten Lauf —
+also genau das Werkzeug, das sie sein soll.
+
 ### Die Grenze, offen benannt
 
 Die Action fängt genau die Fehlerklasse **nicht**, die ADR-073 beschreibt.

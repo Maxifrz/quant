@@ -22,7 +22,21 @@ dependencies = [
 qt = "qt.cli:app"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# `ruff` gehoert hier hin und nicht auf den Rechner: bis 2026-09-08 war es
+# global installiert, `uv run ruff` fiel auf den PATH durch, und in der
+# GitHub-Action gab es keinen -- "Failed to spawn: ruff". Ein Linter, dessen
+# Version davon abhaengt, wer ihn startet, ist derselbe Kategorienfehler wie
+# ein Test, der die Umgebung prueft (ADR-074).
+#
+# **Die Obergrenze ist Absicht.** Das Projekt hat keine `[tool.ruff]`-Sektion,
+# ruff laeuft also auf seinen Standardregeln -- und die aendern sich zwischen
+# Nebenversionen. Gemessen: mit 0.16.6 meldet derselbe unveraenderte Code
+# **183** Befunde. Das waere kein Fund am Code, sondern ein neuer Massstab,
+# und einen Massstab zu wechseln ist eine eigene Entscheidung mit eigenem
+# Diff -- dieselbe Regel wie fuer die Gate-Schwellen (ADR-057). Wer 0.16
+# will, hebt die Grenze und raeumt die 183 auf, in einem Commit, den man
+# lesen kann.
+dev = ["pytest>=8.0", "ruff>=0.15,<0.16"]
 # Fuer qt.strategy.library.timesfm_strategy.TimesFMForecaster. Schwergewichtig
 # (zieht torch nach, mehrere GB inkl. Checkpoint) und deshalb keine
 # Standardabhaengigkeit -- ohne dieses Extra ist die Strategie ueber
