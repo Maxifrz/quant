@@ -221,6 +221,94 @@ Aufgabe.
 * Der Kalenderschnitt ist als Fehlerklasse benannt: ein Ingest-Default aus
   einer Anlageklasse, der still für eine andere gilt.
 
+
+### Nachtrag 2026-09-09 — das Panel ab 2003, und drei eigene Zahlen korrigiert
+
+Der Abschnitt oben endet mit einem Vorschlag: das Panel nicht beim ersten Bar
+beginnen zu lassen, sondern sobald genug Namen leben — acht, weil
+`qt.research.ic` das seit jeher als Untergrenze für einen Querschnitt setzt.
+Das ist jetzt gemessen, und dabei sind drei Zahlen aus dem Text darüber
+gefallen.
+
+#### Erstens: „Jahre × n_eff" ist für ein wachsendes Panel falsch
+
+`23,4 Jahre × n_eff 7,0` unterstellt, dass 2003 schon sieben effektive Märkte
+lieferten. 2003 leben acht Reihen, 2007 neunzehn, erst ab 2013 alle 25.
+Richtig ist das Integral: für jeden Tag die effektive Marktzahl aus den an
+diesem Tag lebenden Reihen, summiert und durch 252 geteilt.
+
+| Panel ab | Kalenderjahre | naiv `J × n_eff` | **effektive Marktjahre** | Schwelle naiv | **Schwelle ehrlich** |
+|---|---|---|---|---|---|
+| 2011-11-15 | 14,8 | 104,8 | 104,6 | 0,197 | **0,197** |
+| 2007-09-10 | 19,0 | 134,4 | 129,5 | 0,174 | 0,177 |
+| 2004-09-29 | 21,9 | 155,2 | 140,8 | 0,162 | 0,170 |
+| **2003-04-14** | **23,4** | 165,6 | **145,3** | 0,156 | **0,167** |
+| 2001-08-17 | 25,0 | 177,3 | 148,8 | 0,151 | 0,165 |
+
+Der naive Wert ist nur um 0,01 zu optimistisch — die Korrektur ändert die
+Entscheidung nicht, aber die Rechnung war falsch, und ein richtiges Ergebnis
+aus einer falschen Rechnung wird zitiert.
+
+**Korrektur 1:** oben steht **0,205** für das 25er-Panel. Richtig sind
+**0,197**. Die 0,205 kamen aus `n/(1+(n-1)·ρ̄)` mit einem ρ̄, das über Paare
+mit `min_periods=250` gemittelt war; die exakte Form `n²/Σρ_ij` gibt 7,08
+statt 6,56. Die Richtung des Fehlers war die vorsichtige.
+
+**Wo es aufhört zu helfen:** von 2003 auf 2001 sind es 1,6 Kalenderjahre, aber
+nur 3,5 effektive Marktjahre und 0,167 → 0,165. Die 2003er-Grenze ist damit
+nicht nur die, die `MIN_NAMEN = 8` vorgibt, sondern auch die, hinter der
+nichts mehr kommt.
+
+#### Zweitens: die toten Fenster verschwinden, und zwar vollständig
+
+`crossmom`, Walk-Forward, 1.000/250/20:
+
+| Panel ab | Fenster | OOS-Bars | davon ohne Trades | Sharpe | positive Fenster |
+|---|---|---|---|---|---|
+| 1993 (alles) | 29 | 7.251 | **7 (1.750 Bars)** | +0,04 | 11/29 |
+| 2011-11-15 | 10 | 2.501 | 0 | −0,38 | 4/10 |
+| **2003-04-14** | **19** | **4.751** | **0** | **−0,08** | 9/19 |
+
+Das erste Fenster des 2003er-Panels handelt 268-mal. Die Acht-Namen-Regel ist
+damit nicht bloß plausibel, sondern trifft empirisch genau den Punkt, ab dem
+der Querschnitt arbeitet.
+
+**Korrektur 2:** oben steht, die ehrliche OOS-Länge sei **5.501 Bars** und der
+DSR-Bedarf **0,78**. Beides war gerechnet (7.251 − 1.750) statt gemessen. Der
+Walk-Forward schneidet neu, wenn das Panel später beginnt: es sind **4.751
+Bars** und **0,839**. Subtraktion ist kein Ersatz für einen Lauf.
+
+**Korrektur 3:** oben steht `crossmom` **+0,04** als Ergebnis der Erweiterung.
+Dieser Wert stammt aus dem Lauf mit den sieben toten Fenstern. 1.750 Bars mit
+Rendite exakt null heben einen negativen Sharpe in Richtung null — der Fund
+war ein Messartefakt derselben Sorte, vor der ADR-066 warnt und an der
+ADR-069 schon einmal fast vorbeigelaufen wäre. Auf dem sauberen Panel steht
+`crossmom` bei **−0,08**. Besser als die −0,24 von vorher, und weiterhin
+nirgends in der Nähe einer Schwelle.
+
+#### Der Stand nach dem Nachtrag
+
+| | Nachweisgrenze | DSR-Bedarf bei 25 Versuchen |
+|---|---|---|
+| alter Stand (ETFs ab 2019) | 0,277 | 1,318 |
+| 25 ETFs ab 2011-11-15 | 0,197 | 1,157 |
+| **≥ 8 ETFs ab 2003-04-14** | **0,167** | **0,839** |
+
+Die 0,277 in der ersten Zeile sind **nicht** die 0,335 aus dem Abschnitt
+darüber, und der Unterschied ist Methode, nicht Messung: 0,335 gilt für 38
+Märkte samt Krypto mit einem ρ̄ aus dem 7,7-Jahre-Fenster, 0,277 für die 25
+ETFs allein mit ρ̄ aus der Gesamtstichprobe. Nur so sind die drei Zeilen
+untereinander vergleichbar — der Vorher-Nachher-Vergleich gegen 0,335 wäre
+sonst zum Teil ein Methodenwechsel, der als Fortschritt gelesen wird.
+
+Beide Hürden zusammen sind halbiert, und weiterhin ohne eine neue Idee. Die
+DSR bleibt die bindende: 0,839 gegen 0,167. Das beste gemessene Bruttosignal
+des Repos (`trend`, +0,459) liegt jetzt deutlich über der Nachweisgrenze und
+weiterhin deutlich unter dem DSR-Bedarf — **die Reihenfolge, in der die
+Kriterien beißen, hat sich durch den ganzen Vorgang nicht geändert.**
+
+`MIN_SHARPE` bleibt aus demselben Grund wie oben bei 0,33.
+
 ---
 
 ## ADR-074 — Die Tests laufen jetzt auch, wenn niemand sie startet

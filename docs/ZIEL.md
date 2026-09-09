@@ -61,21 +61,36 @@ Bei 7,7 Jahren Historie:
 | **5,1** | **0,33** | + 12 Reihen, ρ = 0,18 (ADR-061) |
 | 8,0 | 0,26 | vier echte Anlageklassen |
 
-Und derselbe n_eff bei längerer Spanne — dieselbe Formel, nur die andere
-Stellschraube (ADR-075):
+Dieselbe Formel an der anderen Stellschraube — der ETF-Korb, nur mit
+verschiedenem Startdatum, Korrelationen durchweg aus der Gesamtstichprobe
+(ADR-075):
 
-| Spanne | n_eff | beweisbarer Sharpe | Lage |
+| Panel ab | effektive Marktjahre | beweisbarer Sharpe | Lage |
 |---|---|---|---|
-| 7,7 J | 4,89 | 0,335 | ETFs auf das Krypto-Fenster geschnitten |
-| **14,8 J** | **6,56** | **0,205** | **heute: alle 25 ETFs ab 2011-11-15** |
-| 19,0 J | 4,61 | 0,216 | die 20 ältesten ab 2007-09 — weniger Märkte |
-| 23,4 J | — | — | ≥ 8 ETFs ab 2003-04, noch nicht gemessen |
+| 2019-01-02 | 54,2 | 0,277 | auf das Krypto-Fenster geschnitten |
+| 2011-11-15 | 104,6 | 0,197 | alle 25 ETFs, 14,8 Kalenderjahre |
+| 2004-09-29 | 140,8 | 0,170 | ≥ 10 ETFs |
+| **2003-04-14** | **145,3** | **0,167** | **heute: ≥ 8 ETFs, 23,4 Kalenderjahre** |
+| 2001-08-17 | 148,8 | 0,165 | ≥ 4 — kein Querschnitt mehr, bringt nichts |
 
-Das Optimum ist flach und liegt beim vollen Korb: weiter zurück tauscht man
-Märkte gegen Jahre und gewinnt nichts mehr. Bemerkenswert ist, dass das
-**längere** Fenster das **weniger** korrelierte ist — ρ̄ fällt von 0,18 auf
-0,12. Die 7,7 Jahre bestanden aus Covid und der Zinswende 2022, den beiden am
-stärksten korrelierten Regimen der Reihe.
+Die 0,33 der Tabelle davor und die 0,277 dieser Zeile sind **nicht dieselbe
+Größe**: dort 38 Märkte samt Krypto mit ρ̄ aus dem 7,7-Jahre-Fenster, hier die
+25 ETFs allein mit ρ̄ aus der Gesamtstichprobe. Vergleichbar sind nur die
+Zeilen *innerhalb* einer Tabelle.
+
+**Nicht `Jahre × n_eff`.** Das unterstellt, 2003 hätten schon sieben effektive
+Märkte geliefert; dort leben acht Reihen, ab 2013 erst alle 25. Gerechnet wird
+die tägliche effektive Marktzahl, aufsummiert und durch 252 geteilt — für das
+2003er-Panel 145,3 statt naiv 165,6.
+
+Bei 2003-04-14 hört der Hebel auf: 2001 brächte 1,6 Kalenderjahre mehr, aber
+nur 3,5 effektive Marktjahre, weil dort noch keine acht Reihen leben. Dass die
+Grenze genau dort liegt, wo `MIN_NAMEN = 8` in `qt.research.ic` schon stand,
+ist kein Zufall — davor gibt es keinen Querschnitt, den man messen könnte.
+
+Bemerkenswert nebenbei: das **längere** Fenster ist das **weniger**
+korrelierte — ρ̄ fällt von 0,18 auf 0,11. Die 7,7 Jahre bestanden aus Covid und
+der Zinswende 2022, den beiden am stärksten korrelierten Regimen der Reihe.
 
 **`macross` hat 0,31** — und auf einem am 2026-09-03 frisch gezogenen Store nur
 noch **0,25** (ADR-059). Um 0,31 auf einer einzelnen Reihe zu zeigen, bräuchte
@@ -103,10 +118,10 @@ entscheidbar.
 > > **Das stimmte nicht, und der Absatz darüber sagt auch warum (ADR-075).**
 > > Es gab einen Weg 3, und er stand seit jeher als erste der beiden Größen im
 > > Text: die **Kalenderspanne**. Sie war nicht gegeben, sondern durch den
-> > `--since`-Default des ETF-Abzugs auf das Krypto-Fenster geschnitten. Mit
-> > der vollen Historie sind es 14,8 Jahre, n_eff 6,6 und eine Grenze von
-> > **0,205** — mehr, als die als unerreichbar erklärten 0,26 gebracht hätten,
-> > und ohne eine einzige neue Anlageklasse.
+> > `--since`-Default des ETF-Abzugs auf das Krypto-Fenster geschnitten. Auf
+> > dem Panel ab 2003-04-14 sind es 145 effektive Marktjahre und eine Grenze
+> > von **0,167** — weit unter den 0,26, die als unerreichbar galten, und ohne
+> > eine einzige neue Anlageklasse.
 > >
 > > Nachträglich sichtbar wird auch, warum der Irrtum haltbar war: „n_eff
 > > erhöhen" ist als Aufgabe formuliert, „die Spanne erhöhen" war nie eine —
@@ -384,8 +399,8 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
 | | Kriterium |
 |---|---|
-| OOS-Sharpe | ≥ **0,33** — die Herleitung ist überholt (0,205 aus n_eff 6,6 über 14,8 Jahre), die Zahl bleibt: sie hat noch nie eine Ablehnung getragen (ADR-075) |
-| DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler — **das ist die Zeile, die bindet**: sie verlangte 1,32 bei 1.928 OOS-Bars und 0,78 bei 5.501 |
+| OOS-Sharpe | ≥ **0,33** — die Herleitung ist überholt (0,167 aus 145 effektiven Marktjahren), die Zahl bleibt: sie hat noch nie eine Ablehnung getragen (ADR-075) |
+| DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler — **das ist die Zeile, die bindet**: sie verlangte 1,32 bei 1.928 OOS-Bars und verlangt 0,84 bei 4.751 |
 | Permutation | Perzentil ≥ 95 % (`qt placebo shuffle`) |
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |
 | Anlageklassen | wirkt in mindestens zwei, nicht nur in Krypto |

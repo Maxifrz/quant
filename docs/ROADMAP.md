@@ -112,9 +112,13 @@
 > ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
 > bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
 >
-> Die Zahl, die den Plan diktiert: bei **14,8 Jahren** Historie und **6,6**
-> effektiv unabhängigen Märkten wäre ein **Sharpe ab 0,205** beweisbar
-> (ADR-075, vorher 0,33 aus 7,7 Jahren und n_eff 5,1).
+> Die Zahl, die den Plan diktiert: auf dem Panel ab **2003-04-14** (≥ 8 ETFs,
+> 145 effektive Marktjahre) wäre ein **Sharpe ab 0,167** beweisbar (ADR-075,
+> vorher 0,33 aus 7,7 Jahren und n_eff 5,1; 0,197 auf dem Panel ab 2011).
+>
+> Gerechnet wird dabei **nicht** `Jahre × n_eff` — das unterstellt, 2003 hätten
+> schon sieben effektive Märkte geliefert, wo acht Reihen leben. Richtig ist
+> die tägliche effektive Marktzahl, aufsummiert: 145,3 statt 165,6.
 >
 > **`MIN_SHARPE` steht trotzdem weiter auf 0,33**, und das ist keine
 > Vorsicht, sondern ein Messergebnis: die Konstante hat noch nie eine
@@ -126,22 +130,40 @@
 > **Die Hürde, die wirklich bindet, ist die DSR**, und sie hängt fast nur an
 > der Spanne: ihr Maßstab fällt mit √T, und über die Märkte ist längst
 > aggregiert, n_eff kommt darin gar nicht vor. Nötiger Sharpe für DSR ≥ 0,95
-> bei 25 Versuchen: **1,32** bei 1.928 OOS-Bars (der alte Stand), **0,95** bei
-> 3.722, **0,78** bei 5.501. Halbiert, ohne eine einzige neue Idee.
+> bei 25 Versuchen: **1,32** bei 1.928 OOS-Bars (der alte Stand), **1,16** bei
+> 2.501 (Panel ab 2011), **0,84** bei 4.751 (Panel ab 2003). Halbiert, ohne
+> eine einzige neue Idee.
+>
+> Der Walk-Forward, der diese Bars liefert:
+> ```bash
+> uv run qt wf --strategy crossmom --tf 1d --since 2003-04-14 \
+>   --symbol SPY,QQQ,EFA,EEM,EWJ,TLT,IEF,SHY,TIP,MUB,GLD,SLV,DBC,USO,UNG,\
+> DBA,CORN,SOYB,WEAT,CPER,VNQ,UUP,FXE,FXY,VIXY
+> ```
+> **Ohne `--since` nicht auswerten.** Ab 1993 liefert derselbe Lauf 29 Fenster
+> und 7.251 Bars, aber die ersten sieben handeln **nicht** — vor 2004 leben
+> vier ETFs, für einen Querschnitt zu wenig. 1.750 Bars mit Rendite exakt null
+> heben einen negativen Sharpe in Richtung null: `crossmom` steht dort bei
+> +0,04 und auf dem sauberen Panel bei **−0,08**. Ab 2003-04-14 handelt jedes
+> der 19 Fenster.
 >
 > **Der billige Hebel war noch nicht gezogen — hier stand das Gegenteil.**
 > Bis ADR-075 hieß es an dieser Stelle: *„Der nächste Schritt brächte
 > 0,33 → 0,26 und bräuchte Anlageklassen, die es nicht gibt. Ab hier hilft nur
 > noch ein stärkerer Edge."* Er brauchte keine neue Anlageklasse, sondern ein
-> anderes Datum in einem `--since`-Default, und er bringt 0,33 → 0,205, also
-> mehr als die 0,26, die als unerreichbar galten. Der Satz war plausibel,
+> anderes Datum in einem `--since`-Default, und er bringt 0,33 → 0,167, also
+> weit mehr als die 0,26, die als unerreichbar galten. Der Satz war plausibel,
 > falsch, und er hat den billigsten verbliebenen Hebel für erledigt erklärt.
 >
-> Was jetzt wirklich ausgereizt ist: das **Verbreitern**. Von 1,4 auf 6,6
-> effektive Märkte ist der Weg gegangen, und der Krypto-Block **senkt** n_eff
-> inzwischen (25 ETFs allein 7,1, mit den 14 Paaren zusammen 5,4). Offen ist
-> nur noch das **Verlängern** nach hinten: acht ETFs gibt es ab 2003-04-14,
-> das wären 23,4 Jahre statt 14,8.
+> **Jetzt ist er wirklich ausgereizt, und diesmal mit der Gegenprobe.** Das
+> Verbreitern: von 1,4 auf 7,1 effektive Märkte, und der Krypto-Block **senkt**
+> n_eff inzwischen (25 ETFs allein 7,1, mit den 14 Paaren zusammen 5,4). Das
+> Verlängern: 2003-04-14 ist das Ende der Fahnenstange — weiter zurück auf
+> 2001-08-17 sind zwar 1,6 Kalenderjahre mehr, aber nur 3,5 effektive
+> Marktjahre und 0,167 → **0,165**. Dass die Grenze genau dort liegt, wo
+> `MIN_NAMEN = 8` schon stand, ist der Punkt: davor gibt es keinen Querschnitt.
+> **Ab hier hilft wirklich nur noch ein stärkerer Edge** — und dieser Satz ist
+> jetzt zum zweiten Mal getippt, nachdem er beim ersten Mal falsch war.
 >
 > ### Der Stand in einem Satz
 >
