@@ -5,6 +5,88 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-076 — `bars_seen` war ein Laufzettel und keine Zahl
+**Datum:** 2026-09-09
+
+Gefunden beim Nachlesen eines Routinelaufs, der sich selbst als unauffällig
+gemeldet hatte — und der Bericht stimmte auch: „ein neuer Bar pro Konto,
+keine Fills". Im gesicherten Kontostand stand daneben:
+
+```
+  06.09.  2.805      08.09.  8.418
+  07.09.  5.611      09.09.  8.529   (+8.418 an einem Tag)
+```
+
+`bars_seen` wuchs pro Tick um die volle Storegröße statt um die neuen Bars.
+
+### Die Ursache
+
+`run_paper_tick` lädt die **ganze** Historie und spielt sie in einen frisch
+angelegten `FeatureStore` ein; nur die Bars nach `last_processed_ts` lösen
+eine Entscheidung aus, der Rest ist Kontext. Beide Zweige der Schleife zählen
+`bars_seen` hoch — richtig, denn der Store hat diese Bars wirklich gesehen.
+
+Der Fehler saß eine Zeile davor: `bars_seen = dict(state.bars_seen)`. Der
+Zähler wurde aus dem Zustand **geladen** und dann von derselben Historie noch
+einmal hochgezählt. Er beantwortet damit keine Frage: „seit Kontoeröffnung"
+ist es nicht, denn er zählt dieselben Bars mehrfach; „im letzten Tick" ist es
+auch nicht, denn er trägt die vorigen mit.
+
+### Warum es aufgefallen ist und trotzdem nichts kaputt war
+
+`bars_seen` trägt genau eine Entscheidung, die Warmup-Prüfung:
+
+```python
+warm = all(bars_seen.get(sym, 0) >= strategy.warmup_bars for sym in bars_by_symbol)
+```
+
+Ein zu **großer** Wert meldet ein Konto zu früh als warm. Bei den beiden
+laufenden Konten war der echte Wert (2.809 Bars) ohnehin weit über dem Warmup,
+der Fehler also folgenlos — **zufällig folgenlos**. Bei einem frisch
+aufgesetzten Konto oder nach einem beschnittenen Store wäre es der Unterschied
+zwischen „handelt mit genug Historie" und „handelt". Und zwar still: eine
+Strategie, die auf zu wenig Historie entscheidet, stürzt nicht ab, sie
+entscheidet nur schlechter.
+
+Das ist dieselbe Fehlerklasse wie ADR-069 (das Rebalancing-Band maß das
+Eigenkapital statt der Position) und ADR-075 (der `--since`-Default): eine
+Größe, die etwas anderes misst, als ihr Name sagt, und deren Fehler in die
+bequeme Richtung zeigt.
+
+### Die Korrektur
+
+Der Zähler wird pro Tick neu gebildet. Er bedeutet damit, was die
+Warmup-Prüfung braucht: **Tiefe des Feature-Stores je Symbol in diesem Tick.**
+Eine Migration entfällt — der Wert wird beim nächsten Tick mit einem neuen Bar
+überschrieben. (Ein Leerlauf-Tick sichert nichts, also steht der aufgeblähte
+Wert bis dahin noch in der Datei; das ist bekannt und harmlos.)
+
+Zwei Tests halten es fest, und der erste ist zuerst rot geschrieben worden:
+drei Ticks mit je einem neuen Bar müssen 31, 32, 33 ergeben und nicht 31, 63,
+96. Der zweite setzt 999.999 in eine Zustandsdatei und prüft, dass ein Tick
+das heilt.
+
+### Was der Bericht des Laufs richtig gemacht hat
+
+Die gemeldete Zahl „ein neuer Bar pro Konto" stammt aus `new_bars` und war
+korrekt. Der Fehler stand nur im gesicherten Zustand, den niemand liest,
+solange er plausibel aussieht — und 8.529 sieht neben 8.418 plausibel aus.
+Aufgefallen ist er erst im Vergleich zweier Kontostände, die dasselbe Konto an
+verschiedenen Tagen beschreiben. Das ist die Lehre: der Tagesbericht kann nur
+prüfen, was er ausgibt.
+
+### Nebenbefund aus demselben Lauf, keine Codeänderung
+
+Der Lauf hat einen nach dem Merge gelöschten Remote-Branch **wiederhergestellt**,
+damit ein Hook keinen „unpushed commit" mehr meldet. Der Branch zeigt jetzt
+auf denselben Commit wie `main` und enthält nichts, was dort nicht steht. Ein
+Push, um ein Werkzeug zufriedenzustellen statt um Inhalt zu sichern, ist die
+Umkehrung von ADR-051: dort war die Lehre, dass eine grüne Meldung nichts über
+den Zustand sagt. Der Branch bleibt vorerst stehen (er schadet nicht); die
+Meldung des Hooks ist der Teil, der falsch liegt.
+
+---
+
 ## ADR-075 — Die Nachweisgrenze hing an einem Default, nicht an den Daten
 **Datum:** 2026-09-08
 
