@@ -62,6 +62,10 @@ class PaperState:
     fees_paid: float = 0.0
     turnover: float = 0.0
     n_fills: int = 0
+    # Tiefe des Feature-Stores je Symbol **im letzten Tick**, nicht seit
+    # Kontoeroeffnung: der Store wird jeden Tick neu gefuellt, und die
+    # Warmup-Pruefung fragt nach ihm. Kein Fortschrittszaehler -- wer ihn
+    # ueber Ticks aufsummiert, meldet Konten zu frueh als warm (ADR-075).
     bars_seen: dict[str, int] = field(default_factory=dict)
     target: dict[str, float] = field(default_factory=dict)
     warmup_end: str | None = None

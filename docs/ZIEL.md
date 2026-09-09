@@ -44,6 +44,12 @@ unabhängige Evidenz, um irgendetwas zu zeigen.**
 
 Der Standardfehler eines annualisierten Sharpe hängt an der **Kalenderspanne**
 und der **Zahl unabhängiger Reihen** — nicht an der Bar-Frequenz (ADR-047).
+**Diesen Satz genau lesen: er nennt zwei Hebel, und dieses Dokument hat
+jahrelang nur einen benutzt.** Die Kalenderspanne stand als erste der beiden
+Größen da und galt trotzdem als gegeben — 7,7 Jahre, so lange gibt es die
+Krypto-Reihen. Für die ETFs war das nie wahr; sie waren nur mit demselben
+`--since` gezogen worden (ADR-075).
+
 Bei 7,7 Jahren Historie:
 
 | unabhängige Märkte | beweisbarer Sharpe (t ≥ 2) | Lage |
@@ -52,8 +58,39 @@ Bei 7,7 Jahren Historie:
 | **1,4** | **0,67** | 13 Krypto-Märkte, ρ = 0,67 |
 | 3,4 | 0,41 | + 13 ETFs, ρ = 0,26 (ADR-055) |
 | 3,0 | 0,44 | + Aktien |
-| **5,1** | **0,33** | **heute: + 12 Reihen, ρ = 0,18 (ADR-061)** |
+| **5,1** | **0,33** | + 12 Reihen, ρ = 0,18 (ADR-061) |
 | 8,0 | 0,26 | vier echte Anlageklassen |
+
+Dieselbe Formel an der anderen Stellschraube — der ETF-Korb, nur mit
+verschiedenem Startdatum, Korrelationen durchweg aus der Gesamtstichprobe
+(ADR-075):
+
+| Panel ab | effektive Marktjahre | beweisbarer Sharpe | Lage |
+|---|---|---|---|
+| 2019-01-02 | 54,2 | 0,277 | auf das Krypto-Fenster geschnitten |
+| 2011-11-15 | 104,6 | 0,197 | alle 25 ETFs, 14,8 Kalenderjahre |
+| 2004-09-29 | 140,8 | 0,170 | ≥ 10 ETFs |
+| **2003-04-14** | **145,3** | **0,167** | **heute: ≥ 8 ETFs, 23,4 Kalenderjahre** |
+| 2001-08-17 | 148,8 | 0,165 | ≥ 4 — kein Querschnitt mehr, bringt nichts |
+
+Die 0,33 der Tabelle davor und die 0,277 dieser Zeile sind **nicht dieselbe
+Größe**: dort 38 Märkte samt Krypto mit ρ̄ aus dem 7,7-Jahre-Fenster, hier die
+25 ETFs allein mit ρ̄ aus der Gesamtstichprobe. Vergleichbar sind nur die
+Zeilen *innerhalb* einer Tabelle.
+
+**Nicht `Jahre × n_eff`.** Das unterstellt, 2003 hätten schon sieben effektive
+Märkte geliefert; dort leben acht Reihen, ab 2013 erst alle 25. Gerechnet wird
+die tägliche effektive Marktzahl, aufsummiert und durch 252 geteilt — für das
+2003er-Panel 145,3 statt naiv 165,6.
+
+Bei 2003-04-14 hört der Hebel auf: 2001 brächte 1,6 Kalenderjahre mehr, aber
+nur 3,5 effektive Marktjahre, weil dort noch keine acht Reihen leben. Dass die
+Grenze genau dort liegt, wo `MIN_NAMEN = 8` in `qt.research.ic` schon stand,
+ist kein Zufall — davor gibt es keinen Querschnitt, den man messen könnte.
+
+Bemerkenswert nebenbei: das **längere** Fenster ist das **weniger**
+korrelierte — ρ̄ fällt von 0,18 auf 0,11. Die 7,7 Jahre bestanden aus Covid und
+der Zinswende 2022, den beiden am stärksten korrelierten Regimen der Reihe.
 
 **`macross` hat 0,31** — und auf einem am 2026-09-03 frisch gezogenen Store nur
 noch **0,25** (ADR-059). Um 0,31 auf einer einzelnen Reihe zu zeigen, bräuchte
@@ -77,6 +114,20 @@ entscheidbar.
 > 5 auf 8 effektive Märkte brächte nur noch 0,33 → 0,26, und dafür fehlen die
 > Anlageklassen. **Ab hier bleibt Weg 1** — und `macross` liegt mit 0,25
 > weiterhin darunter.
+>
+> > **Das stimmte nicht, und der Absatz darüber sagt auch warum (ADR-075).**
+> > Es gab einen Weg 3, und er stand seit jeher als erste der beiden Größen im
+> > Text: die **Kalenderspanne**. Sie war nicht gegeben, sondern durch den
+> > `--since`-Default des ETF-Abzugs auf das Krypto-Fenster geschnitten. Auf
+> > dem Panel ab 2003-04-14 sind es 145 effektive Marktjahre und eine Grenze
+> > von **0,167** — weit unter den 0,26, die als unerreichbar galten, und ohne
+> > eine einzige neue Anlageklasse.
+> >
+> > Nachträglich sichtbar wird auch, warum der Irrtum haltbar war: „n_eff
+> > erhöhen" ist als Aufgabe formuliert, „die Spanne erhöhen" war nie eine —
+> > sie galt als Eigenschaft der Welt. Die Frage, die gefehlt hat, lautet
+> > nicht „wie bekommen wir mehr Märkte", sondern **„woher kommt eigentlich
+> > die 7,7?"**
 
 ---
 
@@ -220,6 +271,14 @@ Ziel: **n_eff von 1,4 auf mindestens 4.** Erreicht: **5,1.**
 > Konsequenz für Gate 1: **Mindest-Sharpe 0,33.** Kein Kandidat gewinnt
 > dadurch — `macross` bricht weiter beim Umschlag ab, `crossmom` steht bei
 > −0,08.
+>
+> > **Nachtrag ADR-075: „Historie bis 2021-09-30" war die falsche Sorge.** Die
+> > Prüfliste fragte, ob eine neue Reihe *weit genug zurückreicht* — und
+> > übersah, dass die schon vorhandenen es taten und trotzdem abgeschnitten
+> > gespeichert wurden. Auf dem vollen Fenster steht n_eff bei **7,1** für die
+> > 25 ETFs allein; die 14 Krypto-Paare senken es auf 5,4. Der Block, der in
+> > ADR-054 der Ausgangsbestand war, ist gemessen der, der die effektive
+> > Marktzahl drückt.
 
 *Fallstrick, vorab benannt und inzwischen beseitigt:* Nicht-Krypto handelt
 nicht 24/7. `bars_per_year` und `find_gaps` unterstellten durchgehend Krypto —
@@ -340,8 +399,8 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
 
 | | Kriterium |
 |---|---|
-| OOS-Sharpe | ≥ **0,33** — die aus n_eff 5,1 abgeleitete Schwelle (ADR-061) |
-| DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler |
+| OOS-Sharpe | ≥ **0,33** — die Herleitung ist überholt (0,167 aus 145 effektiven Marktjahren), die Zahl bleibt: sie hat noch nie eine Ablehnung getragen (ADR-075) |
+| DSR | ≥ 0,95 gegen den dann gültigen Versuchszähler — **das ist die Zeile, die bindet**: sie verlangte 1,32 bei 1.928 OOS-Bars und verlangt 0,84 bei 4.751 |
 | Permutation | Perzentil ≥ 95 % (`qt placebo shuffle`) |
 | Querschnitt | Median-Sharpe > 0 über die erweiterten Märkte |
 | Anlageklassen | wirkt in mindestens zwei, nicht nur in Krypto |

@@ -72,6 +72,32 @@ from qt.core.types import Bar
 #
 # Wer sie ohne eine dieser drei Bedingungen wieder anfasst, senkt die Latte
 # und nicht die Nachweisgrenze.
+#
+# --------------------------------------------------------------------------
+# **Nachtrag ADR-075: die Herleitung stimmt nicht mehr, die Zahl bleibt.**
+#
+# Die ETF-Historie im Store war auf das Krypto-Fenster geschnitten, nicht auf
+# das Angebot der Quelle. Mit der vollen Historie sind es 14,8 Jahre statt
+# 7,7 und n_eff 6,6 statt 4,9; dieselbe Formel gibt damit **0,205**, nicht
+# 0,33. Die drei Bedingungen oben waeren sogar erfuellt -- die Regel stand
+# vorher, gesenkt haette die Datenlage, und kein Kandidat gewaenne dadurch.
+#
+# Gesenkt wird trotzdem nicht, aus einem Grund, der erst durch Nachzaehlen
+# sichtbar wurde: **diese Zeile hat noch nie eine Entscheidung getroffen.**
+# Von 16 durchgerechneten Kandidaten in der Registry scheiterte *keiner*
+# allein an ihr; jede Ablehnung kam von der DSR, oft von beiden. Die DSR
+# verlangt bei denselben Laeufen einen Sharpe zwischen 1,32 und 1,66 -- das
+# Vier- bis Fuenffache dieser Zeile.
+#
+# Eine Schwelle zu senken, die nicht bindet, veraendert kein Urteil und sieht
+# nur wie Fortschritt aus. Der Diff waere die Sorte, die spaeter zitiert wird
+# ("damals wurde die Latte gesenkt"), ohne dass ihm anzusehen waere, dass er
+# folgenlos war.
+#
+# Wo die Spanne wirklich wirkt, ist die DSR, und dort ohne jedes Zutun: ihr
+# Massstab faellt mit sqrt(T). Gemessen an denselben 25 Versuchen sinkt der
+# noetige Sharpe von 1,32 (1.928 Bars) auf 0,95 (3.722) und 0,68 (7.251).
+# Das ist der Gewinn aus ADR-075 -- er steht nicht in dieser Konstanten.
 MIN_SHARPE = 0.33
 
 # Ueblich, und seit ADR-005 unveraendert.

@@ -5,6 +5,394 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-076 — `bars_seen` war ein Laufzettel und keine Zahl
+**Datum:** 2026-09-09
+
+Gefunden beim Nachlesen eines Routinelaufs, der sich selbst als unauffällig
+gemeldet hatte — und der Bericht stimmte auch: „ein neuer Bar pro Konto,
+keine Fills". Im gesicherten Kontostand stand daneben:
+
+```
+  06.09.  2.805      08.09.  8.418
+  07.09.  5.611      09.09.  8.529   (+8.418 an einem Tag)
+```
+
+`bars_seen` wuchs pro Tick um die volle Storegröße statt um die neuen Bars.
+
+### Die Ursache
+
+`run_paper_tick` lädt die **ganze** Historie und spielt sie in einen frisch
+angelegten `FeatureStore` ein; nur die Bars nach `last_processed_ts` lösen
+eine Entscheidung aus, der Rest ist Kontext. Beide Zweige der Schleife zählen
+`bars_seen` hoch — richtig, denn der Store hat diese Bars wirklich gesehen.
+
+Der Fehler saß eine Zeile davor: `bars_seen = dict(state.bars_seen)`. Der
+Zähler wurde aus dem Zustand **geladen** und dann von derselben Historie noch
+einmal hochgezählt. Er beantwortet damit keine Frage: „seit Kontoeröffnung"
+ist es nicht, denn er zählt dieselben Bars mehrfach; „im letzten Tick" ist es
+auch nicht, denn er trägt die vorigen mit.
+
+### Warum es aufgefallen ist und trotzdem nichts kaputt war
+
+`bars_seen` trägt genau eine Entscheidung, die Warmup-Prüfung:
+
+```python
+warm = all(bars_seen.get(sym, 0) >= strategy.warmup_bars for sym in bars_by_symbol)
+```
+
+Ein zu **großer** Wert meldet ein Konto zu früh als warm. Bei den beiden
+laufenden Konten war der echte Wert (2.809 Bars) ohnehin weit über dem Warmup,
+der Fehler also folgenlos — **zufällig folgenlos**. Bei einem frisch
+aufgesetzten Konto oder nach einem beschnittenen Store wäre es der Unterschied
+zwischen „handelt mit genug Historie" und „handelt". Und zwar still: eine
+Strategie, die auf zu wenig Historie entscheidet, stürzt nicht ab, sie
+entscheidet nur schlechter.
+
+Das ist dieselbe Fehlerklasse wie ADR-069 (das Rebalancing-Band maß das
+Eigenkapital statt der Position) und ADR-075 (der `--since`-Default): eine
+Größe, die etwas anderes misst, als ihr Name sagt, und deren Fehler in die
+bequeme Richtung zeigt.
+
+### Die Korrektur
+
+Der Zähler wird pro Tick neu gebildet. Er bedeutet damit, was die
+Warmup-Prüfung braucht: **Tiefe des Feature-Stores je Symbol in diesem Tick.**
+Eine Migration entfällt — der Wert wird beim nächsten Tick mit einem neuen Bar
+überschrieben. (Ein Leerlauf-Tick sichert nichts, also steht der aufgeblähte
+Wert bis dahin noch in der Datei; das ist bekannt und harmlos.)
+
+Zwei Tests halten es fest, und der erste ist zuerst rot geschrieben worden:
+drei Ticks mit je einem neuen Bar müssen 31, 32, 33 ergeben und nicht 31, 63,
+96. Der zweite setzt 999.999 in eine Zustandsdatei und prüft, dass ein Tick
+das heilt.
+
+### Was der Bericht des Laufs richtig gemacht hat
+
+Die gemeldete Zahl „ein neuer Bar pro Konto" stammt aus `new_bars` und war
+korrekt. Der Fehler stand nur im gesicherten Zustand, den niemand liest,
+solange er plausibel aussieht — und 8.529 sieht neben 8.418 plausibel aus.
+Aufgefallen ist er erst im Vergleich zweier Kontostände, die dasselbe Konto an
+verschiedenen Tagen beschreiben. Das ist die Lehre: der Tagesbericht kann nur
+prüfen, was er ausgibt.
+
+### Nebenbefund aus demselben Lauf, keine Codeänderung
+
+Der Lauf hat einen nach dem Merge gelöschten Remote-Branch **wiederhergestellt**,
+damit ein Hook keinen „unpushed commit" mehr meldet. Der Branch zeigt jetzt
+auf denselben Commit wie `main` und enthält nichts, was dort nicht steht. Ein
+Push, um ein Werkzeug zufriedenzustellen statt um Inhalt zu sichern, ist die
+Umkehrung von ADR-051: dort war die Lehre, dass eine grüne Meldung nichts über
+den Zustand sagt. Der Branch bleibt vorerst stehen (er schadet nicht); die
+Meldung des Hooks ist der Teil, der falsch liegt.
+
+---
+
+## ADR-075 — Die Nachweisgrenze hing an einem Default, nicht an den Daten
+**Datum:** 2026-09-08
+
+Auslöser war eine ganz andere Frage: taugt eine Makro-Überraschungsstrategie
+(NFP, CPI, FOMC — Ist minus Konsens) als nächste Richtung? Beim Nachrechnen
+ihrer Anforderung fiel auf, dass die bindende Größe gar nicht der Signaltyp
+ist, sondern die **Kalenderspanne** — und dass die 7,7 Jahre, mit denen dieses
+Projekt seit ADR-054 rechnet, keine Eigenschaft der Datenquelle sind.
+
+### Der Fund
+
+`qt data stocks --since` stand auf `2019-01-01`. Das ist das richtige Datum
+für Krypto — Coinbase fängt dort an — und es war nie für die ETFs gedacht.
+Trotzdem galt es für sie, weil sie mit demselben Befehl gezogen wurden. Alle
+25 ETF-Reihen im Store begannen am 2019-01-02.
+
+Was die Quelle wirklich hergibt, abgefragt statt vermutet:
+
+| Ticker | ab | | Ticker | ab |
+|---|---|---|---|---|
+| SPY | 1993-01-29 | | GLD | 2004-11-18 |
+| EWJ | 1996-04-01 | | FXE | 2005-12-12 |
+| QQQ | 1999-03-10 | | DBC | 2006-02-06 |
+| EFA | 2001-08-17 | | SLV | 2006-04-28 |
+| IEF/SHY/TLT | 2002-07-26 | | MUB | 2007-09-10 |
+| EEM | 2003-04-14 | | VIXY | 2011-01-04 |
+| TIP | 2003-12-05 | | CPER | 2011-11-15 |
+
+Der Abzug hat aus bis zu 33 Jahren 7,7 gemacht, und zwar geräuschlos: im
+Store steht danach nur noch das Ergebnis.
+
+### Was der neue Abzug gebracht hat
+
+25 Reihen, 48.000 → **130.000 Bars**. Auf der Überlappung 2019–2026 sind alt
+und neu **bitgleich** — größte Renditeabweichung über alle 25 Reihen
+`0,0e+00`. Das ist mehr als eine Formalie: die retroaktive Adjustierung, vor
+der ADR-055 warnt, hat diesmal nicht zugeschlagen, und **jede bisher
+gemessene Zahl auf ETF-Daten bleibt gültig**. Die Erweiterung ist rein
+additiv.
+
+Die Integritätsprüfung meldet alle 25 als `ok`. Die gefundenen Lücken sind
+echte Börsenschließungen und lesen sich wie eine Stichprobe der letzten
+25 Jahre: 2001-09-10 → 2001-09-17 (NYSE nach dem 11. September),
+2012-10-26 → 2012-10-31 (Hurrikan Sandy), 2006-12-29 → 2007-01-03
+(Staatstrauer Gerald Ford). Der Lückendetektor hat damit nebenbei sich selbst
+geprüft.
+
+### n_eff auf dem echten Fenster
+
+Gemessen mit `qt placebo cross`, also dem Instrument des Projekts:
+
+| Universum | ρ̄ | n_eff | vorher |
+|---|---|---|---|
+| 25 ETFs | 0,11 | **7,1** | 5,96 auf dem 2019er-Fenster |
+| alle 38 Märkte | 0,16 | **5,4** | 5,1 (ADR-061) |
+| nur die 14 Krypto-Paare | 0,69 | 1,41 | — |
+
+Zwei Dinge daran waren nicht erwartet.
+
+**Erstens: das längere Fenster ist das *weniger* korrelierte.** Die Vermutung
+war das Gegenteil — Krisen korrelieren alles, und ein Fenster über 2008 hinweg
+sollte ρ̄ heben. Es hebt es nicht, weil das alte Fenster ausgerechnet aus
+Covid und der Zinswende 2022 bestand. Rollierende Dreijahresblöcke:
+
+```
+  2012-2014   rho 0,091   n_eff 7,85      2020-2022   rho 0,145   n_eff 5,59
+  2014-2016   rho 0,080   n_eff 8,58      2022-2024   rho 0,163   n_eff 5,10
+  2016-2018   rho 0,097   n_eff 7,49      2024-2026   rho 0,124   n_eff 6,29
+  2018-2020   rho 0,104   n_eff 7,13
+```
+
+Das schlechteste Einzeljahr ist 2022 mit ρ̄ 0,185 und n_eff 4,60: Anleihen und
+Aktien fielen zusammen, die Diversifikation verschwand genau dann, als sie
+gebraucht wurde. Das alte 7,7-Jahre-Fenster enthielt beide schlechten Regime
+und keines der ruhigen — die 5,1 aus ADR-061 waren auf einem unrepräsentativ
+korrelierten Ausschnitt gemessen.
+
+**Zweitens: Krypto senkt n_eff.** 25 ETFs allein kommen auf 7,1; mit den 14
+Krypto-Paaren dazu sind es 5,4. Die Paare heben n um 14 und ρ̄ von 0,11 auf
+0,16, und das Zweite wiegt schwerer. Das dreht die Erzählung seit ADR-054 um:
+dort waren die ETFs die Erweiterung eines Krypto-Bestands. Gemessen ist der
+Krypto-Block der Teil, der die effektive Marktzahl drückt.
+
+**Eine Ungenauigkeit im eigenen Instrument, offen benannt.**
+`mean_pairwise_correlation` rechnet jedes Paar auf **seinem** gemeinsamen
+Fenster — SPY/EWJ ab 1996, CPER/VIXY ab 2011. Das ist für eine Korrelation
+richtig, ergibt aber kein einheitliches T für die Schwellenformel. Auf dem
+**strengen** gemeinsamen Fenster aller 25 (ab 2011-11-15) sind es ρ̄ 0,1172
+und n_eff **6,56**. Gerechnet wird unten mit 6,56, nicht mit 7,1.
+
+### Die Schwelle wird trotzdem nicht gesenkt
+
+`t = S·√T / √(1+S²/2) ≥ 2` mit `T = Jahre × n_eff` ergibt:
+
+| | Spanne | n_eff | Schwelle |
+|---|---|---|---|
+| bisher | 7,7 J | 4,89 | 0,335 |
+| **jetzt** | **14,8 J** | **6,56** | **0,205** |
+
+Und die drei Bedingungen aus `gate.py`, unter denen `MIN_SHARPE` angefasst
+werden darf, wären alle erfüllt: die Regel stand vorher, gesenkt hätte die
+Datenlage, und kein Kandidat gewönne dadurch.
+
+**Sie bleibt bei 0,33.** Der Grund kam erst beim Nachzählen heraus: diese
+Konstante hat **noch nie eine Entscheidung getroffen.** Von 16
+durchgerechneten Kandidaten in der Registry scheiterte keiner allein an ihr —
+jede Ablehnung kam von der DSR, meist von beiden:
+
+```
+  Kandidat                  Sharpe     DSR   nötig für DSR   Wer sagt Nein?
+  MomentumTrend              0,674   0,264       1,355       nur DSR
+  VolRegime                  0,554   0,064       1,338       nur DSR
+  DonchianBreakout           0,486   0,184       1,329       nur DSR
+  ZScoreMeanReversion        0,443   0,035       1,347       nur DSR
+  ... 12 weitere              < 0     0,000    0,22 - 1,66   beide
+
+  Kandidaten, die allein an MIN_SHARPE scheiterten: 0
+```
+
+Eine Schwelle zu senken, die nicht bindet, ändert kein Urteil und sieht nur
+wie Fortschritt aus. Der Diff wäre die Sorte, die später zitiert wird —
+„damals wurde die Latte gesenkt" — ohne dass ihm anzusehen wäre, dass er
+folgenlos war. Die Herleitung im Kommentar ist korrigiert, die Zahl steht.
+
+### Wo der Gewinn wirklich liegt: die DSR
+
+Die DSR misst ihr T nicht in Märkten, sondern in **Bars der Portfoliokurve**;
+n_eff kommt darin gar nicht vor, weil über die Märkte schon aggregiert wurde.
+Ihr Maßstab fällt mit √T, und damit hängt sie fast vollständig an der Spanne.
+Bei 25 Versuchen und normalverteilt unterstellten Renditen:
+
+| OOS-Bars | entspricht | nötiger Sharpe für DSR ≥ 0,95 |
+|---|---|---|
+| 1.928 | ETFs ab 2019 | **1,318** |
+| 3.722 | 25 ETFs ab 2011-11 | 0,948 |
+| 5.501 | Walk-Forward ohne die toten Fenster | 0,780 |
+| 7.251 | Walk-Forward wie ausgegeben | 0,679 |
+
+Das ist der eigentliche Ertrag dieses Abzugs: **die Hürde, die wirklich
+bindet, ist halbiert** — von 1,32 auf 0,68 — ohne eine einzige neue Idee.
+
+**Der Haken daran, und er ist wichtig.** Der Walk-Forward über die ETFs
+liefert jetzt 29 Fenster ab 1997-02-11 statt 7. Die ersten sieben haben
+**null Trades und 0,00 % Rendite**: vor 2004 existieren nur SPY, EWJ, QQQ und
+EFA, und `crossmom` braucht einen Querschnitt. 1.750 der 7.251 OOS-Bars sind
+damit Nullen. Für die DSR ist das kein neutraler Ballast, sondern ein Fehler
+in die *freundliche* Richtung: Nullen verlängern T und drücken gleichzeitig
+die Streuung. Die ehrliche Länge ist 5.501 Bars und der ehrliche Bedarf
+0,78 — nicht 0,68.
+
+Daraus folgt, wo ein Panel anfangen darf: nicht beim ersten verfügbaren Bar,
+sondern sobald genug Namen leben. `MIN_NAMEN = 8` steht schon in
+`qt.research.ic` („eine Rangkorrelation über vier Werte ist Rauschen mit
+Dezimalstellen"). Acht ETFs gibt es ab **2003-04-14** — 23,4 Jahre, 5.887
+Bars. Das ist der Startpunkt, den die eigenen Konstanten des Projekts
+vorgeben, und keine neue Wahl.
+
+### Was gemessen wurde, nicht nur gerechnet
+
+`crossmom` auf den 25 ETFs, voller Walk-Forward: OOS-Sharpe **+0,04**
+(vorher −0,24), 29 Fenster, 11 davon positiv, Umschlag 5,3× (im Budget),
+DSR 0,038. Besser als vorher, weiterhin weit unter jeder Schwelle. `crossrev`
+fällt weiter am Umschlag (13,3×). **Kein Kandidat wird durch diesen Abzug
+gerettet** — was die dritte Bedingung nicht nur formal, sondern gemessen
+erfüllt.
+
+Alle 1047 Tests laufen gegen den neuen Store durch.
+
+### Eine Behauptung in der ROADMAP ist damit widerlegt
+
+Dort stand: *„Der nächste Schritt brächte 0,33 → 0,26 und bräuchte
+Anlageklassen, die es nicht gibt. Ab hier hilft nur noch ein stärkerer
+Edge."* Der nächste Schritt brauchte keine neue Anlageklasse, sondern ein
+anderes Datum in einem Default, und er bringt 0,33 → 0,205 — mehr als die
+0,26, die als unerreichbar galten. Der Satz war zum Zeitpunkt seiner
+Niederschrift plausibel und falsch, und er hat den billigsten verbliebenen
+Hebel für erledigt erklärt.
+
+### Und die Makro-Frage, von der alles ausging
+
+Sie ist damit **nicht** beantwortet, aber ihre Voraussetzungen sind geklärt:
+
+* **n_eff steigt durch eine Makro-Reihe nicht.** `effektive_maerkte` zählt
+  `MarketRun`-Objekte, also Märkte. Eine Überraschungsreihe ist ein Merkmal:
+  sie erzeugt keinen zusätzlichen unabhängigen Test und kostet einen
+  Freiheitsgrad im DSR-Nenner. (Das korrigiert eine frühere Aussage von mir,
+  `qt placebo cross` könne zeigen, ob n_eff dadurch steigt — kann es nicht.)
+* **Konsens-Historie gibt es frei nur quartalsweise.** Philadelphia-Fed-SPF:
+  HTTP 200, 554 KB, kein Schlüssel, 58 Reihen, 232 Quartale ab 1968Q4. Die
+  EZB-SPF ebenso. BLS v1 liefert Ist-Werte samt `preliminary`-Fußnoten, also
+  auch Revisionen. Monatlicher und wöchentlicher Konsens ist überall
+  kostenpflichtig; der Gastzugang von TradingEconomics antwortet mit HTTP 410
+  („the guest account has been discontinued").
+* **Das trifft genau die Frequenzen, die ohnehin aussichtslos sind.** Bei
+  65 bps einweg und nach Zeit-im-Markt korrigiert braucht eine
+  Erstanträge-Routine (52×/Jahr, 1 Tag halten) brutto 4,40 Sharpe, alle
+  Monatsdaten 2,59 — gegen 0,45 für ein durchgehend gehaltenes
+  Quartalssignal. Frei verfügbar ist genau die eine Frequenz, die als einzige
+  eine Chance hat.
+
+Ein Quartalssignal braucht bei Drag 0,118 netto 0,205, also **brutto 0,323**.
+Das beste gemessene Bruttosignal im Repo (`trend`, +0,459) liegt erstmals
+darüber. Das macht die Richtung diskutabel; es macht sie nicht zur nächsten
+Aufgabe.
+
+### Konsequenz
+
+* `qt data stocks --since` steht auf `1993-01-01`. Gezogen wird, was die
+  Quelle hat; welches Fenster eine Auswertung nimmt, entscheidet die
+  Auswertung.
+* `MIN_SHARPE` bleibt 0,33. Der Kommentar nennt jetzt die korrigierte
+  Herleitung (0,205) **und** den Grund, warum die Zahl trotzdem steht.
+* Zwei Tests in `test_tiingo.py` sichern den Default und den Bestand.
+* Der Kalenderschnitt ist als Fehlerklasse benannt: ein Ingest-Default aus
+  einer Anlageklasse, der still für eine andere gilt.
+
+
+### Nachtrag 2026-09-09 — das Panel ab 2003, und drei eigene Zahlen korrigiert
+
+Der Abschnitt oben endet mit einem Vorschlag: das Panel nicht beim ersten Bar
+beginnen zu lassen, sondern sobald genug Namen leben — acht, weil
+`qt.research.ic` das seit jeher als Untergrenze für einen Querschnitt setzt.
+Das ist jetzt gemessen, und dabei sind drei Zahlen aus dem Text darüber
+gefallen.
+
+#### Erstens: „Jahre × n_eff" ist für ein wachsendes Panel falsch
+
+`23,4 Jahre × n_eff 7,0` unterstellt, dass 2003 schon sieben effektive Märkte
+lieferten. 2003 leben acht Reihen, 2007 neunzehn, erst ab 2013 alle 25.
+Richtig ist das Integral: für jeden Tag die effektive Marktzahl aus den an
+diesem Tag lebenden Reihen, summiert und durch 252 geteilt.
+
+| Panel ab | Kalenderjahre | naiv `J × n_eff` | **effektive Marktjahre** | Schwelle naiv | **Schwelle ehrlich** |
+|---|---|---|---|---|---|
+| 2011-11-15 | 14,8 | 104,8 | 104,6 | 0,197 | **0,197** |
+| 2007-09-10 | 19,0 | 134,4 | 129,5 | 0,174 | 0,177 |
+| 2004-09-29 | 21,9 | 155,2 | 140,8 | 0,162 | 0,170 |
+| **2003-04-14** | **23,4** | 165,6 | **145,3** | 0,156 | **0,167** |
+| 2001-08-17 | 25,0 | 177,3 | 148,8 | 0,151 | 0,165 |
+
+Der naive Wert ist nur um 0,01 zu optimistisch — die Korrektur ändert die
+Entscheidung nicht, aber die Rechnung war falsch, und ein richtiges Ergebnis
+aus einer falschen Rechnung wird zitiert.
+
+**Korrektur 1:** oben steht **0,205** für das 25er-Panel. Richtig sind
+**0,197**. Die 0,205 kamen aus `n/(1+(n-1)·ρ̄)` mit einem ρ̄, das über Paare
+mit `min_periods=250` gemittelt war; die exakte Form `n²/Σρ_ij` gibt 7,08
+statt 6,56. Die Richtung des Fehlers war die vorsichtige.
+
+**Wo es aufhört zu helfen:** von 2003 auf 2001 sind es 1,6 Kalenderjahre, aber
+nur 3,5 effektive Marktjahre und 0,167 → 0,165. Die 2003er-Grenze ist damit
+nicht nur die, die `MIN_NAMEN = 8` vorgibt, sondern auch die, hinter der
+nichts mehr kommt.
+
+#### Zweitens: die toten Fenster verschwinden, und zwar vollständig
+
+`crossmom`, Walk-Forward, 1.000/250/20:
+
+| Panel ab | Fenster | OOS-Bars | davon ohne Trades | Sharpe | positive Fenster |
+|---|---|---|---|---|---|
+| 1993 (alles) | 29 | 7.251 | **7 (1.750 Bars)** | +0,04 | 11/29 |
+| 2011-11-15 | 10 | 2.501 | 0 | −0,38 | 4/10 |
+| **2003-04-14** | **19** | **4.751** | **0** | **−0,08** | 9/19 |
+
+Das erste Fenster des 2003er-Panels handelt 268-mal. Die Acht-Namen-Regel ist
+damit nicht bloß plausibel, sondern trifft empirisch genau den Punkt, ab dem
+der Querschnitt arbeitet.
+
+**Korrektur 2:** oben steht, die ehrliche OOS-Länge sei **5.501 Bars** und der
+DSR-Bedarf **0,78**. Beides war gerechnet (7.251 − 1.750) statt gemessen. Der
+Walk-Forward schneidet neu, wenn das Panel später beginnt: es sind **4.751
+Bars** und **0,839**. Subtraktion ist kein Ersatz für einen Lauf.
+
+**Korrektur 3:** oben steht `crossmom` **+0,04** als Ergebnis der Erweiterung.
+Dieser Wert stammt aus dem Lauf mit den sieben toten Fenstern. 1.750 Bars mit
+Rendite exakt null heben einen negativen Sharpe in Richtung null — der Fund
+war ein Messartefakt derselben Sorte, vor der ADR-066 warnt und an der
+ADR-069 schon einmal fast vorbeigelaufen wäre. Auf dem sauberen Panel steht
+`crossmom` bei **−0,08**. Besser als die −0,24 von vorher, und weiterhin
+nirgends in der Nähe einer Schwelle.
+
+#### Der Stand nach dem Nachtrag
+
+| | Nachweisgrenze | DSR-Bedarf bei 25 Versuchen |
+|---|---|---|
+| alter Stand (ETFs ab 2019) | 0,277 | 1,318 |
+| 25 ETFs ab 2011-11-15 | 0,197 | 1,157 |
+| **≥ 8 ETFs ab 2003-04-14** | **0,167** | **0,839** |
+
+Die 0,277 in der ersten Zeile sind **nicht** die 0,335 aus dem Abschnitt
+darüber, und der Unterschied ist Methode, nicht Messung: 0,335 gilt für 38
+Märkte samt Krypto mit einem ρ̄ aus dem 7,7-Jahre-Fenster, 0,277 für die 25
+ETFs allein mit ρ̄ aus der Gesamtstichprobe. Nur so sind die drei Zeilen
+untereinander vergleichbar — der Vorher-Nachher-Vergleich gegen 0,335 wäre
+sonst zum Teil ein Methodenwechsel, der als Fortschritt gelesen wird.
+
+Beide Hürden zusammen sind halbiert, und weiterhin ohne eine neue Idee. Die
+DSR bleibt die bindende: 0,839 gegen 0,167. Das beste gemessene Bruttosignal
+des Repos (`trend`, +0,459) liegt jetzt deutlich über der Nachweisgrenze und
+weiterhin deutlich unter dem DSR-Bedarf — **die Reihenfolge, in der die
+Kriterien beißen, hat sich durch den ganzen Vorgang nicht geändert.**
+
+`MIN_SHARPE` bleibt aus demselben Grund wie oben bei 0,33.
+
+---
+
 ## ADR-074 — Die Tests laufen jetzt auch, wenn niemand sie startet
 **Datum:** 2026-09-08
 

@@ -712,3 +712,73 @@ def test_ein_flaches_konto_braucht_keine_preise():
     text = render(state, "macross", ["BTC/USD"], prices=None)
     assert "Eigenkapital: 100,000.00" in text
     assert "nicht bewertbar" not in text
+
+
+# --------------------------------------------------------------------------
+# bars_seen
+# --------------------------------------------------------------------------
+
+
+def test_bars_seen_zaehlt_bars_und_nicht_ticks(tmp_path):
+    """`bars_seen` war ein Laufzettel und keine Zahl.
+
+    Der Zaehler wurde aus dem Zustand geladen **und** bei jedem Bar des Ticks
+    hochgezaehlt -- auch bei den bereits verarbeiteten, die nur den
+    Feature-Store fuellen. Da jeder Tick die ganze Historie neu einspielt,
+    wuchs er pro Tick um die volle Storegroesse. Gemessen am echten
+    Paper-Konto: 2.805 -> 5.611 -> 8.418 an drei aufeinanderfolgenden Tagen,
+    bei je einem neuen Bar.
+
+    Folgenlos war das nur zufaellig: `bars_seen` traegt die Warmup-Pruefung,
+    und ein zu **grosser** Wert meldet ein Konto zu frueh als warm. Bei einem
+    laengst laufenden Konto faellt das nicht auf; bei einem frisch
+    aufgesetzten oder einem beschnittenen Store waere es der Unterschied
+    zwischen "handelt mit genug Historie" und "handelt".
+    """
+    warmup, trend = _historie()
+    _schreibe(tmp_path, "BTC/USD", warmup)
+    run_paper_tick(
+        _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path, refresh=False
+    )
+
+    gemessen = []
+    for n in (1, 2, 3):
+        _schreibe(tmp_path, "BTC/USD", warmup + trend[:n])
+        run_paper_tick(
+            _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path,
+            refresh=False,
+        )
+        state = PaperState.load(state_path("macross", ["BTC/USD"], "1d", tmp_path))
+        gemessen.append(state.bars_seen["BTC/USD"])
+
+    assert gemessen == [len(warmup) + n for n in (1, 2, 3)], (
+        f"bars_seen lief auf {gemessen} statt auf die Zahl der Bars im Store "
+        f"({[len(warmup) + n for n in (1, 2, 3)]}) -- der Zaehler summiert "
+        "Ticks statt Bars"
+    )
+
+
+def test_ein_aufgeblaehter_zaehler_heilt_sich_beim_naechsten_tick(tmp_path):
+    """Bestehende Konten tragen den falschen Wert in ihrer Zustandsdatei.
+
+    Eine Migration braucht es dafuer nicht: der Zaehler wird pro Tick neu
+    gebildet, also steht nach dem ersten Tick der richtige Wert da. Dieser
+    Test haelt fest, dass das wirklich so ist und nicht nur so gedacht war.
+    """
+    warmup, trend = _historie()
+    _schreibe(tmp_path, "BTC/USD", warmup)
+    run_paper_tick(
+        _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path, refresh=False
+    )
+
+    pfad = state_path("macross", ["BTC/USD"], "1d", tmp_path)
+    state = PaperState.load(pfad)
+    state.bars_seen = {"BTC/USD": 999_999}
+    state.save(pfad)
+
+    _schreibe(tmp_path, "BTC/USD", warmup + trend[:1])
+    run_paper_tick(
+        _factory, ["BTC/USD"], "1d", data_dir=tmp_path, state_dir=tmp_path, refresh=False
+    )
+
+    assert PaperState.load(pfad).bars_seen["BTC/USD"] == len(warmup) + 1

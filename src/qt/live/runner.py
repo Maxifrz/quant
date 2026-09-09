@@ -158,7 +158,28 @@ def run_paper_tick(
     risk.restore_halted(state.halted)
 
     last_price: dict[str, float] = {}
-    bars_seen = dict(state.bars_seen)
+    # **Nicht aus dem Zustand laden.** `bars_seen` traegt die Warmup-Pruefung,
+    # und die fragt nach der Tiefe des **Feature-Stores** -- der wird eine
+    # Zeile weiter oben frisch angelegt und in dieser Schleife komplett neu
+    # gefuellt, aus jedem Bar der Historie. Was ein frueherer Tick gesehen
+    # hat, steht darin nicht mehr drin.
+    #
+    # Geladen wurde er trotzdem, und weil die Schleife in **beiden** Zweigen
+    # hochzaehlt -- auch fuer die Kontextbars -- wuchs der Zaehler pro Tick um
+    # die volle Storegroesse statt um die neuen Bars. Am echten Paper-Konto
+    # gemessen: 2.805 -> 5.611 -> 8.418 an drei Tagen mit je einem neuen Bar.
+    #
+    # Folgenlos war das nur zufaellig. Ein zu **grosser** Wert meldet ein
+    # Konto zu frueh als warm; bei einem seit Wochen laufenden Konto faellt
+    # das nie auf, bei einem frisch aufgesetzten oder einem beschnittenen
+    # Store waere es der Unterschied zwischen "handelt mit genug Historie"
+    # und "handelt". Die falsche Richtung also, und still.
+    #
+    # Bestehende Konten brauchen keine Migration: der Wert wird pro Tick neu
+    # gebildet. Geschrieben wird er allerdings nur in Ticks mit einem neuen
+    # Bar -- ein Leerlauf-Tick sichert nichts --, der aufgeblaehte Wert steht
+    # also bis zum naechsten Bar noch in der Zustandsdatei.
+    bars_seen: dict[str, int] = {}
     target = dict(state.target)
     warmup_end = (
         datetime.fromisoformat(state.warmup_end) if state.warmup_end else None
