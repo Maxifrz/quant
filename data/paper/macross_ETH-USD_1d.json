@@ -7,7 +7,7 @@
   "fees_paid": 596.4214711729622,
   "halt_reasons": [],
   "halted": false,
-  "last_processed_ts": "2026-09-10T00:00:00+00:00",
+  "last_processed_ts": "2026-09-11T00:00:00+00:00",
   "n_fills": 1,
   "peak_equity": 101687.90534750337,
   "pending": [],
@@ -22,6 +22,6 @@
     "ETH/USD": 1.0
   },
   "turnover": 99403.57852882704,
-  "updated_at": "2026-09-10T01:09:21.598213+00:00",
+  "updated_at": "2026-09-11T01:09:24.223485+00:00",
   "warmup_end": "2026-09-05T00:00:00+00:00"
 }
