@@ -5,6 +5,119 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-077 — TradingAgents verglichen: zwei Lücken geschlossen, eine bewusst nicht
+**Datum:** 2026-09-17
+
+Auslöser war eine Nutzeranfrage: taugt `TauricResearch/TradingAgents` (Paper
+arXiv:2412.20138) als Vorbild? Geprüft wurden das Paper vollständig und das
+Repo im aktuellen Stand (`v0.4.0`, Commit `be952b8`), nicht nur das README.
+
+### Das Urteil, kurz, weil es die Einordnung der drei Befunde unten trägt
+
+Nach dem eigenen Beweismaßstab dieses Projekts ist TradingAgents nicht
+überlegen. Drei Belege dafür, jeder nachgerechnet oder nachgezählt:
+
+**Die berichteten Sharpe-Werte sind auf ihrem eigenen Datenfenster nicht
+beweisbar.** Backtest: drei Monate (01.01.–29.03.2024), ein Pfad, ein Markt
+je Auswertung. Berichtet: AAPL 8,21, GOOGL 6,39, AMZN 5,60. Mit
+`t = S·√T/√(1+S²/2)` und `T = 0,25` Marktjahren:
+
+```
+Ticker   SR (Paper)   t-Wert   (verlangt: 2,0)
+AAPL         8,21      0,697
+GOOGL        6,39      0,690
+AMZN         5,60      0,686
+```
+
+Bei `T = 0,25` liegt die Obergrenze von `t` — für **jeden** Sharpe, auch
+S → ∞ — bei `√(2·T) = 0,707`. Kein Wert, so hoch er auch berichtet würde,
+könnte auf diesem Fenster die Latte von 2,0 reißen. Die Autoren selbst,
+Fußnote zu Abschnitt 6.1.2: *„The highest Sharpe Ratio exceeds our expected
+empirical range... We believe the exceptionally high SR resulted from the
+phenomenon that there were few pullbacks... We report results as they are in
+our experiments faithfully."* Redlich beobachtet, ohne Korrektur geblieben.
+
+**Keine Kostenmodellierung im gesamten Repository.** `grep -rniE
+"commission|slippage|transaction.?cost|spread"` über den vollständigen
+Quellcode: null Treffer. `backtrader` ist Abhängigkeit und unterstützt
+Kommissionsmodelle, sie sind nirgends konfiguriert. Bei elf LLM- und über
+zwanzig Tool-Aufrufen je Tagesentscheidung ist nicht einmal der Umschlag
+ausgewiesen.
+
+**Das eigene CHANGELOG dokumentiert wiederholte Lookahead-Lecks, spät
+gefunden.** `v0.4.0` (2026-08-31), rund 20 Monate nach der Publikation,
+Überschrift: *„Look-ahead and point-in-time fixes across the data and memory
+layers"*. Drei Klassen: FRED-Makrodaten liefen gegen den heutigen
+Revisionsstand (*„leaking later revisions into a backtest"*), Social-Media-
+Daten ohne Datumsgrenze (*„a historical run showed today's chatter as if it
+were from the as-of date"*), und `get_past_context` gab jede aufgelöste
+Lektion unabhängig vom Laufdatum zurück. Eine davon kam per externem Report
+(#475), nicht aus eigener Prüfung. Dazu im selben Release zwei weitere Funde,
+die den Kern des Papers treffen: **„Silent Hold"** — eine nicht parsbare
+Risk-Manager-Bewertung wurde still zu einer handelbaren Entscheidung
+umgedeutet, dieselbe Fehlerklasse wie ADR-073 (ein Ausfall, der sich als
+Erfolg meldet). Und **„Debate opening fabrication"** — der jeweils erste
+Redner jeder Bull/Bear-Debattenrunde widerlegte eine leere Gegenposition,
+erfand sie also. Die Debatte ist das methodische Kernargument des Papers
+(Abschnitt 4.2); für einen unbekannten Zeitraum hatte sie keine echte
+Gegenseite.
+
+### Trotzdem: drei Befunde, wo etwas dort wirklich besser war
+
+Jeder einzeln geprüft, nicht pauschal übernommen — mit dem Ergebnis, dass
+einer davon beim Nachprüfen nicht in der behaupteten Form haltbar war.
+
+**(A) Checkpoint/Resume für mehrstufige LLM-Läufe — echte Lücke, wird
+Aufgabe.** TradingAgents hält den Zustand seines Agentengraphen über einen
+LangGraph-Checkpointer (SQLite) und kann einen unterbrochenen Lauf über
+`--checkpoint` fortsetzen statt neu zu starten (`v0.2.4`–`v0.4.0`, mehrere
+Härtungsrunden). Nachgeprüft: `qt research` hat keine Entsprechung. Das
+einzige `resume` im CLI (`src/qt/cli.py:1111`) gehört zu `qt data trades`
+und setzt die Kraken-Seitenpaginierung fort — nichts, was einen
+`qt research --generate N --screen`-Lauf betrifft. Ein solcher Lauf ist
+mehrstufig und nicht billig: mehrere generierte Kandidaten, je einer durch
+Sandbox, Kritik, Walk-Forward und DSR. Ein Container-Neustart mittendrin
+(in dieser Umgebung dokumentiert real — `scripts/paper_tick.sh`: *„Hintergrundprozesse in dieser Sitzung sind wiederholt an Container-Neustarts
+gestorben"*) verliert den ganzen Lauf samt bereits bezahlter LLM-Aufrufe.
+→ Aufgabe in `docs/ROADMAP.md`, „Was als Nächstes Sinn ergibt".
+
+**(B) Punkt-in-Zeit-Disziplin für Wirtschaftsdaten — richtig erkannt, falsch
+begründet, jetzt korrigiert.** Im Gespräch stand, TradingAgents habe
+„dedizierte Lookahead-Tests pro Datenquelle" voraus. Nachgeprüft: **das
+stimmt so nicht.** `test_macross.py`, `test_elliott.py`, `test_onchain.py`
+und `test_ml_dataset.py` haben längst je einen eigenen, so benannten
+Lookahead-Test — dieselbe Disziplin, nur nie als Regel aufgeschrieben. Ein
+falscher Grund für eine sonst richtige Beobachtung, hiermit korrigiert statt
+stehen gelassen.
+
+Die tatsächliche Lücke ist enger und liegt woanders: Tiingos retroaktive
+Adjustierung (ADR-055) ist ein **Reproduzierbarkeits**problem — der Faktor
+wirkt gleichmäßig auf die ganze Historie, verändert kein Signal relativ zu
+seinem Zeitpunkt. TradingAgents' FRED-Fehler war ein echtes **Vintage**problem:
+der heutige revidierte Wert wurde als historischer Stand ausgegeben. Diese
+Fehlerklasse hat dieses Projekt noch nie berührt, weil es noch keine Reihe
+zieht, die revidiert wird — Kurse und On-Chain-Kennzahlen werden nicht
+nachträglich korrigiert, Wirtschaftsdaten (NFP, CPI, BIP) schon. Genau das
+träfe zum ersten Mal die in ADR-075 zurückgestellte Makro-Überraschungs-
+strategie, sollte sie je aufgenommen werden. → keine eigene Aufgabe, solange
+die Richtung nicht verfolgt wird — aber eine Vorbedingung, an ADR-075
+angehängt: Vintage-Quelle (ALFRED-Stil, nicht die aktuelle FRED-Ausgabe) und
+ein eigener Punkt-in-Zeit-Test nach demselben Vorbild wie `test_macross.py`,
+**bevor** die erste Zeile Strategie entsteht.
+
+**(C) Breite der Datenanbindung — geprüft, bewusst nicht übernommen.**
+News, Sentiment, Insider-Transaktionen, Fundamentaldaten: TradingAgents zieht
+alles davon. Das ist keine Lücke in diesem Projekt, sondern eine andere
+Wette, seit ADR-Linie und `docs/ZIEL.md` bestehend: Text-Signale sind ohne
+Kostenidentität und DSR-Einordnung nicht beweisbar, und die Breite allein
+liefert keine unabhängige Evidenz. TradingAgents selbst ist das Gegenbeispiel
+dafür, wie leicht das bricht — drei der eigenen Lookahead-Lecks saßen genau
+in dieser Breite (Makrodaten, Sentiment, Memory) und blieben monatelang
+unentdeckt. Nicht übernommen, mit Begründung stehen gelassen statt
+stillschweigend verworfen.
+
+---
+
 ## ADR-076 — `bars_seen` war ein Laufzettel und keine Zahl
 **Datum:** 2026-09-09
 
@@ -291,6 +404,14 @@ Ein Quartalssignal braucht bei Drag 0,118 netto 0,205, also **brutto 0,323**.
 Das beste gemessene Bruttosignal im Repo (`trend`, +0,459) liegt erstmals
 darüber. Das macht die Richtung diskutabel; es macht sie nicht zur nächsten
 Aufgabe.
+
+**Nachtrag ADR-077, falls sie doch aufgenommen wird:** Wirtschaftsdaten werden
+revidiert, anders als alles, was dieser Store bisher zieht. Vor der ersten
+Zeile Strategie gehört eine Vintage-Quelle (ALFRED-Stil, nicht die laufend
+aktualisierte FRED-Ausgabe) und ein eigener Punkt-in-Zeit-Test nach dem
+Vorbild von `test_macross.py` — sonst genau der Fehler, den TradingAgents'
+eigenes CHANGELOG als „FRED macro look-ahead" führt, rund 20 Monate nach
+dessen Publikation gefunden.
 
 ### Konsequenz
 

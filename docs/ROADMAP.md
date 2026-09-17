@@ -311,12 +311,13 @@
 >    beweist nichts; sie beweist nur zusammen mit der Frage, wer sie bewegt
 >    hat. **Der Test ist gelaufen und die Antwort steht:** nur die hinterlegte
 >    Quelle hilft.
-> 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
->    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
->    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
->    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
->    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
->    die Datenlage, sondern ein Signal.
+> 2. ~~**Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.**~~
+>    **Das stimmte nicht (ADR-075).** Der Datenhebel war nicht ausgereizt,
+>    er war falsch gemessen: die ETF-Historie stand auf das Krypto-Fenster
+>    geschnitten, und die Nachweisgrenze hängt an der Kalenderspanne, nicht
+>    nur an n_eff. Mit der vollen Historie (Panel ab 2003-04-14, 145
+>    effektive Marktjahre) liegt sie bei 0,167 statt 0,33. `MIN_SHARPE`
+>    steht trotzdem weiter auf 0,33 — Details und warum in ADR-075.
 > 3. ~~**Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.**~~
 >    **Erledigt am 2026-09-04 (ADR-069):** proportional auf das Bruttobudget
 >    skalieren. Vol-Targeting und 1/n sind vorab verworfen und begründet, die
@@ -350,6 +351,18 @@
 >    Die Entscheidung, wie viele Kandidaten ein echter Lauf erzeugt, gehört
 >    einem Menschen: sie ist die einzige in diesem Repo, die sich nicht
 >    zurücknehmen lässt.
+> 5. **`qt research` überlebt einen Container-Neustart nicht (ADR-077).**
+>    Beim Vergleich mit TradingAgents (TauricResearch) aufgefallen: deren
+>    Agentengraph hält seinen Zustand über einen LangGraph-Checkpointer und
+>    kann per `--checkpoint` fortsetzen. `qt research` hat keine Entsprechung
+>    — das einzige `resume` im CLI gehört zu `qt data trades` und setzt nur
+>    die Kraken-Paginierung fort. Ein `--generate N --screen`-Lauf ist
+>    mehrstufig (mehrere Kandidaten, je Sandbox → Kritik → Walk-Forward +
+>    DSR) und nicht billig; ein Neustart mittendrin verliert alles samt
+>    bereits bezahlter LLM-Aufrufe. Das Risiko ist in dieser Umgebung
+>    dokumentiert real, nicht hypothetisch — Punkt 1 dieser Liste war
+>    dasselbe Muster bei der Routine, und `scripts/paper_tick.sh` trägt die
+>    Lehre daraus im eigenen Docstring. Noch nicht umgesetzt, nur erfasst.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
