@@ -17,7 +17,7 @@
 > Befehl unten braucht Bars. Rund 20 Minuten, einmal je Sitzung:
 >
 > ```bash
-> uv sync --extra dev --extra nim              # ohne nim-Extra ist --provider nim tot (ADR-078)
+> uv sync --extra dev                          # openai ist seit ADR-079 Pflichtpaket
 > KRYPTO="BTC/USD,ETH/USD,LTC/USD,BCH/USD,ETC/USD,XLM/USD,LINK/USD"
 > KRYPTO="$KRYPTO,ALGO/USD,ADA/USD,DOGE/USD,DOT/USD,SOL/USD,AVAX/USD,XRP/USD"
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01

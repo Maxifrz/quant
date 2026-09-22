@@ -207,7 +207,7 @@ def test_ein_schluessel_ohne_sdk_ist_kein_zugang(leere_umgebung, monkeypatch):
     monkeypatch.setattr(providers, "_paket_da", lambda paket: paket != "openai")
 
     assert not providers.zugang_vorhanden("nim")
-    assert "uv sync --extra nim" in providers.zugangs_hinweis("nim")
+    assert "uv sync" in providers.zugangs_hinweis("nim")
     assert "--provider nim" not in providers.zugangs_hinweis("anthropic"), (
         "ein Anbieter ohne SDK darf nicht als Ausweg empfohlen werden"
     )
@@ -277,3 +277,25 @@ def test_alloc_ohne_einen_einzigen_llm_aufruf_ist_gescheitert(alloc_lauf):
         "bestanden', gepruefter Allokator gab es aber keinen\n" + ergebnis.output
     )
     assert "GESCHEITERT" in ergebnis.output
+
+
+def test_das_nim_sdk_ist_pflichtpaket_und_kein_extra():
+    """ADR-079: ein Extra installiert in einem frischen Container niemand.
+
+    Am 2026-09-22 war `--provider nim` hier tot, obwohl der Schluessel gesetzt
+    war -- `openai` stand nur im `nim`-Extra, und `uv run` synchronisiert nur
+    Kernabhaengigkeiten. Derselbe Mechanismus hat die drei Fehlschlaege im
+    Probelauf von ADR-074 erklaert, reproduziert im frischen Klon.
+    """
+    import tomllib
+    from pathlib import Path
+
+    projekt = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    )["project"]
+    kern = [d.split(">")[0].split("=")[0].strip() for d in projekt["dependencies"]]
+
+    assert "openai" in kern, (
+        "openai ist wieder optional -- dann ist --provider nim in jedem "
+        "frischen Container tot, auch wenn NVIDIA_API_KEY gesetzt ist"
+    )

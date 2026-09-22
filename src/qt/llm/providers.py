@@ -519,7 +519,8 @@ class NimProvider:
         except ImportError as exc:
             raise LLMUnavailable(
                 "Das Paket `openai` fehlt -- NIM spricht die OpenAI-kompatible "
-                "Schnittstelle. Installieren mit: uv sync --extra nim"
+                "Schnittstelle, und `openai` ist seit ADR-079 Pflichtpaket. Die "
+                "Umgebung ist nicht synchron: uv sync"
             ) from exc
 
         key = self.api_key or _first_env(NIM_KEY_VARS)
@@ -733,7 +734,7 @@ _ZUGANG_ANLEITUNG = {
 # genau diesen Weg als Ausweg empfohlen (ADR-078).
 _PAKET = {
     "anthropic": ("anthropic", "uv sync"),
-    "nim": ("openai", "uv sync --extra nim"),
+    "nim": ("openai", "uv sync"),
 }
 
 
