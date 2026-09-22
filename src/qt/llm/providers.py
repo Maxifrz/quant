@@ -519,7 +519,8 @@ class NimProvider:
         except ImportError as exc:
             raise LLMUnavailable(
                 "Das Paket `openai` fehlt -- NIM spricht die OpenAI-kompatible "
-                "Schnittstelle. Installieren mit: uv sync --extra nim"
+                "Schnittstelle, und `openai` ist seit ADR-079 Pflichtpaket. Die "
+                "Umgebung ist nicht synchron: uv sync"
             ) from exc
 
         key = self.api_key or _first_env(NIM_KEY_VARS)
@@ -694,6 +695,95 @@ _MODEL_PREFIXES = {
     "anthropic": ("claude-",),
     "nim": ("nvidia/", "meta/", "mistralai/", "qwen/", "deepseek-ai/"),
 }
+
+
+# Woran sich erkennen laesst, dass ein Anbieter hier ueberhaupt erreichbar
+# waere -- ohne einen Aufruf zu bezahlen und ohne einen Wert zu lesen.
+#
+# Fuer Anthropic ist ein leeres `ANTHROPIC_API_KEY` ausdruecklich **kein**
+# Beweis fuer fehlenden Zugang: das SDK sucht der Reihe nach
+# `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein Profil aus
+# `ant auth login` (Verzeichnis `~/.config/anthropic/`, Auswahl ueber
+# `ANTHROPIC_PROFILE`) und Workload Identity Federation. Die Pruefung hier
+# ist deshalb bewusst grosszuegig: im Zweifel "vielleicht erreichbar". Ein
+# falscher Alarm vor einem Lauf waere schlimmer als ein fehlender -- den
+# faengt ohnehin der Aufruf selbst.
+_ZUGANG_VARIABLEN = {
+    "anthropic": (
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_PROFILE",
+        "ANTHROPIC_FEDERATION_RULE_ID",
+    ),
+    "nim": NIM_KEY_VARS,
+}
+
+# Was ein Mensch setzen muss, um den Anbieter nutzbar zu machen -- fuer die
+# Meldung, nicht fuer die Pruefung.
+_ZUGANG_ANLEITUNG = {
+    "anthropic": "ANTHROPIC_API_KEY setzen oder `ant auth login`",
+    "nim": "NVIDIA_API_KEY setzen (Wert beginnt mit `nvapi-`)",
+}
+
+# Das SDK, ohne das der Anbieter nicht spricht, und wie es hineinkommt.
+#
+# **Ein Schluessel allein macht einen Anbieter nicht nutzbar.** Am 2026-09-22
+# war `NVIDIA_API_KEY` gesetzt und `--provider nim` trotzdem tot: der frische
+# Container hatte das `nim`-Extra nicht installiert, `openai` fehlte. Die
+# erste Fassung dieser Pruefung hat nur den Schluessel angesehen und haette
+# genau diesen Weg als Ausweg empfohlen (ADR-078).
+_PAKET = {
+    "anthropic": ("anthropic", "uv sync"),
+    "nim": ("openai", "uv sync"),
+}
+
+
+def _paket_da(paket: str) -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec(paket) is not None
+
+
+def _grund_ohne_zugang(name: str) -> str | None:
+    """Warum `name` hier nicht nutzbar ist -- oder None, wenn nichts fehlt.
+
+    Liest nur, **ob** etwas gesetzt ist, nie den Wert. Ein None verspricht
+    keinen gueltigen Schluessel, nur dass nichts offensichtlich fehlt.
+    """
+    from pathlib import Path
+
+    paket, installieren = _PAKET.get(name, (None, ""))
+    if paket and not _paket_da(paket):
+        return f"Paket `{paket}` fehlt ({installieren})"
+    if _first_env(_ZUGANG_VARIABLEN.get(name, ())):
+        return None
+    if name == "anthropic" and (Path.home() / ".config" / "anthropic").is_dir():
+        return None
+    return f"kein Zugang eingerichtet ({_ZUGANG_ANLEITUNG.get(name, 'Zugang einrichten')})"
+
+
+def zugang_vorhanden(name: str) -> bool:
+    """Ob `name` hier nutzbar aussieht: SDK installiert, Zugangsquelle da."""
+    return _grund_ohne_zugang(name) is None
+
+
+def zugangs_hinweis(name: str) -> str:
+    """Satz fuer Meldungen, wenn `name` hier nicht nutzbar ist -- sonst leer.
+
+    Nennt, was fehlt, **und** was in dieser Umgebung stattdessen geht. Nur den
+    fehlenden Zugang zu beklagen hiesse, den Leser mit einer Frage allein zu
+    lassen, die sich hier maschinell beantworten laesst.
+    """
+    grund = _grund_ohne_zugang(name)
+    if grund is None:
+        return ""
+    andere = [p for p in PROVIDERS if p != name and zugang_vorhanden(p)]
+    satz = f"Der Anbieter {name!r} ist hier nicht nutzbar: {grund}."
+    if andere:
+        satz += " In dieser Umgebung nutzbar: " + ", ".join(
+            f"--provider {p}" for p in andere
+        ) + "."
+    return satz
 
 
 def get_provider(name: str, **kwargs: Any) -> LLMProvider:

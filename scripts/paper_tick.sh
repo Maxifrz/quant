@@ -63,6 +63,24 @@ if git rev-parse --verify -q origin/"$STANDARD" >/dev/null; then
     fi
   fi
 fi
+# **Der Session-Branch soll verfolgen, wohin der Zustand gegangen ist.**
+# Geht der Kontostand nach `main`, steht der lokale Branch danach auf
+# demselben Commit wie `origin/main` -- hat aber keinen Upstream. Ein
+# Pruefhaken der Sitzung meldet dann "unpushed commit", und der Agent pusht
+# den Branch, um ihn zufriedenzustellen: zwischen 2026-09-09 und 2026-09-21
+# zehn `claude/lucid-meitner-*`-Branches, jeder exakt auf dem Tick-Commit des
+# Tages, keiner mit eigenem Inhalt (ADR-079). Mit `origin/main` als Upstream
+# ist der Branch "up to date", und es gibt nichts zu pushen.
+verfolge_ziel() {
+  if [ "$ZIEL" != "$ZWEIG" ]; then
+    git fetch -q origin "$ZIEL" 2>/dev/null || true
+    if git merge-base --is-ancestor HEAD "origin/${ZIEL}" 2>/dev/null; then
+      git branch -q --set-upstream-to="origin/${ZIEL}" "$ZWEIG" 2>/dev/null \
+        && echo "Branch '${ZWEIG}' verfolgt jetzt 'origin/${ZIEL}' -- nichts weiter zu pushen."
+    fi
+  fi
+}
+
 KONTEN=("BTC/USD" "ETH/USD")
 gemeldet=0
 
@@ -84,6 +102,7 @@ done
 git add -f data/paper 2>/dev/null
 if git diff --cached --quiet; then
   echo "Kein neuer Kontostand -- nichts zu sichern."
+  verfolge_ziel
   exit "$gemeldet"
 fi
 
@@ -96,9 +115,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0151sxRxJe3uZnwCgVP5PMWT"
 
 gesichert=1
+gesichert_auf=""
 for warte in 2 4 8 16; do
   if git push origin "HEAD:${ZIEL}"; then
     gesichert=0
+    gesichert_auf="$ZIEL"
     break
   fi
   sleep "$warte"
@@ -113,6 +134,7 @@ if [ "$gesichert" -ne 0 ] && [ "$ZIEL" != "$ZWEIG" ]; then
   echo "   '${ZIEL}' findet ihn nicht. Das ist ein Fall fuer einen Menschen."
   if git push -u origin "$ZWEIG"; then
     gesichert=0
+    gesichert_auf="$ZWEIG"
   fi
 fi
 
@@ -125,5 +147,11 @@ if [ "$gesichert" -ne 0 ]; then
   echo "   im Datenverzeichnis, der sich nicht rekonstruieren laesst."
   exit 1
 fi
-echo "Kontostand auf ${ZIEL} gesichert."
+# `verfolge_ziel` setzt den Upstream nur, wenn der Commit nach dem Fetch
+# wirklich in origin/ZIEL liegt. Nach dem Rueckfall auf den eigenen Zweig ist
+# das nicht so -- dort bleibt der Upstream der eigene Zweig (`push -u`).
+verfolge_ziel
+# Bis ADR-079 stand hier "auf ${ZIEL}" -- auch nach dem Rueckfall, wenn der
+# Stand gerade *nicht* dort lag. Dieselbe Sorte Erfolgsmeldung wie vor ADR-059.
+echo "Kontostand auf ${gesichert_auf} gesichert."
 exit "$gemeldet"

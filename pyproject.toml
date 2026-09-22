@@ -13,6 +13,13 @@ dependencies = [
     "typer>=0.12",
     "matplotlib>=3.8",
     "anthropic>=0.40",
+    # Das SDK fuer `--provider nim`. Bis ADR-079 ein Extra, weil Anthropic der
+    # Default ist -- und genau deshalb in jedem frischen Container tot: das
+    # Extra installiert niemand, `uv run` synchronisiert nur Kernabhaengigkeiten.
+    # In einer Umgebung ohne Anthropic-Schluessel ist NIM aber der *einzige*
+    # Anbieter, der ueberhaupt antwortet. Eine Option, die dort fehlt, wo sie
+    # gebraucht wird, ist keine Option.
+    "openai>=1.40",
     "scipy>=1.11",
     "arch>=6.3",
     "hmmlearn>=0.3",
@@ -42,10 +49,9 @@ dev = ["pytest>=8.0", "ruff>=0.15,<0.16"]
 # Standardabhaengigkeit -- ohne dieses Extra ist die Strategie ueber
 # NaiveForecaster trotzdem voll test- und lauffaehig. Siehe ADR-022.
 timesfm = ["timesfm[torch]>=2.0"]
-# Fuer `--provider nim` (NVIDIA NIM, siehe qt.llm.providers). NIM spricht die
-# OpenAI-kompatible Schnittstelle, deshalb das `openai`-SDK. Optional aus
-# demselben Grund wie oben: wer bei Anthropic bleibt -- dem Default -- soll
-# dafuer kein zweites SDK installieren muessen.
+# Seit ADR-079 leer bis auf die Kernabhaengigkeit: `openai` gehoert jetzt zu
+# den Pflichtpaketen. Das Extra bleibt stehen, damit `uv sync --extra nim` aus
+# alten Anleitungen nicht mit "unknown extra" abbricht.
 nim = ["openai>=1.40"]
 
 [build-system]

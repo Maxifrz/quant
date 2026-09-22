@@ -152,6 +152,33 @@ _COLUMNS: dict[str, str] = {
     "promoted": "BOOLEAN DEFAULT FALSE",
     "promoted_at": "TIMESTAMP",
     "promoted_note": "VARCHAR",
+    # Zu welchem Lauf und an welcher Stelle der Charge (ADR-079). Ohne beides
+    # laesst sich ein abgebrochener Lauf nicht fortsetzen: man wuesste nicht,
+    # welche Kandidaten schon da sind und wo ihr Platz im Briefing war.
+    # `proposal_name` ist der Kurzname des Generators -- das Briefing der
+    # folgenden Kandidaten nennt ihn, nicht den Klassennamen.
+    "run_id": "VARCHAR",
+    "run_index": "INTEGER",
+    "proposal_name": "VARCHAR",
+}
+
+RUNS_TABLE = "runs"
+
+# Ein Lauf ist eine Charge von `n` Kandidaten mit festen Parametern (ADR-079).
+# `config` und `bereits` sind JSON-Strings aus demselben Grund wie die Listen
+# oben: sie werden nur im ganzen gelesen.
+#
+# `bereits` ist die Liste der schon geprueften Ansaetze **zu Beginn des
+# Laufs**. Beim Fortsetzen darf sie nicht neu berechnet werden: bis dahin
+# stehen die Kandidaten dieses Laufs selbst in der Registry, und das Briefing
+# der restlichen Kandidaten saehe anders aus als in einem Lauf ohne
+# Unterbrechung.
+_RUN_COLUMNS: dict[str, str] = {
+    "started_at": "TIMESTAMP",
+    "finished_at": "TIMESTAMP",
+    "n": "INTEGER",
+    "config": "VARCHAR",
+    "bereits": "VARCHAR",
 }
 
 
@@ -196,6 +223,9 @@ class ResearchRegistry:
                 f"{exc}"
             ) from exc
         conn.execute(f"CREATE TABLE IF NOT EXISTS {TABLE} (id VARCHAR PRIMARY KEY)")
+        conn.execute(
+            f"CREATE TABLE IF NOT EXISTS {RUNS_TABLE} (id VARCHAR PRIMARY KEY)"
+        )
         _migrate(conn)
         return cls(conn, target)
 
@@ -227,6 +257,9 @@ class ResearchRegistry:
         generator_model: str = "",
         generator_effort: str = "",
         created_at: datetime | None = None,
+        run_id: str | None = None,
+        run_index: int | None = None,
+        proposal_name: str = "",
     ) -> str:
         """Einen frisch erzeugten Kandidaten anlegen, gibt seine ID zurueck.
 
@@ -244,8 +277,9 @@ class ResearchRegistry:
             f"""
             INSERT INTO {TABLE}
                 (id, created_at, generator_model, generator_effort,
-                 class_name, code, rationale, promoted)
-            VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)
+                 class_name, code, rationale, promoted,
+                 run_id, run_index, proposal_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, ?, ?, ?)
             """,
             [
                 candidate_id,
@@ -255,6 +289,9 @@ class ResearchRegistry:
                 str(class_name),
                 str(code),
                 str(rationale),
+                run_id,
+                None if run_index is None else int(run_index),
+                str(proposal_name),
             ],
         )
         return candidate_id
@@ -392,6 +429,64 @@ class ResearchRegistry:
             },
         )
 
+    # -- Laeufe (ADR-079) ---------------------------------------------------
+
+    def start_run(
+        self, n: int, config: Mapping[str, Any], bereits: Iterable[str] = ()
+    ) -> str:
+        """Einen Lauf anlegen, gibt seine ID zurueck.
+
+        Die Parameter werden **vor** dem ersten Kandidaten geschrieben. Ein
+        Lauf, der mittendrin abbricht, soll mit genau denselben Symbolen,
+        Fenstern und Schwellen weiterlaufen -- nicht mit denen, die beim
+        Fortsetzen zufaellig auf der Befehlszeile stehen.
+        """
+        run_id = str(uuid.uuid4())
+        self._conn.execute(
+            f"""INSERT INTO {RUNS_TABLE} (id, started_at, n, config, bereits)
+                VALUES (?, ?, ?, ?, ?)""",
+            [
+                run_id,
+                _utc_naive(None),
+                int(n),
+                json.dumps(dict(config), ensure_ascii=False, sort_keys=True),
+                _encode_list(bereits),
+            ],
+        )
+        return run_id
+
+    def finish_run(self, run_id: str) -> None:
+        cur = self._conn.execute(
+            f"UPDATE {RUNS_TABLE} SET finished_at = ? WHERE id = ?",
+            [_utc_naive(None), run_id],
+        )
+        changed = cur.fetchone()
+        if changed is None or int(changed[0]) == 0:
+            raise KeyError(f"Kein Lauf mit ID {run_id!r} in {self.path}")
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        cur = self._conn.execute(f"SELECT * FROM {RUNS_TABLE} WHERE id = ?", [run_id])
+        names = [d[0] for d in cur.description]
+        row = cur.fetchone()
+        return None if row is None else _decode_run(dict(zip(names, row, strict=True)))
+
+    def open_run(self) -> dict[str, Any] | None:
+        """Der juengste nicht abgeschlossene Lauf, oder `None`."""
+        row = self._conn.execute(
+            f"""SELECT id FROM {RUNS_TABLE} WHERE finished_at IS NULL
+                ORDER BY started_at DESC, id DESC LIMIT 1"""
+        ).fetchone()
+        return None if row is None else self.get_run(row[0])
+
+    def run_candidates(self, run_id: str) -> dict[int, dict[str, Any]]:
+        """Die Kandidaten eines Laufs, nach ihrem Platz in der Charge."""
+        cur = self._conn.execute(
+            f"SELECT * FROM {TABLE} WHERE run_id = ? ORDER BY run_index", [run_id]
+        )
+        names = [d[0] for d in cur.description]
+        zeilen = [_decode_row(dict(zip(names, r, strict=True))) for r in cur.fetchall()]
+        return {int(z["run_index"]): z for z in zeilen if z["run_index"] is not None}
+
     # -- Lesen --------------------------------------------------------------
 
     def trial_count(self) -> int:
@@ -502,18 +597,19 @@ def _migrate(conn: duckdb.DuckDBPyConnection) -> list[str]:
     verkommen, der beim ersten echten Schemawechsel dann doch nicht
     funktioniert.
     """
-    existing = {
-        row[0]
-        for row in conn.execute(
-            "SELECT column_name FROM duckdb_columns() WHERE table_name = ?", [TABLE]
-        ).fetchall()
-    }
     added = []
-    for name, sql_type in _COLUMNS.items():
-        if name in existing:
-            continue
-        conn.execute(f'ALTER TABLE {TABLE} ADD COLUMN "{name}" {sql_type}')
-        added.append(name)
+    for table, columns in ((TABLE, _COLUMNS), (RUNS_TABLE, _RUN_COLUMNS)):
+        existing = {
+            row[0]
+            for row in conn.execute(
+                "SELECT column_name FROM duckdb_columns() WHERE table_name = ?", [table]
+            ).fetchall()
+        }
+        for name, sql_type in columns.items():
+            if name in existing:
+                continue
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN "{name}" {sql_type}')
+            added.append(name)
     return added
 
 
@@ -563,6 +659,19 @@ def _decode_row(row: dict[str, Any]) -> dict[str, Any]:
         if name in row:
             row[name] = _decode_list(row[name])
     for name in _TIMESTAMP_COLUMNS:
+        value = row.get(name)
+        if isinstance(value, datetime) and value.tzinfo is None:
+            row[name] = value.replace(tzinfo=timezone.utc)
+    return row
+
+
+def _decode_run(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        row["config"] = json.loads(row["config"]) if row["config"] else {}
+    except (TypeError, ValueError):
+        row["config"] = {}
+    row["bereits"] = _decode_list(row["bereits"])
+    for name in ("started_at", "finished_at"):
         value = row.get(name)
         if isinstance(value, datetime) and value.tzinfo is None:
             row[name] = value.replace(tzinfo=timezone.utc)

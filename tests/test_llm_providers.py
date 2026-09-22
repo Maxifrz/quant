@@ -633,7 +633,7 @@ def test_fehlendes_sdk_nennt_den_installationsbefehl(monkeypatch):
 
     text = str(fehler.value)
     assert "openai" in text
-    assert "--extra nim" in text
+    assert "uv sync" in text
 
 
 def test_ohne_schluessel_nennt_die_meldung_die_variablen():

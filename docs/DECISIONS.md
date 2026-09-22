@@ -5,6 +5,359 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-079 — Die halb behobenen Befunde zu Ende gebracht
+**Datum:** 2026-09-22
+
+Nach ADR-078 kam die Frage, ob jeder Befund behoben ist. Ehrliche Antwort:
+nein. Zwei Befunde waren nur halb behoben, und aus dem TradingAgents-Vergleich
+(ADR-077) standen noch zwei offene Punkte da. Dieser Eintrag schließt alle vier.
+
+### 1. `openai` ist Pflichtpaket, und der Grund aus ADR-074 ist jetzt reproduziert
+
+ADR-078 hatte den Weg `uv sync --extra nim` in die Fehlermeldung geschrieben.
+Das behob das Symptom, nicht die Ursache. **`uv run` synchronisiert nur die
+Kernabhängigkeiten.** Jede frische Sitzung, auch jede Routine, startet also
+ohne `openai`, und `--provider nim` ist dort tot, bis jemand an das Extra denkt.
+
+Gemessen in einem frischen Klon von `main`, nur mit `uv sync --extra dev`:
+`tests/test_nim_live.py` ergibt **3 failed in 1,98 s**, alle mit
+`ModuleNotFoundError`. Zwei Sekunden schließen echte API-Aufrufe aus, denn ein
+NIM-Aufruf dauert hier 40 bis 75 Sekunden. Nach dem Wechsel dieselben drei
+Tests ohne jedes Extra (`rm -rf .venv`, dann nur `uv run --with pytest`):
+**3 passed in 74 s**.
+
+* `openai>=1.40` steht jetzt in den Kernabhängigkeiten. Das Extra `nim` bleibt
+  als leere Hülle stehen, damit alte Befehle mit `--extra nim` nicht brechen.
+  `uv.lock` ändert sich um zwei Zeilen, keine Paketversion ändert sich.
+* Der Nachtrag in ADR-074 Punkt 3 lautet jetzt „reproduziert“ statt „sehr
+  wahrscheinlich“.
+* `test_das_nim_sdk_ist_pflichtpaket_und_kein_extra` liest `pyproject.toml`
+  und schlägt an, wenn `openai` wieder in ein Extra wandert.
+
+### 2. Die Routine hinterließ jeden Tag einen Branch
+
+Auf dem Remote lagen zwölf `claude/lucid-meitner-*`-Branches. Zehn davon
+stammen aus der Zeit vom 2026-09-09 bis 2026-09-21, und jeder steht exakt auf
+dem Tick-Commit seines Tages, **ohne eigenen Inhalt**. Elf sind vollständig in
+`main` enthalten. Nur `2n3781` (`9ad3910`) trägt einen überholten Stand vom
+2026-09-08, der nicht in `main` liegt.
+
+Die Ursache ist das Skript, nicht der Agent. `paper_tick.sh` pusht den
+Kontostand per `HEAD:main`, aber der lokale Session-Branch hat danach **keinen
+Upstream**. Ein Prüfhaken der Sitzung meldet deshalb „unpushed commit“, und
+der Agent pusht den Branch, um ihn zu beruhigen. Das ist eine vernünftige
+Reaktion auf eine falsche Meldung.
+
+* **`verfolge_ziel`:** Landet der Kontostand in `main`, verfolgt der
+  Session-Branch danach `origin/main`. Dann steht er „up to date“ da, und es
+  gibt nichts zu pushen. Das gilt auch für einen Tick ohne neuen Kontostand.
+  Beim Rückfall auf den eigenen Branch (`main` lehnt ab) bleibt der Upstream
+  der eigene Branch, denn dort liegt der Stand dann wirklich.
+* **Nebenbefund, dieselbe Fehlerklasse wie ADR-059:** Nach dem Rückfall
+  meldete das Skript trotzdem „Kontostand auf main gesichert“, also genau dort,
+  wo er *nicht* lag. Jetzt nennt die Meldung den Ort, an dem der Push wirklich
+  gelungen ist.
+* `tests/test_paper_tick_skript.py`, 4 Tests gegen ein nacktes Git-Remote mit
+  falschem `uv` und `sleep` und ausgeblendeter globaler Git-Konfiguration.
+  **Gegen das alte Skript scheitern 3 der 4.**
+* Der Prompt der Routine sagt zusätzlich ausdrücklich, dass der
+  Session-Branch nicht gepusht wird. Ein zweites Schloss, denn der Haken
+  könnte aus einem anderen Grund anschlagen.
+* **Aufräumen kann nur ein Mensch.** Aus dieser Sitzung endete der Push des
+  Archiv-Tags mit HTTP 403, und das Löschen fremder Branches ist hier nicht
+  freigegeben. Die Befehle sichern zuerst `9ad3910` als Tag, damit kein
+  Commit verloren geht:
+
+  ```bash
+  git fetch origin
+  git push origin origin/claude/lucid-meitner-2n3781:refs/tags/archiv/paper-konto-2026-09-08
+  git push origin --delete $(git branch -r | grep -o 'claude/lucid-meitner-[a-z0-9]*')
+  ```
+
+### 3. `qt research --resume` (ADR-077 A)
+
+Ein Container-Neustart mitten in einem `--generate N`-Lauf kostete bisher den
+ganzen Lauf samt bezahlter Modellaufrufe. Jetzt:
+
+* Die Registry hat eine Tabelle `runs` mit den Parametern, der Liste „bereits
+  geprüft“ vom Start und einem Fingerabdruck der Bars. Jeder Kandidat trägt
+  `run_id`, `run_index` und `proposal_name`. Die Migration bleibt additiv.
+  Eine Kopie der echten Registry hat danach weiter 24 Versuche und 46 Zeilen.
+* **Fertige Kandidaten werden nie noch einmal gescreent.** Der
+  Versuchszähler zählt also nichts doppelt (ADR-005).
+* **Ein halb geprüfter Kandidat läuft aus seinem gespeicherten Code zu Ende**,
+  ohne neuen Generator-Aufruf. Liegt die Kritik schon vor, wird sie nicht noch
+  einmal bezahlt. Ein neuer Aufruf hätte einen anderen Kandidaten für denselben
+  Platz geliefert.
+* **Leere Plätze bekommen dieselben Briefings wie ohne Unterbrechung.** Dafür
+  wird „bereits geprüft“ beim Fortsetzen *nicht* neu berechnet. Bis dahin
+  stehen die eigenen Kandidaten des Laufs in der Registry, und das Modell
+  bekäme sie als „gescheitert“ vorgesetzt.
+* **Die Parameter kommen aus dem Lauf, nicht von der Befehlszeile.** Die Bars
+  werden auf den Stand beim Start gekürzt. Neue Bars sind kein Problem. Haben
+  sich aber Kurse rückwirkend geändert (Tiingo, ADR-055), wird nicht
+  fortgesetzt: eine Charge, deren eine Hälfte gegen andere Daten lief, ist
+  keine Charge mehr.
+* **Ein Lauf mit Generator-Fehlern bleibt offen.** Nach einem Lauf ohne Zugang
+  (ADR-078) holt `qt research --resume` die leeren Plätze nach, sobald der
+  Schlüssel steht. Beide Fehlermeldungen nennen den Befehl.
+
+Was bleibt: Ein Absturz *während* eines Modellaufrufs kostet diesen einen
+Aufruf, falls die Antwort noch nicht im Cache lag. Kandidaten aus der Zeit vor
+diesem ADR haben keine `run_id`, sie lassen sich nicht fortsetzen, verloren
+geht aber nichts.
+
+`tests/test_research_resume.py`, 13 Tests. Zwei davon sind per Mutation
+geprüft: Neu berechnete Briefings und ein zweiter Kritik-Aufruf lassen je den
+zuständigen Test scheitern.
+
+### Konsequenz
+
+* `openai` ist Kernabhängigkeit, `uv sync --extra dev` reicht für alles.
+* `paper_tick.sh` lässt keinen Branch mehr zurück, der gepusht werden will,
+  und meldet den Ort, an dem der Kontostand wirklich liegt.
+* `qt research --resume` setzt den jüngsten offenen Lauf fort, mit dessen
+  Parametern und gegen dessen Datenstand.
+* Offen bleibt nur, was ein Mensch tun muss: `ANTHROPIC_API_KEY` in den
+  Umgebungseinstellungen hinterlegen. Ohne ihn kommt `qt research` mit dem
+  Standard-Anbieter nur so weit, wie der Cache reicht.
+
+---
+
+## ADR-078 — „Nicht gelaufen“ ist nicht „nicht bestanden“
+**Datum:** 2026-09-22
+
+Auslöser war eine einfache Frage: welche Umgebungsvariablen sind hier
+gesetzt? Die Antwort (`TIINGO_API_KEY` und `NVIDIA_API_KEY` ja,
+`ANTHROPIC_API_KEY` und die Börsenschlüssel nein) enthielt drei Befunde. Beim
+Beheben sind zwei davon größer geworden, als sie aussahen, und einer hat sich
+als falsch begründet herausgestellt.
+
+### Befund 1: `qt research` ohne Anthropic-Zugang meldete sich als Normalfall
+
+Reproduziert mit dem **echten** SDK, Registry und Cache im Temp-Verzeichnis:
+
+```
+  erzeugt                      0
+  Generator-Fehler             2
+  ...
+Kein Kandidat hat bestanden. Das ist der Normalfall und kein Fehler (ADR-005).
+Exit 0
+```
+
+Der Loop fängt Generator-Fehler je Kandidat ab, damit ein einzelner
+Netzwackler nicht die Charge kostet — richtig so. Scheitert aber **jeder**
+Kandidat, hat der Lauf nichts geprüft, und die Schlusszeile behauptete
+trotzdem das Gegenteil. Exit 0 heißt für jeden Aufrufer, ob Routine oder
+Skript: gelungen. Dieselbe Fehlerklasse wie ADR-073 (die Routine meldete
+SUCCEEDED ohne Arbeitskopie) und wie „Silent Hold“ im CHANGELOG von
+TradingAgents (ADR-077).
+
+Der Schaden blieb aus, weil nichts gezählt wurde: `record_generated` läuft erst
+nach einem erfolgreichen Vorschlag, und der Versuchszähler stand vorher wie
+nachher. Falsch war nur die Meldung, und zwar in die bequeme Richtung.
+
+**Die Korrektur:**
+
+* Kein einziger Kandidat erzeugt → „Lauf GESCHEITERT … Das ist kein ‚nicht
+  bestanden‘, sondern ‚nicht gelaufen‘“, **Exit 1**, dazu was fehlt und was
+  hier stattdessen geht.
+* Teilweise gescheitert → weiterhin Exit 0, aber mit der Zahl: „Geprüft
+  wurden aber nur 1 von 2“.
+* Vor dem Datenladen ein Hinweis, wenn der Anbieter hier nicht nutzbar
+  aussieht, und zwar **kein Abbruch**: ein Lauf gegen gefüllten Cache kommt
+  ohne Schlüssel aus, und ob der Cache reicht, weiß man vorher nicht.
+* `qt alloc` hatte dasselbe Muster eine Ebene tiefer: bei 100 % Rückfall auf
+  Gleichgewichtung verglich das Urteil Gleichgewichtung mit sich selbst und
+  endete mit Exit 2, also „Allokator geprüft, nicht bestanden“. Jetzt Exit 1
+  mit Begründung.
+
+**Der Standard-Anbieter bleibt Anthropic.** Automatisch auf NIM zu wechseln lag
+nahe und ist verworfen: `cli.py` hält fest, dass jeder Cache-Eintrag und
+jeder ADR am Anthropic-Default hängt. Ein stiller Wechsel hätte einen
+Cache-Replay unbemerkt in einen neuen, kostenpflichtigen Lauf verwandelt, der
+Versuche verbraucht. Die Meldung nennt den Ausweg, gehen muss ihn ein Mensch.
+
+### Die erste Fassung von Befund 1 war zu schnell
+
+„`ANTHROPIC_API_KEY` leer, also kein Zugang“ stimmt so nicht. Das SDK sucht
+der Reihe nach `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein Profil aus
+`ant auth login` (`~/.config/anthropic/`, Auswahl über `ANTHROPIC_PROFILE`)
+und Workload Identity Federation. Nachgeprüft ist jetzt alles davon: `ant`
+ist nicht installiert, es gibt kein Profil, keine der Variablen ist gesetzt,
+und ein Aufruf mit dem echten SDK scheitert vor dem Senden. Das Ergebnis
+bleibt dasselbe, die Begründung war trotzdem unvollständig. Die neue
+Zugangserkennung (`qt.llm.providers.zugang_vorhanden`) kennt alle Quellen
+und liest nie einen Wert.
+
+### Befund 1b: ein Schlüssel ohne SDK ist kein Zugang, und das betraf NIM
+
+Beim Testlauf fielen drei Tests aus `tests/test_nim_live.py`, und zwar nicht an
+der API, sondern an `ModuleNotFoundError: No module named 'openai'`. Der
+frische Container hatte das `nim`-Extra nicht installiert. **`--provider nim`
+war hier tot, obwohl `NVIDIA_API_KEY` gesetzt war.** Meine Auskunft „Daten und
+NIM-Loop laufen“ stützte sich allein auf den Schlüssel. Sie war falsch, und
+die erste Fassung der neuen Fehlermeldung hätte genau diesen toten Weg als
+Ausweg empfohlen.
+
+Gemessen: nach `uv sync --extra dev --extra nim` (ein Paket, `openai 3.6.0`)
+bestehen alle drei Live-Tests gegen NIM, 43 Sekunden, mit echten Antworten.
+Schlüssel und Endpunkt sind also in Ordnung, es fehlte nur die Installation.
+Die Zugangserkennung prüft jetzt auch das SDK und sagt, wie es hineinkommt
+(`uv sync --extra nim`). Im Sitzungsstart-Block der ROADMAP steht der Befehl
+jetzt an erster Stelle.
+
+> **Nachtrag ADR-079:** Das Extra war nur das Symptom. `uv run` installiert
+> keine Extras, also fehlte `openai` in *jeder* frischen Sitzung. Seit ADR-079
+> ist es Kernabhängigkeit, und die Meldung sagt nur noch `uv sync`.
+
+### Nebenbefund: ADR-074 Punkt 3 nennt sehr wahrscheinlich den falschen Grund
+
+Dort steht, die drei Fehlschläge von `test_nim_live.py` im Probelauf des
+frischen Klons seien „echte API-Aufrufe, die scheiterten“. Der Probelauf lief
+mit `uv sync --extra dev`, also ohne das `nim`-Extra. Heute schlagen dieselben
+drei Tests unter denselben Bedingungen fehl, und zwar bevor überhaupt ein
+Aufruf das Netz erreicht. Beweisen lässt es sich im Nachhinein nicht, weil
+die Ausgabe von damals nicht erhalten ist. Aber „echte API-Aufrufe“ ist die
+schwächere der beiden Erklärungen, und genau so ein Grund wird später
+zitiert. Die Schlussfolgerung von ADR-074 bleibt davon unberührt: in der
+Action gibt es keinen Schlüssel, die Tests überspringen sich dort.
+
+### Befund 2: Börsenschlüssel leer — geprüft, bewusst nicht geändert
+
+`qt live status` und `qt live tick` brechen ohne `QT_EXCHANGE_*` mit Exit 1 ab
+(„Kein Boersenzugang: … ist nicht gesetzt“ bzw. die Weigerung ohne
+validierten Edge). Das ist der gewollte Zustand für Phase 7, „gebaut,
+unverdrahtet“. Gesetzt werden die Schlüssel erst, wenn ein Mensch entschieden
+hat, mit echtem Geld zu handeln.
+
+### Konsequenz
+
+* `qt research`: gar nichts erzeugt → Exit 1 und „nicht gelaufen“; teilweise
+  erzeugt → Exit 0 mit der Zahl der tatsächlich geprüften Kandidaten.
+* `qt alloc`: 100 % Rückfall → Exit 1.
+* `qt.llm.providers.zugang_vorhanden` / `zugangs_hinweis`: prüfen SDK **und**
+  alle Zugangsquellen, nennen den nutzbaren Ausweg, lesen nie einen Wert.
+* 14 Tests in `tests/test_research_ohne_zugang.py`, die Verhaltenstests
+  zuerst gegen den alten Stand rot.
+* ROADMAP: `uv sync --extra dev --extra nim` im Sitzungsstart; die Behauptung
+  „NIM kommt hier durch“ verweist jetzt auf den Test statt auf sich selbst.
+
+---
+
+## ADR-077 — TradingAgents verglichen: zwei Lücken geschlossen, eine bewusst nicht
+**Datum:** 2026-09-17
+
+Auslöser war eine Nutzeranfrage: taugt `TauricResearch/TradingAgents` (Paper
+arXiv:2412.20138) als Vorbild? Geprüft wurden das Paper vollständig und das
+Repo im aktuellen Stand (`v0.4.0`, Commit `be952b8`), nicht nur das README.
+
+### Das Urteil, kurz, weil es die Einordnung der drei Befunde unten trägt
+
+Nach dem eigenen Beweismaßstab dieses Projekts ist TradingAgents nicht
+überlegen. Drei Belege dafür, jeder nachgerechnet oder nachgezählt:
+
+**Die berichteten Sharpe-Werte sind auf ihrem eigenen Datenfenster nicht
+beweisbar.** Backtest: drei Monate (01.01.–29.03.2024), ein Pfad, ein Markt
+je Auswertung. Berichtet: AAPL 8,21, GOOGL 6,39, AMZN 5,60. Mit
+`t = S·√T/√(1+S²/2)` und `T = 0,25` Marktjahren:
+
+```
+Ticker   SR (Paper)   t-Wert   (verlangt: 2,0)
+AAPL         8,21      0,697
+GOOGL        6,39      0,690
+AMZN         5,60      0,686
+```
+
+Bei `T = 0,25` liegt die Obergrenze von `t` — für **jeden** Sharpe, auch
+S → ∞ — bei `√(2·T) = 0,707`. Kein Wert, so hoch er auch berichtet würde,
+könnte auf diesem Fenster die Latte von 2,0 reißen. Die Autoren selbst,
+Fußnote zu Abschnitt 6.1.2: *„The highest Sharpe Ratio exceeds our expected
+empirical range... We believe the exceptionally high SR resulted from the
+phenomenon that there were few pullbacks... We report results as they are in
+our experiments faithfully."* Redlich beobachtet, ohne Korrektur geblieben.
+
+**Keine Kostenmodellierung im gesamten Repository.** `grep -rniE
+"commission|slippage|transaction.?cost|spread"` über den vollständigen
+Quellcode: null Treffer. `backtrader` ist Abhängigkeit und unterstützt
+Kommissionsmodelle, sie sind nirgends konfiguriert. Bei elf LLM- und über
+zwanzig Tool-Aufrufen je Tagesentscheidung ist nicht einmal der Umschlag
+ausgewiesen.
+
+**Das eigene CHANGELOG dokumentiert wiederholte Lookahead-Lecks, spät
+gefunden.** `v0.4.0` (2026-08-31), rund 20 Monate nach der Publikation,
+Überschrift: *„Look-ahead and point-in-time fixes across the data and memory
+layers"*. Drei Klassen: FRED-Makrodaten liefen gegen den heutigen
+Revisionsstand (*„leaking later revisions into a backtest"*), Social-Media-
+Daten ohne Datumsgrenze (*„a historical run showed today's chatter as if it
+were from the as-of date"*), und `get_past_context` gab jede aufgelöste
+Lektion unabhängig vom Laufdatum zurück. Eine davon kam per externem Report
+(#475), nicht aus eigener Prüfung. Dazu im selben Release zwei weitere Funde,
+die den Kern des Papers treffen: **„Silent Hold"** — eine nicht parsbare
+Risk-Manager-Bewertung wurde still zu einer handelbaren Entscheidung
+umgedeutet, dieselbe Fehlerklasse wie ADR-073 (ein Ausfall, der sich als
+Erfolg meldet). Und **„Debate opening fabrication"** — der jeweils erste
+Redner jeder Bull/Bear-Debattenrunde widerlegte eine leere Gegenposition,
+erfand sie also. Die Debatte ist das methodische Kernargument des Papers
+(Abschnitt 4.2); für einen unbekannten Zeitraum hatte sie keine echte
+Gegenseite.
+
+### Trotzdem: drei Befunde, wo etwas dort wirklich besser war
+
+Jeder einzeln geprüft, nicht pauschal übernommen — mit dem Ergebnis, dass
+einer davon beim Nachprüfen nicht in der behaupteten Form haltbar war.
+
+**(A) Checkpoint/Resume für mehrstufige LLM-Läufe — echte Lücke, wird
+Aufgabe.** TradingAgents hält den Zustand seines Agentengraphen über einen
+LangGraph-Checkpointer (SQLite) und kann einen unterbrochenen Lauf über
+`--checkpoint` fortsetzen statt neu zu starten (`v0.2.4`–`v0.4.0`, mehrere
+Härtungsrunden). Nachgeprüft: `qt research` hat keine Entsprechung. Das
+einzige `resume` im CLI (`src/qt/cli.py:1111`) gehört zu `qt data trades`
+und setzt die Kraken-Seitenpaginierung fort — nichts, was einen
+`qt research --generate N --screen`-Lauf betrifft. Ein solcher Lauf ist
+mehrstufig und nicht billig: mehrere generierte Kandidaten, je einer durch
+Sandbox, Kritik, Walk-Forward und DSR. Ein Container-Neustart mittendrin
+(in dieser Umgebung dokumentiert real — `scripts/paper_tick.sh`: *„Hintergrundprozesse in dieser Sitzung sind wiederholt an Container-Neustarts
+gestorben"*) verliert den ganzen Lauf samt bereits bezahlter LLM-Aufrufe.
+→ Aufgabe in `docs/ROADMAP.md`, „Was als Nächstes Sinn ergibt".
+
+**(B) Punkt-in-Zeit-Disziplin für Wirtschaftsdaten — richtig erkannt, falsch
+begründet, jetzt korrigiert.** Im Gespräch stand, TradingAgents habe
+„dedizierte Lookahead-Tests pro Datenquelle" voraus. Nachgeprüft: **das
+stimmt so nicht.** `test_macross.py`, `test_elliott.py`, `test_onchain.py`
+und `test_ml_dataset.py` haben längst je einen eigenen, so benannten
+Lookahead-Test — dieselbe Disziplin, nur nie als Regel aufgeschrieben. Ein
+falscher Grund für eine sonst richtige Beobachtung, hiermit korrigiert statt
+stehen gelassen.
+
+Die tatsächliche Lücke ist enger und liegt woanders: Tiingos retroaktive
+Adjustierung (ADR-055) ist ein **Reproduzierbarkeits**problem — der Faktor
+wirkt gleichmäßig auf die ganze Historie, verändert kein Signal relativ zu
+seinem Zeitpunkt. TradingAgents' FRED-Fehler war ein echtes **Vintage**problem:
+der heutige revidierte Wert wurde als historischer Stand ausgegeben. Diese
+Fehlerklasse hat dieses Projekt noch nie berührt, weil es noch keine Reihe
+zieht, die revidiert wird — Kurse und On-Chain-Kennzahlen werden nicht
+nachträglich korrigiert, Wirtschaftsdaten (NFP, CPI, BIP) schon. Genau das
+träfe zum ersten Mal die in ADR-075 zurückgestellte Makro-Überraschungs-
+strategie, sollte sie je aufgenommen werden. → keine eigene Aufgabe, solange
+die Richtung nicht verfolgt wird — aber eine Vorbedingung, an ADR-075
+angehängt: Vintage-Quelle (ALFRED-Stil, nicht die aktuelle FRED-Ausgabe) und
+ein eigener Punkt-in-Zeit-Test nach demselben Vorbild wie `test_macross.py`,
+**bevor** die erste Zeile Strategie entsteht.
+
+**(C) Breite der Datenanbindung — geprüft, bewusst nicht übernommen.**
+News, Sentiment, Insider-Transaktionen, Fundamentaldaten: TradingAgents zieht
+alles davon. Das ist keine Lücke in diesem Projekt, sondern eine andere
+Wette, seit ADR-Linie und `docs/ZIEL.md` bestehend: Text-Signale sind ohne
+Kostenidentität und DSR-Einordnung nicht beweisbar, und die Breite allein
+liefert keine unabhängige Evidenz. TradingAgents selbst ist das Gegenbeispiel
+dafür, wie leicht das bricht — drei der eigenen Lookahead-Lecks saßen genau
+in dieser Breite (Makrodaten, Sentiment, Memory) und blieben monatelang
+unentdeckt. Nicht übernommen, mit Begründung stehen gelassen statt
+stillschweigend verworfen.
+
+---
+
 ## ADR-076 — `bars_seen` war ein Laufzettel und keine Zahl
 **Datum:** 2026-09-09
 
@@ -292,6 +645,14 @@ Das beste gemessene Bruttosignal im Repo (`trend`, +0,459) liegt erstmals
 darüber. Das macht die Richtung diskutabel; es macht sie nicht zur nächsten
 Aufgabe.
 
+**Nachtrag ADR-077, falls sie doch aufgenommen wird:** Wirtschaftsdaten werden
+revidiert, anders als alles, was dieser Store bisher zieht. Vor der ersten
+Zeile Strategie gehört eine Vintage-Quelle (ALFRED-Stil, nicht die laufend
+aktualisierte FRED-Ausgabe) und ein eigener Punkt-in-Zeit-Test nach dem
+Vorbild von `test_macross.py` — sonst genau der Fehler, den TradingAgents'
+eigenes CHANGELOG als „FRED macro look-ahead" führt, rund 20 Monate nach
+dessen Publikation gefunden.
+
 ### Konsequenz
 
 * `qt data stocks --since` steht auf `1993-01-01`. Gezogen wird, was die
@@ -427,6 +788,14 @@ Checkout hat den Store nie.
 lief es trotzdem los, weil die Testumgebung den Schlüssel aus dem Container
 geerbt hatte — die drei Fehlschläge waren echte API-Aufrufe, die scheiterten.
 In der Action gibt es keinen Schlüssel, also überspringen sie.
+
+> **Nachtrag ADR-078/079:** „echte API-Aufrufe“ war der falsche Grund, und
+> das ist inzwischen **reproduziert**, nicht nur vermutet. Der Probelauf lief
+> mit `uv sync --extra dev`, also ohne das `nim`-Extra. In einem frischen Klon
+> unter genau diesen Bedingungen scheitern dieselben drei Tests in 1,98 s an
+> `ModuleNotFoundError: openai`, bevor ein Aufruf das Netz erreicht. Ein echter
+> NIM-Aufruf dauert 40 bis 75 s. Seit ADR-079 ist `openai` Pflichtpaket. Die
+> Schlussfolgerung für die Action bleibt unberührt.
 
 Bemerkenswert daran ist die Reihenfolge: hätte ich die Action ohne Probelauf
 gepusht, wäre sie rot geworden, und zwei der drei Ursachen hätten wie

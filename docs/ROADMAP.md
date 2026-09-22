@@ -17,6 +17,7 @@
 > Befehl unten braucht Bars. Rund 20 Minuten, einmal je Sitzung:
 >
 > ```bash
+> uv sync --extra dev                          # openai ist seit ADR-079 Pflichtpaket
 > KRYPTO="BTC/USD,ETH/USD,LTC/USD,BCH/USD,ETC/USD,XLM/USD,LINK/USD"
 > KRYPTO="$KRYPTO,ALGO/USD,ADA/USD,DOGE/USD,DOT/USD,SOL/USD,AVAX/USD,XRP/USD"
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
@@ -311,12 +312,22 @@
 >    beweist nichts; sie beweist nur zusammen mit der Frage, wer sie bewegt
 >    hat. **Der Test ist gelaufen und die Antwort steht:** nur die hinterlegte
 >    Quelle hilft.
-> 2. **Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.** Phase A
->    ist am 2026-09-03 bestanden (ADR-061): zwölf Reihen aus Volatilität,
->    Zinsdifferenzen, Agrar, Erdgas, Kupfer, Immobilien und Japan drücken ρ̄ von
->    0,26 auf 0,18 und heben n_eff auf 5,1. Die nächste Verdopplung der Märkte
->    brächte 0,012 an ρ̄ und damit fast nichts. Was jetzt fehlt, ist nicht mehr
->    die Datenlage, sondern ein Signal.
+>
+>    **Seit 2026-09-09 tickt die Routine, hinterließ aber jeden Tag einen
+>    Branch** (ADR-079). Das Skript pushte nach `main`, und der Session-Branch
+>    blieb ohne Upstream. Ein Prüfhaken meldete „unpushed commit“, und der
+>    Agent pushte den Branch. Jetzt verfolgt der Branch `origin/main`, und der
+>    Prompt verbietet den Push zusätzlich. **Die zwölf alten Branches liegen
+>    noch da:** löschen kann sie nur ein Mensch, aus der Sitzung heraus ist
+>    es nicht freigegeben. ADR-079 nennt die drei Befehle. Sie
+>    sichern zuerst `2n3781`, den einzigen Stand, der nicht in `main` liegt.
+> 2. ~~**Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.**~~
+>    **Das stimmte nicht (ADR-075).** Der Datenhebel war nicht ausgereizt,
+>    er war falsch gemessen: die ETF-Historie stand auf das Krypto-Fenster
+>    geschnitten, und die Nachweisgrenze hängt an der Kalenderspanne, nicht
+>    nur an n_eff. Mit der vollen Historie (Panel ab 2003-04-14, 145
+>    effektive Marktjahre) liegt sie bei 0,167 statt 0,33. `MIN_SHARPE`
+>    steht trotzdem weiter auf 0,33 — Details und warum in ADR-075.
 > 3. ~~**Eine Positionsgrößen-Schicht für generierte Kandidaten festlegen.**~~
 >    **Erledigt am 2026-09-04 (ADR-069):** proportional auf das Bruttobudget
 >    skalieren. Vol-Targeting und 1/n sind vorab verworfen und begründet, die
@@ -341,8 +352,10 @@
 >    der Registry und hat nicht angeschlagen. Das ist billiger zu reparieren
 >    als jede weitere Idee zu prüfen. In dieser Umgebung ist
 >    `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
->    durch (ADR-060); der Blocker aus `docs/ZIEL.md` Phase C.2 gilt hier nicht
->    mehr.
+>    durch (ADR-060) — **aber nur mit installiertem `nim`-Extra.** Am
+>    2026-09-22 war der Schlüssel da und NIM trotzdem tot, weil der frische
+>    Container `openai` nicht hatte (ADR-078). Ob es hier läuft, sagt
+>    `uv run pytest tests/test_nim_live.py`, nicht dieser Satz.
 >
 >    **Ein Lauf gegen die Stubs kostet nichts** — er schreibt nach
 >    `registry_stub.duckdb` und nicht in die Registry (ADR-057). Damit lässt
@@ -350,6 +363,23 @@
 >    Die Entscheidung, wie viele Kandidaten ein echter Lauf erzeugt, gehört
 >    einem Menschen: sie ist die einzige in diesem Repo, die sich nicht
 >    zurücknehmen lässt.
+> 5. ~~**`qt research` überlebt einen Container-Neustart nicht (ADR-077).**~~
+>    **Erledigt mit ADR-079: `qt research --resume`.** Fertige Kandidaten
+>    bleiben stehen, halb geprüfte laufen aus dem gespeicherten Code zu Ende,
+>    und nur leere Plätze kosten einen neuen Generator-Aufruf. Die Parameter
+>    und der Datenstand kommen aus dem Lauf, nicht von der Befehlszeile.
+>    Ursprünglicher Eintrag:
+>    Beim Vergleich mit TradingAgents (TauricResearch) aufgefallen: deren
+>    Agentengraph hält seinen Zustand über einen LangGraph-Checkpointer und
+>    kann per `--checkpoint` fortsetzen. `qt research` hat keine Entsprechung
+>    — das einzige `resume` im CLI gehört zu `qt data trades` und setzt nur
+>    die Kraken-Paginierung fort. Ein `--generate N --screen`-Lauf ist
+>    mehrstufig (mehrere Kandidaten, je Sandbox → Kritik → Walk-Forward +
+>    DSR) und nicht billig; ein Neustart mittendrin verliert alles samt
+>    bereits bezahlter LLM-Aufrufe. Das Risiko ist in dieser Umgebung
+>    dokumentiert real, nicht hypothetisch — Punkt 1 dieser Liste war
+>    dasselbe Muster bei der Routine, und `scripts/paper_tick.sh` trägt die
+>    Lehre daraus im eigenen Docstring.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
