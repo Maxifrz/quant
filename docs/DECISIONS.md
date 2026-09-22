@@ -5,6 +5,125 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-079 — Die halb behobenen Befunde zu Ende gebracht
+**Datum:** 2026-09-22
+
+Nach ADR-078 kam die Frage, ob jeder Befund behoben ist. Ehrliche Antwort:
+nein. Zwei Befunde waren nur halb behoben, und aus dem TradingAgents-Vergleich
+(ADR-077) standen noch zwei offene Punkte da. Dieser Eintrag schließt alle vier.
+
+### 1. `openai` ist Pflichtpaket, und der Grund aus ADR-074 ist jetzt reproduziert
+
+ADR-078 hatte den Weg `uv sync --extra nim` in die Fehlermeldung geschrieben.
+Das behob das Symptom, nicht die Ursache. **`uv run` synchronisiert nur die
+Kernabhängigkeiten.** Jede frische Sitzung, auch jede Routine, startet also
+ohne `openai`, und `--provider nim` ist dort tot, bis jemand an das Extra denkt.
+
+Gemessen in einem frischen Klon von `main`, nur mit `uv sync --extra dev`:
+`tests/test_nim_live.py` ergibt **3 failed in 1,98 s**, alle mit
+`ModuleNotFoundError`. Zwei Sekunden schließen echte API-Aufrufe aus, denn ein
+NIM-Aufruf dauert hier 40 bis 75 Sekunden. Nach dem Wechsel dieselben drei
+Tests ohne jedes Extra (`rm -rf .venv`, dann nur `uv run --with pytest`):
+**3 passed in 74 s**.
+
+* `openai>=1.40` steht jetzt in den Kernabhängigkeiten. Das Extra `nim` bleibt
+  als leere Hülle stehen, damit alte Befehle mit `--extra nim` nicht brechen.
+  `uv.lock` ändert sich um zwei Zeilen, keine Paketversion ändert sich.
+* Der Nachtrag in ADR-074 Punkt 3 lautet jetzt „reproduziert“ statt „sehr
+  wahrscheinlich“.
+* `test_das_nim_sdk_ist_pflichtpaket_und_kein_extra` liest `pyproject.toml`
+  und schlägt an, wenn `openai` wieder in ein Extra wandert.
+
+### 2. Die Routine hinterließ jeden Tag einen Branch
+
+Auf dem Remote lagen zwölf `claude/lucid-meitner-*`-Branches. Zehn davon
+stammen aus der Zeit vom 2026-09-09 bis 2026-09-21, und jeder steht exakt auf
+dem Tick-Commit seines Tages, **ohne eigenen Inhalt**. Elf sind vollständig in
+`main` enthalten. Nur `2n3781` (`9ad3910`) trägt einen überholten Stand vom
+2026-09-08, der nicht in `main` liegt.
+
+Die Ursache ist das Skript, nicht der Agent. `paper_tick.sh` pusht den
+Kontostand per `HEAD:main`, aber der lokale Session-Branch hat danach **keinen
+Upstream**. Ein Prüfhaken der Sitzung meldet deshalb „unpushed commit“, und
+der Agent pusht den Branch, um ihn zu beruhigen. Das ist eine vernünftige
+Reaktion auf eine falsche Meldung.
+
+* **`verfolge_ziel`:** Landet der Kontostand in `main`, verfolgt der
+  Session-Branch danach `origin/main`. Dann steht er „up to date“ da, und es
+  gibt nichts zu pushen. Das gilt auch für einen Tick ohne neuen Kontostand.
+  Beim Rückfall auf den eigenen Branch (`main` lehnt ab) bleibt der Upstream
+  der eigene Branch, denn dort liegt der Stand dann wirklich.
+* **Nebenbefund, dieselbe Fehlerklasse wie ADR-059:** Nach dem Rückfall
+  meldete das Skript trotzdem „Kontostand auf main gesichert“, also genau dort,
+  wo er *nicht* lag. Jetzt nennt die Meldung den Ort, an dem der Push wirklich
+  gelungen ist.
+* `tests/test_paper_tick_skript.py`, 4 Tests gegen ein nacktes Git-Remote mit
+  falschem `uv` und `sleep` und ausgeblendeter globaler Git-Konfiguration.
+  **Gegen das alte Skript scheitern 3 der 4.**
+* Der Prompt der Routine sagt zusätzlich ausdrücklich, dass der
+  Session-Branch nicht gepusht wird. Ein zweites Schloss, denn der Haken
+  könnte aus einem anderen Grund anschlagen.
+* **Aufräumen kann nur ein Mensch.** Aus dieser Sitzung endete der Push des
+  Archiv-Tags mit HTTP 403, und das Löschen fremder Branches ist hier nicht
+  freigegeben. Die Befehle sichern zuerst `9ad3910` als Tag, damit kein
+  Commit verloren geht:
+
+  ```bash
+  git fetch origin
+  git push origin origin/claude/lucid-meitner-2n3781:refs/tags/archiv/paper-konto-2026-09-08
+  git push origin --delete $(git branch -r | grep -o 'claude/lucid-meitner-[a-z0-9]*')
+  ```
+
+### 3. `qt research --resume` (ADR-077 A)
+
+Ein Container-Neustart mitten in einem `--generate N`-Lauf kostete bisher den
+ganzen Lauf samt bezahlter Modellaufrufe. Jetzt:
+
+* Die Registry hat eine Tabelle `runs` mit den Parametern, der Liste „bereits
+  geprüft“ vom Start und einem Fingerabdruck der Bars. Jeder Kandidat trägt
+  `run_id`, `run_index` und `proposal_name`. Die Migration bleibt additiv.
+  Eine Kopie der echten Registry hat danach weiter 24 Versuche und 46 Zeilen.
+* **Fertige Kandidaten werden nie noch einmal gescreent.** Der
+  Versuchszähler zählt also nichts doppelt (ADR-005).
+* **Ein halb geprüfter Kandidat läuft aus seinem gespeicherten Code zu Ende**,
+  ohne neuen Generator-Aufruf. Liegt die Kritik schon vor, wird sie nicht noch
+  einmal bezahlt. Ein neuer Aufruf hätte einen anderen Kandidaten für denselben
+  Platz geliefert.
+* **Leere Plätze bekommen dieselben Briefings wie ohne Unterbrechung.** Dafür
+  wird „bereits geprüft“ beim Fortsetzen *nicht* neu berechnet. Bis dahin
+  stehen die eigenen Kandidaten des Laufs in der Registry, und das Modell
+  bekäme sie als „gescheitert“ vorgesetzt.
+* **Die Parameter kommen aus dem Lauf, nicht von der Befehlszeile.** Die Bars
+  werden auf den Stand beim Start gekürzt. Neue Bars sind kein Problem. Haben
+  sich aber Kurse rückwirkend geändert (Tiingo, ADR-055), wird nicht
+  fortgesetzt: eine Charge, deren eine Hälfte gegen andere Daten lief, ist
+  keine Charge mehr.
+* **Ein Lauf mit Generator-Fehlern bleibt offen.** Nach einem Lauf ohne Zugang
+  (ADR-078) holt `qt research --resume` die leeren Plätze nach, sobald der
+  Schlüssel steht. Beide Fehlermeldungen nennen den Befehl.
+
+Was bleibt: Ein Absturz *während* eines Modellaufrufs kostet diesen einen
+Aufruf, falls die Antwort noch nicht im Cache lag. Kandidaten aus der Zeit vor
+diesem ADR haben keine `run_id`, sie lassen sich nicht fortsetzen, verloren
+geht aber nichts.
+
+`tests/test_research_resume.py`, 13 Tests. Zwei davon sind per Mutation
+geprüft: Neu berechnete Briefings und ein zweiter Kritik-Aufruf lassen je den
+zuständigen Test scheitern.
+
+### Konsequenz
+
+* `openai` ist Kernabhängigkeit, `uv sync --extra dev` reicht für alles.
+* `paper_tick.sh` lässt keinen Branch mehr zurück, der gepusht werden will,
+  und meldet den Ort, an dem der Kontostand wirklich liegt.
+* `qt research --resume` setzt den jüngsten offenen Lauf fort, mit dessen
+  Parametern und gegen dessen Datenstand.
+* Offen bleibt nur, was ein Mensch tun muss: `ANTHROPIC_API_KEY` in den
+  Umgebungseinstellungen hinterlegen. Ohne ihn kommt `qt research` mit dem
+  Standard-Anbieter nur so weit, wie der Cache reicht.
+
+---
+
 ## ADR-078 — „Nicht gelaufen“ ist nicht „nicht bestanden“
 **Datum:** 2026-09-22
 
@@ -87,6 +206,10 @@ Schlüssel und Endpunkt sind also in Ordnung, es fehlte nur die Installation.
 Die Zugangserkennung prüft jetzt auch das SDK und sagt, wie es hineinkommt
 (`uv sync --extra nim`). Im Sitzungsstart-Block der ROADMAP steht der Befehl
 jetzt an erster Stelle.
+
+> **Nachtrag ADR-079:** Das Extra war nur das Symptom. `uv run` installiert
+> keine Extras, also fehlte `openai` in *jeder* frischen Sitzung. Seit ADR-079
+> ist es Kernabhängigkeit, und die Meldung sagt nur noch `uv sync`.
 
 ### Nebenbefund: ADR-074 Punkt 3 nennt sehr wahrscheinlich den falschen Grund
 
@@ -666,11 +789,13 @@ lief es trotzdem los, weil die Testumgebung den Schlüssel aus dem Container
 geerbt hatte — die drei Fehlschläge waren echte API-Aufrufe, die scheiterten.
 In der Action gibt es keinen Schlüssel, also überspringen sie.
 
-> **Nachtrag ADR-078:** „echte API-Aufrufe“ ist sehr wahrscheinlich der
-> falsche Grund. Der Probelauf lief mit `uv sync --extra dev`, also ohne das
-> `nim`-Extra, und am 2026-09-22 scheiterten dieselben drei Tests unter
-> denselben Bedingungen an `ModuleNotFoundError: openai`, bevor ein Aufruf das
-> Netz erreichte. Die Schlussfolgerung für die Action bleibt unberührt.
+> **Nachtrag ADR-078/079:** „echte API-Aufrufe“ war der falsche Grund, und
+> das ist inzwischen **reproduziert**, nicht nur vermutet. Der Probelauf lief
+> mit `uv sync --extra dev`, also ohne das `nim`-Extra. In einem frischen Klon
+> unter genau diesen Bedingungen scheitern dieselben drei Tests in 1,98 s an
+> `ModuleNotFoundError: openai`, bevor ein Aufruf das Netz erreicht. Ein echter
+> NIM-Aufruf dauert 40 bis 75 s. Seit ADR-079 ist `openai` Pflichtpaket. Die
+> Schlussfolgerung für die Action bleibt unberührt.
 
 Bemerkenswert daran ist die Reihenfolge: hätte ich die Action ohne Probelauf
 gepusht, wäre sie rot geworden, und zwei der drei Ursachen hätten wie

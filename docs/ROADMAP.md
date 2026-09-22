@@ -312,6 +312,15 @@
 >    beweist nichts; sie beweist nur zusammen mit der Frage, wer sie bewegt
 >    hat. **Der Test ist gelaufen und die Antwort steht:** nur die hinterlegte
 >    Quelle hilft.
+>
+>    **Seit 2026-09-09 tickt die Routine, hinterließ aber jeden Tag einen
+>    Branch** (ADR-079). Das Skript pushte nach `main`, und der Session-Branch
+>    blieb ohne Upstream. Ein Prüfhaken meldete „unpushed commit“, und der
+>    Agent pushte den Branch. Jetzt verfolgt der Branch `origin/main`, und der
+>    Prompt verbietet den Push zusätzlich. **Die zwölf alten Branches liegen
+>    noch da:** löschen kann sie nur ein Mensch, aus der Sitzung heraus ist
+>    es nicht freigegeben. ADR-079 nennt die drei Befehle. Sie
+>    sichern zuerst `2n3781`, den einzigen Stand, der nicht in `main` liegt.
 > 2. ~~**Einen Edge über 0,33 suchen — der Datenhebel ist ausgereizt.**~~
 >    **Das stimmte nicht (ADR-075).** Der Datenhebel war nicht ausgereizt,
 >    er war falsch gemessen: die ETF-Historie stand auf das Krypto-Fenster
@@ -354,7 +363,12 @@
 >    Die Entscheidung, wie viele Kandidaten ein echter Lauf erzeugt, gehört
 >    einem Menschen: sie ist die einzige in diesem Repo, die sich nicht
 >    zurücknehmen lässt.
-> 5. **`qt research` überlebt einen Container-Neustart nicht (ADR-077).**
+> 5. ~~**`qt research` überlebt einen Container-Neustart nicht (ADR-077).**~~
+>    **Erledigt mit ADR-079: `qt research --resume`.** Fertige Kandidaten
+>    bleiben stehen, halb geprüfte laufen aus dem gespeicherten Code zu Ende,
+>    und nur leere Plätze kosten einen neuen Generator-Aufruf. Die Parameter
+>    und der Datenstand kommen aus dem Lauf, nicht von der Befehlszeile.
+>    Ursprünglicher Eintrag:
 >    Beim Vergleich mit TradingAgents (TauricResearch) aufgefallen: deren
 >    Agentengraph hält seinen Zustand über einen LangGraph-Checkpointer und
 >    kann per `--checkpoint` fortsetzen. `qt research` hat keine Entsprechung
@@ -365,7 +379,7 @@
 >    bereits bezahlter LLM-Aufrufe. Das Risiko ist in dieser Umgebung
 >    dokumentiert real, nicht hypothetisch — Punkt 1 dieser Liste war
 >    dasselbe Muster bei der Routine, und `scripts/paper_tick.sh` trägt die
->    Lehre daraus im eigenen Docstring. Noch nicht umgesetzt, nur erfasst.
+>    Lehre daraus im eigenen Docstring.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt
