@@ -5,6 +5,123 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-078 — „Nicht gelaufen“ ist nicht „nicht bestanden“
+**Datum:** 2026-09-22
+
+Auslöser war eine einfache Frage: welche Umgebungsvariablen sind hier
+gesetzt? Die Antwort (`TIINGO_API_KEY` und `NVIDIA_API_KEY` ja,
+`ANTHROPIC_API_KEY` und die Börsenschlüssel nein) enthielt drei Befunde. Beim
+Beheben sind zwei davon größer geworden, als sie aussahen, und einer hat sich
+als falsch begründet herausgestellt.
+
+### Befund 1: `qt research` ohne Anthropic-Zugang meldete sich als Normalfall
+
+Reproduziert mit dem **echten** SDK, Registry und Cache im Temp-Verzeichnis:
+
+```
+  erzeugt                      0
+  Generator-Fehler             2
+  ...
+Kein Kandidat hat bestanden. Das ist der Normalfall und kein Fehler (ADR-005).
+Exit 0
+```
+
+Der Loop fängt Generator-Fehler je Kandidat ab, damit ein einzelner
+Netzwackler nicht die Charge kostet — richtig so. Scheitert aber **jeder**
+Kandidat, hat der Lauf nichts geprüft, und die Schlusszeile behauptete
+trotzdem das Gegenteil. Exit 0 heißt für jeden Aufrufer, ob Routine oder
+Skript: gelungen. Dieselbe Fehlerklasse wie ADR-073 (die Routine meldete
+SUCCEEDED ohne Arbeitskopie) und wie „Silent Hold“ im CHANGELOG von
+TradingAgents (ADR-077).
+
+Der Schaden blieb aus, weil nichts gezählt wurde: `record_generated` läuft erst
+nach einem erfolgreichen Vorschlag, und der Versuchszähler stand vorher wie
+nachher. Falsch war nur die Meldung, und zwar in die bequeme Richtung.
+
+**Die Korrektur:**
+
+* Kein einziger Kandidat erzeugt → „Lauf GESCHEITERT … Das ist kein ‚nicht
+  bestanden‘, sondern ‚nicht gelaufen‘“, **Exit 1**, dazu was fehlt und was
+  hier stattdessen geht.
+* Teilweise gescheitert → weiterhin Exit 0, aber mit der Zahl: „Geprüft
+  wurden aber nur 1 von 2“.
+* Vor dem Datenladen ein Hinweis, wenn der Anbieter hier nicht nutzbar
+  aussieht, und zwar **kein Abbruch**: ein Lauf gegen gefüllten Cache kommt
+  ohne Schlüssel aus, und ob der Cache reicht, weiß man vorher nicht.
+* `qt alloc` hatte dasselbe Muster eine Ebene tiefer: bei 100 % Rückfall auf
+  Gleichgewichtung verglich das Urteil Gleichgewichtung mit sich selbst und
+  endete mit Exit 2, also „Allokator geprüft, nicht bestanden“. Jetzt Exit 1
+  mit Begründung.
+
+**Der Standard-Anbieter bleibt Anthropic.** Automatisch auf NIM zu wechseln lag
+nahe und ist verworfen: `cli.py` hält fest, dass jeder Cache-Eintrag und
+jeder ADR am Anthropic-Default hängt. Ein stiller Wechsel hätte einen
+Cache-Replay unbemerkt in einen neuen, kostenpflichtigen Lauf verwandelt, der
+Versuche verbraucht. Die Meldung nennt den Ausweg, gehen muss ihn ein Mensch.
+
+### Die erste Fassung von Befund 1 war zu schnell
+
+„`ANTHROPIC_API_KEY` leer, also kein Zugang“ stimmt so nicht. Das SDK sucht
+der Reihe nach `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein Profil aus
+`ant auth login` (`~/.config/anthropic/`, Auswahl über `ANTHROPIC_PROFILE`)
+und Workload Identity Federation. Nachgeprüft ist jetzt alles davon: `ant`
+ist nicht installiert, es gibt kein Profil, keine der Variablen ist gesetzt,
+und ein Aufruf mit dem echten SDK scheitert vor dem Senden. Das Ergebnis
+bleibt dasselbe, die Begründung war trotzdem unvollständig. Die neue
+Zugangserkennung (`qt.llm.providers.zugang_vorhanden`) kennt alle Quellen
+und liest nie einen Wert.
+
+### Befund 1b: ein Schlüssel ohne SDK ist kein Zugang, und das betraf NIM
+
+Beim Testlauf fielen drei Tests aus `tests/test_nim_live.py`, und zwar nicht an
+der API, sondern an `ModuleNotFoundError: No module named 'openai'`. Der
+frische Container hatte das `nim`-Extra nicht installiert. **`--provider nim`
+war hier tot, obwohl `NVIDIA_API_KEY` gesetzt war.** Meine Auskunft „Daten und
+NIM-Loop laufen“ stützte sich allein auf den Schlüssel. Sie war falsch, und
+die erste Fassung der neuen Fehlermeldung hätte genau diesen toten Weg als
+Ausweg empfohlen.
+
+Gemessen: nach `uv sync --extra dev --extra nim` (ein Paket, `openai 3.6.0`)
+bestehen alle drei Live-Tests gegen NIM, 43 Sekunden, mit echten Antworten.
+Schlüssel und Endpunkt sind also in Ordnung, es fehlte nur die Installation.
+Die Zugangserkennung prüft jetzt auch das SDK und sagt, wie es hineinkommt
+(`uv sync --extra nim`). Im Sitzungsstart-Block der ROADMAP steht der Befehl
+jetzt an erster Stelle.
+
+### Nebenbefund: ADR-074 Punkt 3 nennt sehr wahrscheinlich den falschen Grund
+
+Dort steht, die drei Fehlschläge von `test_nim_live.py` im Probelauf des
+frischen Klons seien „echte API-Aufrufe, die scheiterten“. Der Probelauf lief
+mit `uv sync --extra dev`, also ohne das `nim`-Extra. Heute schlagen dieselben
+drei Tests unter denselben Bedingungen fehl, und zwar bevor überhaupt ein
+Aufruf das Netz erreicht. Beweisen lässt es sich im Nachhinein nicht, weil
+die Ausgabe von damals nicht erhalten ist. Aber „echte API-Aufrufe“ ist die
+schwächere der beiden Erklärungen, und genau so ein Grund wird später
+zitiert. Die Schlussfolgerung von ADR-074 bleibt davon unberührt: in der
+Action gibt es keinen Schlüssel, die Tests überspringen sich dort.
+
+### Befund 2: Börsenschlüssel leer — geprüft, bewusst nicht geändert
+
+`qt live status` und `qt live tick` brechen ohne `QT_EXCHANGE_*` mit Exit 1 ab
+(„Kein Boersenzugang: … ist nicht gesetzt“ bzw. die Weigerung ohne
+validierten Edge). Das ist der gewollte Zustand für Phase 7, „gebaut,
+unverdrahtet“. Gesetzt werden die Schlüssel erst, wenn ein Mensch entschieden
+hat, mit echtem Geld zu handeln.
+
+### Konsequenz
+
+* `qt research`: gar nichts erzeugt → Exit 1 und „nicht gelaufen“; teilweise
+  erzeugt → Exit 0 mit der Zahl der tatsächlich geprüften Kandidaten.
+* `qt alloc`: 100 % Rückfall → Exit 1.
+* `qt.llm.providers.zugang_vorhanden` / `zugangs_hinweis`: prüfen SDK **und**
+  alle Zugangsquellen, nennen den nutzbaren Ausweg, lesen nie einen Wert.
+* 14 Tests in `tests/test_research_ohne_zugang.py`, die Verhaltenstests
+  zuerst gegen den alten Stand rot.
+* ROADMAP: `uv sync --extra dev --extra nim` im Sitzungsstart; die Behauptung
+  „NIM kommt hier durch“ verweist jetzt auf den Test statt auf sich selbst.
+
+---
+
 ## ADR-077 — TradingAgents verglichen: zwei Lücken geschlossen, eine bewusst nicht
 **Datum:** 2026-09-17
 
@@ -548,6 +665,12 @@ Checkout hat den Store nie.
 lief es trotzdem los, weil die Testumgebung den Schlüssel aus dem Container
 geerbt hatte — die drei Fehlschläge waren echte API-Aufrufe, die scheiterten.
 In der Action gibt es keinen Schlüssel, also überspringen sie.
+
+> **Nachtrag ADR-078:** „echte API-Aufrufe“ ist sehr wahrscheinlich der
+> falsche Grund. Der Probelauf lief mit `uv sync --extra dev`, also ohne das
+> `nim`-Extra, und am 2026-09-22 scheiterten dieselben drei Tests unter
+> denselben Bedingungen an `ModuleNotFoundError: openai`, bevor ein Aufruf das
+> Netz erreichte. Die Schlussfolgerung für die Action bleibt unberührt.
 
 Bemerkenswert daran ist die Reihenfolge: hätte ich die Action ohne Probelauf
 gepusht, wäre sie rot geworden, und zwei der drei Ursachen hätten wie

@@ -116,6 +116,25 @@ def _build_provider(name: str):
     return get_provider(name)
 
 
+def _zugang_vorab(provider: str) -> str:
+    """Vor dem Datenladen sagen, wenn der Anbieter hier keinen Zugang hat.
+
+    Nur ein Hinweis, kein Abbruch: ein Lauf gegen gefuellten Cache kommt ohne
+    Schluessel aus, und ob der Cache reicht, weiss man vorher nicht. Aber wer
+    ohne Zugang startet, soll es vor Minuten Datenaufbereitung erfahren und
+    nicht aus einer Fussnote am Ende.
+    """
+    from qt.llm.providers import zugangs_hinweis
+
+    hinweis = zugangs_hinweis(provider)
+    if hinweis:
+        typer.echo(
+            f"Hinweis: {hinweis}\n"
+            "Ohne Zugang kommt der Lauf nur so weit, wie der Cache reicht.\n"
+        )
+    return hinweis
+
+
 def _fill_model(name: str):
     """Fill-Modell nach Namen. Siehe ADR-015 zur Wahl des Defaults."""
     from qt.backtest.costs import FlatFillModel, SizeAwareFillModel
@@ -567,6 +586,7 @@ def alloc(
     # Vor dem Datenladen: eine Fehlpaarung aus Anbieter und Modell soll den
     # Lauf hier beenden und nicht nach Minuten am ersten bezahlten Aufruf.
     model = _resolve_model(provider, model)
+    zugang = _zugang_vorab(provider) if candidate == "llm" and not stub else ""
 
     load_library()
     symbol_list = _split(symbols)
@@ -637,6 +657,19 @@ def alloc(
                 "hat teilweise\n  gleichgewichtet -- insoweit ist er heimlich eine "
                 "Baseline (ADR-018)."
             )
+        # Bei 100 % gibt es keinen Allokator, der geprueft worden waere: das
+        # Urteil oben vergleicht Gleichgewichtung mit sich selbst. Exit 2
+        # ("nicht bestanden") waere eine Aussage ueber ein Modell, das nie
+        # geantwortet hat (ADR-078).
+        if telemetry.fallbacks >= telemetry.calls:
+            typer.echo(
+                "\n  Lauf GESCHEITERT: jeder Allokator-Aufruf fiel auf "
+                "Gleichgewichtung zurueck.\n  Das Urteil oben pruefte keinen "
+                "Allokator, sondern Gleichgewichtung gegen sich selbst."
+            )
+            if zugang:
+                typer.echo(f"\n  {zugang}")
+            raise typer.Exit(code=1)
 
     raise typer.Exit(code=0 if result.passed() else 2)
 
@@ -935,6 +968,8 @@ def research(
         registry.close()
         raise typer.Exit(code=0)
 
+    zugang = "" if stub else _zugang_vorab(provider)
+
     symbol_list = _split(symbols)
     bars = {
         sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
@@ -994,6 +1029,25 @@ def research(
     for note in telemetry.notes:
         typer.echo(f"  Hinweis: {note}")
 
+    # **"Nicht gelaufen" ist nicht "nicht bestanden".** Der Loop faengt
+    # Generator-Fehler je Kandidat ab, damit ein einzelner Netzwackler nicht
+    # die Charge kostet. Scheitert aber *jeder* Kandidat -- fehlender
+    # Schluessel, toter Endpunkt --, hat der Lauf nichts geprueft. Bis hierher
+    # stand dann trotzdem "Das ist der Normalfall und kein Fehler" mit Exit 0,
+    # und jeder Aufrufer hielt ihn fuer gelungen: dieselbe Fehlerklasse wie
+    # die Routine, die ohne Arbeitskopie SUCCEEDED meldete (ADR-073, ADR-078).
+    if telemetry.generated == 0 and telemetry.generator_errors > 0:
+        typer.echo(
+            f"\nLauf GESCHEITERT: kein einziger Kandidat erzeugt "
+            f"({telemetry.generator_errors} Generator-Fehler, siehe oben).\n"
+            "Nichts wurde geprueft, der Versuchszaehler ist unveraendert. Das "
+            "ist kein\n\"nicht bestanden\", sondern \"nicht gelaufen\"."
+        )
+        if zugang:
+            typer.echo(f"\n{zugang}")
+        registry.close()
+        raise typer.Exit(code=1)
+
     if telemetry.passed:
         typer.echo(
             f"\n{telemetry.passed} Kandidat(en) haben die DSR-Schwelle bestanden.\n"
@@ -1007,6 +1061,12 @@ def research(
             "\nKein Kandidat hat bestanden. Das ist der Normalfall und kein "
             "Fehler (ADR-005)."
         )
+        if telemetry.generator_errors:
+            typer.echo(
+                f"Geprueft wurden aber nur {telemetry.generated} von "
+                f"{generate} -- {telemetry.generator_errors} Generierungen "
+                "sind gescheitert, siehe Hinweise oben."
+            )
 
     registry.close()
     raise typer.Exit(code=0)

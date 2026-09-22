@@ -17,6 +17,7 @@
 > Befehl unten braucht Bars. Rund 20 Minuten, einmal je Sitzung:
 >
 > ```bash
+> uv sync --extra dev --extra nim              # ohne nim-Extra ist --provider nim tot (ADR-078)
 > KRYPTO="BTC/USD,ETH/USD,LTC/USD,BCH/USD,ETC/USD,XLM/USD,LINK/USD"
 > KRYPTO="$KRYPTO,ALGO/USD,ADA/USD,DOGE/USD,DOT/USD,SOL/USD,AVAX/USD,XRP/USD"
 > uv run qt data pull --symbols "$KRYPTO" --tf 1d --since 2019-01-01
@@ -342,8 +343,10 @@
 >    der Registry und hat nicht angeschlagen. Das ist billiger zu reparieren
 >    als jede weitere Idee zu prüfen. In dieser Umgebung ist
 >    `NVIDIA_API_KEY` gesetzt und ein Gate-Lauf über `--provider nim` kommt
->    durch (ADR-060); der Blocker aus `docs/ZIEL.md` Phase C.2 gilt hier nicht
->    mehr.
+>    durch (ADR-060) — **aber nur mit installiertem `nim`-Extra.** Am
+>    2026-09-22 war der Schlüssel da und NIM trotzdem tot, weil der frische
+>    Container `openai` nicht hatte (ADR-078). Ob es hier läuft, sagt
+>    `uv run pytest tests/test_nim_live.py`, nicht dieser Satz.
 >
 >    **Ein Lauf gegen die Stubs kostet nichts** — er schreibt nach
 >    `registry_stub.duckdb` und nicht in die Registry (ADR-057). Damit lässt
