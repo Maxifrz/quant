@@ -156,6 +156,26 @@ def test_ein_teilweise_gescheiterter_lauf_sagt_wieviel_geprueft_wurde(ohne_zugan
     assert ergebnis.exit_code == 0, ergebnis.output
     assert "GESCHEITERT" not in ergebnis.output
     assert "nur 1 von 2" in ergebnis.output
+    assert "--resume" in ergebnis.output, "der leere Platz laesst sich nachholen"
+
+
+def test_der_gescheiterte_lauf_bleibt_offen_und_nennt_resume(ohne_zugang):
+    """Ist der Zugang eingerichtet, holt `--resume` genau diesen Lauf nach --
+    mit denselben Parametern, statt einen zweiten zu beginnen (ADR-079)."""
+    from qt.research.registry import ResearchRegistry
+
+    ergebnis = _lauf()
+
+    assert "qt research --resume" in ergebnis.output
+    reg = ResearchRegistry.open(ohne_zugang / "registry.duckdb")
+    try:
+        offen = reg.open_run()
+        assert offen is not None
+        assert offen["n"] == 2
+        assert offen["config"]["symbols"] == "BTC/USD"
+        assert reg.run_candidates(offen["id"]) == {}
+    finally:
+        reg.close()
 
 
 # ---------------------------------------------------------------------------

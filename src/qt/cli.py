@@ -925,6 +925,14 @@ def research(
     ] = None,
     since: Annotated[str | None, typer.Option()] = None,
     until: Annotated[str | None, typer.Option()] = None,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume",
+            help="Den juengsten abgebrochenen Lauf fortsetzen, mit dessen "
+            "Parametern (ADR-079). Die uebrigen Optionen werden ignoriert.",
+        ),
+    ] = False,
 ) -> None:
     """Der Research-Loop: LLM schreibt Kandidaten, harte Gates entscheiden.
 
@@ -945,7 +953,7 @@ def research(
         StubCriticClient,
         StubGeneratorClient,
     )
-    from qt.research.loop import run_research_loop
+    from qt.research.loop import auf_datenstand, datenstand, run_research_loop
     from qt.research.registry import STUB_PATH, ResearchRegistry
 
     model = _resolve_model(provider, model)
@@ -968,6 +976,53 @@ def research(
         registry.close()
         raise typer.Exit(code=0)
 
+    # **Fortsetzen statt neu anfangen** (ADR-079). Ein Container-Neustart
+    # mitten in einem Lauf kostete bisher den ganzen Lauf samt bezahlter
+    # Modellaufrufe. Die Parameter kommen aus dem Lauf selbst: ein Lauf, der
+    # mit anderen Fenstern oder Schwellen weiterliefe als er begann, waere
+    # keine Charge mehr, sondern zwei halbe.
+    lauf = None
+    if resume:
+        lauf = registry.open_run()
+        if lauf is None:
+            typer.echo(
+                f"Kein abgebrochener Lauf in {registry.path.name} -- nichts "
+                "fortzusetzen."
+            )
+            registry.close()
+            raise typer.Exit(code=1)
+        p = lauf["config"]
+        fehlt = [k for k in _LAUF_PARAMETER if k not in p]
+        if fehlt:
+            typer.echo(
+                f"Lauf {lauf['id']} hat keine vollstaendigen Parameter "
+                f"(fehlt: {', '.join(fehlt)}) und laesst sich nicht fortsetzen."
+            )
+            registry.close()
+            raise typer.Exit(code=1)
+        generate = int(lauf["n"])
+        symbols, tf, since, until = p["symbols"], p["tf"], p["since"], p["until"]
+        train, test, embargo = p["train"], p["test"], p["embargo"]
+        dsr_threshold, no_critic = p["dsr_threshold"], not p["use_critic"]
+        provider, model = p["provider"], p["model"]
+        generator_effort, critic_effort = p["generator_effort"], p["critic_effort"]
+        schon_da = len(registry.run_candidates(lauf["id"]))
+        typer.echo(
+            f"Setze Lauf {lauf['id']} vom {lauf['started_at']:%Y-%m-%d %H:%M} "
+            f"UTC fort:\n{schon_da} von {generate} Plaetzen haben schon einen "
+            "Kandidaten. Parameter kommen aus dem Lauf, nicht von der "
+            "Befehlszeile.\n"
+        )
+    else:
+        offen = registry.open_run()
+        if offen is not None:
+            typer.echo(
+                f"Hinweis: Lauf {offen['id']} vom "
+                f"{offen['started_at']:%Y-%m-%d %H:%M} UTC ist nicht "
+                "abgeschlossen.\nFortsetzen mit `qt research --resume`; dieser "
+                "Aufruf beginnt einen neuen Lauf.\n"
+            )
+
     zugang = "" if stub else _zugang_vorab(provider)
 
     symbol_list = _split(symbols)
@@ -975,6 +1030,18 @@ def research(
         sym: to_bars(sym, tf, read_bars(sym, tf, start=since, end=until))
         for sym in symbol_list
     }
+    if lauf is not None:
+        bars, abweichungen = auf_datenstand(bars, lauf["config"]["datenstand"])
+        if abweichungen:
+            typer.echo(
+                "Der Datenstand hat sich seit dem Start des Laufs geaendert:\n"
+                + "\n".join(f"  {a}" for a in abweichungen)
+                + "\nEin fortgesetzter Lauf muss gegen dieselben Bars rechnen "
+                "wie sein Anfang.\nNicht fortgesetzt -- ein neuer Lauf "
+                "beginnt mit `qt research` ohne --resume."
+            )
+            registry.close()
+            raise typer.Exit(code=1)
 
     if stub:
         gen_client = StubGeneratorClient()
@@ -1005,6 +1072,23 @@ def research(
     typer.echo(f"Versuchszaehler vor diesem Lauf: {registry.trial_count()}")
     typer.echo()
 
+    lauf_parameter = {
+        "symbols": ",".join(symbol_list),
+        "tf": tf,
+        "since": since,
+        "until": until,
+        "train": train,
+        "test": test,
+        "embargo": embargo,
+        "dsr_threshold": dsr_threshold,
+        "use_critic": not no_critic,
+        "provider": provider,
+        "model": model,
+        "generator_effort": generator_effort,
+        "critic_effort": critic_effort,
+        "stub": stub,
+        "datenstand": datenstand(bars),
+    }
     telemetry = run_research_loop(
         generate,
         bars,
@@ -1019,6 +1103,8 @@ def research(
         dsr_threshold=dsr_threshold,
         use_critic=not no_critic,
         echo=typer.echo,
+        run_config=None if lauf is not None else lauf_parameter,
+        resume_run=None if lauf is None else lauf["id"],
     )
 
     typer.echo()
@@ -1036,7 +1122,14 @@ def research(
     # stand dann trotzdem "Das ist der Normalfall und kein Fehler" mit Exit 0,
     # und jeder Aufrufer hielt ihn fuer gelungen: dieselbe Fehlerklasse wie
     # die Routine, die ohne Arbeitskopie SUCCEEDED meldete (ADR-073, ADR-078).
-    if telemetry.generated == 0 and telemetry.generator_errors > 0:
+    fortsetzen = (
+        f"Der Lauf bleibt offen; `qt research{' --stub' if stub else ''} "
+        "--resume` holt die leeren Plaetze nach."
+    )
+    if (
+        telemetry.generated + telemetry.nachgeholt == 0
+        and telemetry.generator_errors > 0
+    ):
         typer.echo(
             f"\nLauf GESCHEITERT: kein einziger Kandidat erzeugt "
             f"({telemetry.generator_errors} Generator-Fehler, siehe oben).\n"
@@ -1045,6 +1138,7 @@ def research(
         )
         if zugang:
             typer.echo(f"\n{zugang}")
+        typer.echo(fortsetzen)
         registry.close()
         raise typer.Exit(code=1)
 
@@ -1062,14 +1156,25 @@ def research(
             "Fehler (ADR-005)."
         )
         if telemetry.generator_errors:
+            geprueft = generate - telemetry.generator_errors
             typer.echo(
-                f"Geprueft wurden aber nur {telemetry.generated} von "
+                f"Geprueft wurden aber nur {geprueft} von "
                 f"{generate} -- {telemetry.generator_errors} Generierungen "
                 "sind gescheitert, siehe Hinweise oben."
             )
+    if telemetry.generator_errors:
+        typer.echo(fortsetzen)
 
     registry.close()
     raise typer.Exit(code=0)
+
+
+#: Was ein Lauf speichern muss, um sich fortsetzen zu lassen (ADR-079).
+_LAUF_PARAMETER = (
+    "symbols", "tf", "since", "until", "train", "test", "embargo",
+    "dsr_threshold", "use_critic", "provider", "model", "generator_effort",
+    "critic_effort", "stub", "datenstand",
+)
 
 
 def _show_candidate(registry, candidate_id: str) -> None:

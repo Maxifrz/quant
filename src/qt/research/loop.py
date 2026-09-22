@@ -34,16 +34,22 @@ derselben Tuer sind hier angemessen.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 
 from qt.core.config import BacktestConfig
 from qt.core.types import Bar
+from qt.llm.schemas import StrategyCandidateProposal
 from qt.research import critic as critic_mod
 from qt.research import sandbox
 from qt.research.dsr import DEFAULT_THRESHOLD
 from qt.research.generator import build_generation_briefing
 from qt.research.groesse import mit_groessenschicht
 from qt.research.registry import (
+    SANDBOX_REJECTED,
     SCREENING_PASSED,
     SCREENING_REJECTED,
     ResearchRegistry,
@@ -71,6 +77,12 @@ class ResearchTelemetry:
     screened: int = 0
     passed: int = 0
     failed: int = 0
+    # Nur beim Fortsetzen (ADR-079): Kandidaten, die der abgebrochene Lauf
+    # schon fertig hinterlassen hat, und solche, die er halb geprueft liegen
+    # liess und die jetzt aus dem gespeicherten Code zu Ende laufen.
+    uebernommen: int = 0
+    nachgeholt: int = 0
+    run_id: str = ""
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -82,7 +94,14 @@ class ResearchTelemetry:
         )
 
     def table(self) -> str:
+        vorlauf = (
+            (("aus dem Vorlauf fertig", self.uebernommen),
+             ("halb fertig, nachgeholt", self.nachgeholt))
+            if self.uebernommen or self.nachgeholt
+            else ()
+        )
         rows = (
+            *vorlauf,
             ("erzeugt", self.generated),
             ("Generator-Fehler", self.generator_errors),
             ("Sandbox verworfen", self.sandbox_rejected),
@@ -120,6 +139,8 @@ def run_research_loop(
     cfg: BacktestConfig | None = None,
     use_critic: bool = True,
     echo=None,
+    run_config: Mapping[str, Any] | None = None,
+    resume_run: str | None = None,
 ) -> ResearchTelemetry:
     """`n` Kandidaten erzeugen und durch die Pipeline schicken.
 
@@ -133,6 +154,15 @@ def run_research_loop(
     geschickt, nicht stufenweise als Charge. Damit steht der Versuchszaehler
     beim Screening des zweiten Kandidaten bereits um den ersten hoeher -- was
     richtig ist: der erste Blick auf die Daten war da schon getan.
+
+    **Fortsetzen** (`resume_run`, ADR-079): ein Lauf, den ein Container-
+    Neustart mittendrin abgebrochen hat, laeuft an derselben Stelle weiter.
+    Fertige Kandidaten bleiben, wie sie sind. Ein halb gepruefter laeuft aus
+    seinem gespeicherten Code zu Ende, ohne neuen Generator-Aufruf und mit der
+    schon vorliegenden Kritik. Nur Plaetze ohne Kandidaten werden neu
+    erzeugt, und zwar mit denselben Briefings wie ohne Unterbrechung. Ein
+    Kandidat wird dabei nie zweimal gescreent, also auch nie doppelt
+    gezaehlt.
     """
     telemetry = ResearchTelemetry()
     if registry is None:
@@ -141,33 +171,81 @@ def run_research_loop(
             "damit keine belastbare Deflated Sharpe Ratio (ADR-005)."
         )
 
+    if resume_run is None:
+        # Was das Projekt schon geprueft hat -- Bibliothek plus Registry. Ohne
+        # diese Liste schlaegt der Generator zuverlaessig wieder SMA-Kreuzung,
+        # Donchian-Ausbruch und z-Score-Reversion vor: drei von fuenf
+        # Versuchen im Lauf vom 2026-09-03 gingen genau dafuer drauf (ADR-065).
+        bereits = bereits_geprueft(registry)
+        run_id = registry.start_run(n, run_config or {}, bereits)
+        vorhanden: dict[int, dict[str, Any]] = {}
+    else:
+        lauf = registry.get_run(resume_run)
+        if lauf is None:
+            raise KeyError(f"Kein Lauf mit ID {resume_run!r} in {registry.path}")
+        if lauf["finished_at"] is not None:
+            raise ValueError(f"Lauf {resume_run} ist abgeschlossen, nichts fortzusetzen.")
+        if int(lauf["n"]) != n:
+            raise ValueError(
+                f"Lauf {resume_run} hat {lauf['n']} Plaetze, nicht {n}. Ein "
+                "fortgesetzter Lauf aendert seine Groesse nicht."
+            )
+        run_id = resume_run
+        # Die Liste vom Start, nicht neu berechnet: inzwischen stehen die
+        # Kandidaten dieses Laufs selbst in der Registry, und die Briefings
+        # der restlichen Plaetze saehen anders aus als ohne Unterbrechung.
+        bereits = lauf["bereits"]
+        vorhanden = registry.run_candidates(run_id)
+    telemetry.run_id = run_id
+
     seen: list[str] = []
-    # Was das Projekt schon geprueft hat -- Bibliothek plus Registry. Ohne
-    # diese Liste schlaegt der Generator zuverlaessig wieder SMA-Kreuzung,
-    # Donchian-Ausbruch und z-Score-Reversion vor: drei von fuenf Versuchen
-    # im Lauf vom 2026-09-03 gingen genau dafuer drauf (ADR-065).
-    bereits = bereits_geprueft(registry)
 
     for index in range(n):
-        briefing = build_generation_briefing(index, n, seen, bereits_geprueft=bereits)
-        try:
-            proposal = generator_client.propose(briefing)
-        except Exception as exc:  # noqa: BLE001 -- eine Charge stirbt nicht am Netz
-            telemetry.generator_errors += 1
-            telemetry.notes.append(f"Generator {index + 1}: {type(exc).__name__}: {exc}")
+        stand = vorhanden.get(index)
+        if stand is not None and _abgeschlossen(stand):
+            telemetry.uebernommen += 1
+            seen.append(_ansatz(stand["proposal_name"], stand["rationale"]))
             continue
 
-        telemetry.generated += 1
-        seen.append(f"{proposal.name}: {proposal.rationale[:80]}")
+        if stand is not None:
+            # Halb geprueft liegen geblieben. Der Code steht in der Registry;
+            # ein neuer Generator-Aufruf kostete Geld und lieferte einen
+            # anderen Kandidaten fuer denselben Platz.
+            proposal = StrategyCandidateProposal.model_construct(
+                name=stand["proposal_name"] or stand["class_name"],
+                class_name=stand["class_name"],
+                code=stand["code"],
+                rationale=stand["rationale"] or "",
+            )
+            candidate_id = stand["id"]
+            telemetry.nachgeholt += 1
+            _say(echo, f"[{index + 1}/{n}] {proposal.name} (aus der Registry fortgesetzt)")
+        else:
+            briefing = build_generation_briefing(
+                index, n, seen, bereits_geprueft=bereits
+            )
+            try:
+                proposal = generator_client.propose(briefing)
+            except Exception as exc:  # noqa: BLE001 -- eine Charge stirbt nicht am Netz
+                telemetry.generator_errors += 1
+                telemetry.notes.append(
+                    f"Generator {index + 1}: {type(exc).__name__}: {exc}"
+                )
+                continue
 
-        candidate_id = registry.record_generated(
-            class_name=proposal.class_name,
-            code=proposal.code,
-            rationale=proposal.rationale,
-            generator_model=getattr(generator_client, "model", ""),
-            generator_effort=getattr(generator_client, "effort", ""),
-        )
-        _say(echo, f"[{index + 1}/{n}] {proposal.name}")
+            telemetry.generated += 1
+            candidate_id = registry.record_generated(
+                class_name=proposal.class_name,
+                code=proposal.code,
+                rationale=proposal.rationale,
+                generator_model=getattr(generator_client, "model", ""),
+                generator_effort=getattr(generator_client, "effort", ""),
+                run_id=run_id,
+                run_index=index,
+                proposal_name=proposal.name,
+            )
+            _say(echo, f"[{index + 1}/{n}] {proposal.name}")
+        seen.append(_ansatz(proposal.name, proposal.rationale))
 
         # --- Stufe 1: die Whitelist. Vor jeder Ausfuehrung. ---------------
         report = sandbox.check(proposal.code)
@@ -214,7 +292,12 @@ def run_research_loop(
         strategy_cls = mit_groessenschicht(strategy_cls, BRUTTOGRENZE)
 
         # --- Stufe 3: die Kritik, billiger Vorfilter vor dem Backtest -----
-        if use_critic and critic_client is not None:
+        # Ein fortgesetzter Kandidat mit gespeicherter Kritik wird nicht noch
+        # einmal gefragt. Hiess sie "reject", waere er schon fertig.
+        kritik_liegt_vor = stand is not None and bool(stand.get("critic_recommendation"))
+        if kritik_liegt_vor:
+            _say(echo, "      Kritik: liegt aus dem Vorlauf vor, kein neuer Aufruf")
+        elif use_critic and critic_client is not None:
             verdict, error = critic_mod.critique(
                 critic_client, proposal, probe, flags, oos_bars=test_bars
             )
@@ -299,12 +382,94 @@ def run_research_loop(
             telemetry.failed += 1
         _say(echo, f"      {result.summary()}")
 
+    # Ein Lauf mit Generator-Fehlern bleibt offen: `--resume` holt die
+    # leeren Plaetze nach, sobald der Zugang wieder steht (ADR-078, ADR-079).
+    if telemetry.generator_errors == 0:
+        registry.finish_run(run_id)
+
     return telemetry
 
 
 def _say(echo, message: str) -> None:
     if echo is not None:
         echo(message)
+
+
+def _ansatz(name: str | None, rationale: str | None) -> str:
+    """Eine Zeile "bisherige Ansaetze dieser Charge" fuer das Briefing."""
+    return f"{name or ''}: {(rationale or '')[:80]}"
+
+
+def _abgeschlossen(stand: Mapping[str, Any]) -> bool:
+    """Hat dieser Kandidat seine letzte Stufe schon hinter sich?
+
+    Gescreent (bestanden, durchgefallen oder am Sanity-Check gescheitert),
+    von Sandbox oder Probelauf verworfen, oder von der Kritik abgelehnt.
+    Alles andere ist mittendrin stehen geblieben.
+    """
+    return (
+        stand.get("screening_status") is not None
+        or stand.get("sandbox_status") == SANDBOX_REJECTED
+        or stand.get("critic_recommendation") == "reject"
+    )
+
+
+def datenstand(bars: Mapping[str, list[Bar]]) -> dict[str, dict[str, Any]]:
+    """Fingerabdruck der Bars, gegen die ein Lauf rechnet (ADR-079).
+
+    Ein fortgesetzter Lauf muss dieselben Daten sehen wie sein Anfang. Sonst
+    screent er die ersten Kandidaten gegen einen Datenstand und den Rest
+    gegen einen anderen, und die Charge ist keine Charge mehr. Die Anzahl
+    allein reicht nicht: Tiingo adjustiert rueckwirkend (ADR-055), dann
+    bleibt die Zahl gleich und die Kurse aendern sich.
+    """
+    stand: dict[str, dict[str, Any]] = {}
+    for symbol in sorted(bars):
+        reihe = bars[symbol]
+        h = hashlib.sha256()
+        for b in reihe:
+            h.update(
+                f"{b.ts.isoformat()}|{b.open!r}|{b.high!r}|{b.low!r}|"
+                f"{b.close!r}|{b.volume!r}\n".encode()
+            )
+        stand[symbol] = {
+            "n": len(reihe),
+            "bis": reihe[-1].ts.isoformat() if reihe else None,
+            "hash": h.hexdigest()[:16],
+        }
+    return stand
+
+
+def auf_datenstand(
+    bars: Mapping[str, list[Bar]], stand: Mapping[str, Mapping[str, Any]]
+) -> tuple[dict[str, list[Bar]], list[str]]:
+    """Bars auf den Stand beim Start eines Laufs zurueckschneiden.
+
+    Neue Bars seit dem Start fallen weg, das ist erwartbar und kein Fehler.
+    Weicht der Rest ab, gibt es eine Liste der Abweichungen: dann haben sich
+    Kurse nachtraeglich geaendert, und der Lauf laesst sich nicht ehrlich
+    fortsetzen.
+    """
+    gekuerzt: dict[str, list[Bar]] = {}
+    abweichungen: list[str] = []
+    for symbol, soll in stand.items():
+        reihe = list(bars.get(symbol, []))
+        if soll.get("bis") is not None:
+            grenze = datetime.fromisoformat(soll["bis"])
+            reihe = [b for b in reihe if b.ts <= grenze]
+        gekuerzt[symbol] = reihe
+        ist = datenstand({symbol: reihe})[symbol]
+        if ist["n"] != soll.get("n"):
+            abweichungen.append(
+                f"{symbol}: beim Start {soll.get('n')} Bars bis {soll.get('bis')}, "
+                f"jetzt {ist['n']}"
+            )
+        elif ist["hash"] != soll.get("hash"):
+            abweichungen.append(
+                f"{symbol}: gleiche Zahl Bars, aber andere Kurse "
+                "(rueckwirkend adjustiert?)"
+            )
+    return gekuerzt, abweichungen
 
 
 def bereits_geprueft(registry) -> list[str]:
