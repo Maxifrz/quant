@@ -5,6 +5,220 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-080 — Laya verglichen, das Projekt neu gedacht: die LLM-Kandidaten sind gesperrt, die Kritik wird abgerechnet
+**Datum:** 2026-09-23
+
+Anlass war die Frage, ob sich `NandhaKishorM/laya` oder die Prinzipien dahinter
+hier nutzen lassen, und der Auftrag, das Projekt dafür von Grund auf neu zu
+denken. Laya selbst passt nicht. Eines seiner Prinzipien fehlte hier aber, und
+angewandt hat es eine Stufe des Research-Loops als wirkungslos entlarvt. Das
+Neu-Denken endet mit zwei Entscheidungen und einer Weiche, die offen bleibt.
+
+### Was Laya ist
+
+Ein Encoder (ModernBERT-large mit 421M bzw. mmBERT-base mit 322M Parametern)
+mit Entscheidungskopf. Er beantwortet typisierte Fragen über einen **Text**
+(`choice`, `score`, `noul` = P(Aussage wahr)) in einem Durchlauf, 33 ms auf
+einer T4, ohne Text zu erzeugen. „RLCD“ heißt im Kern: Training auf weichen
+Zielverteilungen eines Lehrer-LLMs gegen strikt proper Scoring Rules (Log-,
+Spherical- und Ranked-Probability-Score), danach eine Temperatur, gefittet auf
+einem zurückgehaltenen Teil. Der RL-Anteil ist ein verrauschter Schätzer
+desselben Gradienten, den die im selben Loss mitlaufende Cross-Entropy direkt
+liefert.
+
+Der Wert steckt im Fine-Tuning. Zero-Shot liegt Laya unter der
+Mehrheitsklasse (0,36 gegen 0,46), nach 6.000 Trainingsentscheidungen bei
+0,766. Der lehrreichste Befund des Repos: auf Khmer 0,000 Trefferquote bei
+0,952 Konfidenz. Die eigene Sicherheit eines Modells warnt nicht, deshalb
+routet Laya **vor** dem Modell mit billigen, deterministischen Merkmalen.
+
+Laya löst also: *viele gelabelte Entscheidungen billig und kalibriert
+treffen*. Unser Problem ist das Gegenteil: *zu wenige unabhängige
+Beobachtungen, um irgendeine Entscheidungsregel zu beweisen*.
+
+| Prinzip | hier | Urteil |
+|---|---|---|
+| Typisierte Entscheidungen statt freiem Text | Pydantic-Schemas, 145 Aufrufe ohne Rückfall (ADR-045) | schon da |
+| Vor dem Modell deterministisch prüfen | Risk-Engine, Sandbox, Gate als Code | schon da, strenger |
+| Ehrliche Benchmarks | DSR, Permutationen, Kriterien vorab | schon da, strenger |
+| Destillation in ein kleines Modell | löst Latenz und Kosten, die hier nicht binden | passt nicht |
+| Training gegen proper Scoring Rules | logistische Regression = Log-Loss, ADR-050, gescheitert | schon versucht |
+| Laya selbst auf Text | kein Text im Projekt (ADR-003); auf historischen Nachrichten verseucht, weil die Encoder von 2024/2025 den Ausgang unseres Backtest-Fensters kennen | nur als neues Projekt |
+| **Jede Zahl ist P(beobachtbares Ereignis) und wird abgerechnet** | fehlte | **übernommen, siehe unten** |
+
+### Befund: die Kritik-Stufe, abgerechnet
+
+`CandidateCritique.overfitting_risk` war beschrieben als „wie stark der Code
+nach Anpassung an Vergangenes aussieht“: eine Skala ohne Ereignis, die sich
+nicht abrechnen lässt. Gemessen am Altbestand, `qt trials --kritik`:
+
+* **16 Urteile, alle „proceed“, kein einziges Flag gesetzt.** `overfitting_risk`
+  lag zwischen 0,10 und 0,25; alle 16 Kandidaten sind durchgefallen; die
+  Rangkorrelation mit dem OOS-Sharpe ist +0,08 (p = 0,76).
+* **Der Umschlag, nachgemessen** (`qt trials --umschlag-nachmessen`: BTC/USD
+  1d, Größenschicht, Gate-Kosten): **15 der 16 liegen über dem Budget von 7×**,
+  zwischen 8,0× und 81,9×. Die Kritik hat **keinen** davon markiert, obwohl
+  genau das ihr Flag `unrealistic_turnover` fragt. Nur `SMACross50_200`
+  (2,1×) liegt darunter. Der Maßstab ist ein anderer als in ADR-072, deshalb
+  steht `VolumeZMomentum` hier bei 31,0× statt 307,7× über 39 Märkte. Über
+  dem Budget liegt er in beiden.
+
+Das ist der Khmer-Fall in unserer Registry: gleichförmig, sicher, falsch.
+
+**Die Umschlagsprüfung, die das hätte leisten können, gab es schon, nur nicht
+im Loop.** Das Gate misst den Umschlag seit ADR-056/057 deterministisch und
+vor dem Walk-Forward; der Research-Loop hatte an dieser Stelle nur das Flag der
+Kritik. In meiner ersten Antwort stand, die deterministische Prüfung „gibt es
+schon“ — richtig für das Gate, nicht für den Loop. Mit ihr wären 15 der 16
+Kandidaten nie in den Walk-Forward gekommen und damit keine Versuche geworden
+(ADR-032). Der Zähler stünde bei 9 statt 24, und die DSR verlangte vom
+nächsten Kandidaten bei 4.751 Bars **0,74 statt 0,84**.
+
+Das Nachmessen ist kein Versuch: gemessen wird die Kritik, nicht der
+Kandidat, und es folgt keine Auswahl daraus. Der Versuchszähler steht danach
+unverändert bei 24, die Registry bei 46 Zeilen.
+
+**Übernommen:**
+
+* Die Kritik gibt statt `overfitting_risk` drei Wahrscheinlichkeiten für
+  Ereignisse aus, die die Pipeline selbst misst: Umschlag über 7×,
+  OOS-Sharpe über null, DSR bestanden (`p_umschlag_ueber_budget`,
+  `p_oos_sharpe_positiv`, `p_dsr_bestanden`).
+* Die Registry hält sie fest, dazu den gemessenen Umschlag samt Quelle.
+* `qt.research.abrechnung` rechnet sie mit dem Brier-Score ab, **gegen die
+  Basisrate** und nicht gegen den Münzwurf. Bei null Treffern ist „fällt
+  durch“ die beste konstante Prognose; wer sie nicht schlägt, filtert nichts.
+* Der Kritik-Prompt nennt die Abrechnung. Die Kosten darin standen noch bei
+  90 bps Round-Trip; seit ADR-056 sind es 130.
+* 20 Tests, zwei davon per Mutation geprüft: Münzwurf statt Basisrate als
+  Maßstab und ein OOS-Ereignis ohne Walk-Forward schlagen je an.
+
+**Das Schicksal der Stufe:** Auf dem Altbestand hat sie keinen messbaren
+Beitrag. Weil der Loop gesperrt ist (unten), läuft sie vorerst nicht. Für
+eine Wiedereröffnung gilt: erst die Umschlagsprüfung des Gates vor dem
+Walk-Forward in den Loop, dann die Kritik nur noch als abgerechneter
+Prognostiker. Schlägt sie auf den ersten abgerechneten Fällen die Basisrate
+nicht, fliegt sie raus.
+
+### Das Projekt, neu gedacht
+
+Die Prämisse des README ist ein LLM als Allokator und als Forscher. Nach 79
+ADRs ist genau das der gemessene Teil, der nicht trägt:
+
+* Allokator: dreimal am Gate gescheitert, zuletzt −1,50 gegen +0,58 bei
+  Vol-Parität (ADR-060).
+* Forscher: 16 LLM-Kandidaten bis zum Screening, keiner besteht.
+* Kritik: siehe oben.
+* Alle neun handgeschriebenen Hypothesen scheitern an Kontrollen.
+
+Was trägt, ist die Prüfmaschine. Sie sagt zuverlässig Nein, und sie sagt es.
+
+Die bindende Größe ist Evidenz pro Hypothese. Nötiger Sharpe für
+DSR ≥ 0,95 bei 4.751 OOS-Bars und normalverteilten Renditen:
+
+| Versuche | nötiger Sharpe |
+|---|---|
+| 1 (eine vorab festgelegte Hypothese) | 0,38 |
+| 9 (die Handhypothesen und der nächste) | 0,73 |
+| 25 (heute) | 0,84 |
+
+Das beste Brutto-Signal des Repos liegt bei rund 0,46 (`trend`, vor Kosten und
+als Näherung, ADR-071).
+
+**Entscheidung 1: Keine LLM-Kandidaten auf Preisdaten mehr.** `qt research`
+ohne `--stub` endet mit Exit 1 und Begründung, bevor irgendetwas geöffnet
+wird, `--resume` ebenso. Die Sperre ist eine Konstante
+(`LLM_KANDIDATEN_FREIGEGEBEN` in `qt/research/loop.py`) und keine Option, wie
+die Gate-Schwellen (ADR-057); ein Test hält fest, dass sie geschlossen steht.
+Lesen (`--show`), Buchführung (`--mark-promoted`) und Stub-Läufe bleiben
+erlaubt. Der Code dahinter bleibt, und die Tests aus ADR-078/079 prüfen ihn
+weiter, mit gezielt geöffneter Sperre. Ohne das hätten einige davon aus dem
+falschen Grund bestanden, denn auch die Sperre endet mit Exit 1.
+
+**Entscheidung 2: Das Qualitätskriterium des Ziels prüft keine Kante, und
+das liegt am Horizont, nicht an der Benchmark.** Behauptet hatte ich:
+„Calmar besser als Buy-and-Hold BTC“ belohne schon das bloße Weniger-Halten,
+eine risikogleiche Benchmark würde Können messen. **Gemessen stimmt die
+Begründung nicht.** Auf BTC/USD 1d, 2019-02-22 bis 2026-09-09:
+
+| | CAGR | MaxDD | Calmar |
+|---|---|---|---|
+| Buy-and-Hold BTC | +48,9 % | −76,7 % | 0,64 |
+| `macross` (Backtest mit Kosten) | +43,1 % | −58,2 % | **0,74** |
+| konstant 54 % BTC, monatlich, gleiche mittlere Exposition | +30,5 % | −51,7 % | 0,59 |
+
+Weniger zu halten verschlechtert den Calmar hier sogar. Das Problem ist der
+Horizont. Wie oft der Calmar einer Kurve den von BTC schlägt, in rollierenden
+Fenstern, wöchentlich verschoben:
+
+| Horizont | Fenster | `macross` > BTC | Mischung ohne Timing > BTC | `macross` > Mischung |
+|---|---|---|---|---|
+| 12 Monate | 342 | 49 % | **52 %** | 45 % |
+| 24 Monate | 290 | 56 % | 49 % | 48 % |
+| 48 Monate | 186 | 67 % | 53 % | 62 % |
+
+Über zwölf Monate besteht eine Mischung **ohne jedes Timing** das Kriterium so
+oft wie die einzige Strategie auf Paper. Mit der Zusatzbedingung „Rendite
+positiv“ sind es 30 % für `macross` und 19 % für die Mischung. Auch gegen
+die risikogleiche Mischung liegt `macross` nur in 45 % der Fenster vorn. Keine
+Benchmark macht zwölf Monate aus ein, zwei Märkten zu einem Beweis. Das ist
+derselbe Evidenzmangel wie überall in diesem Projekt, nur an einer Stelle,
+an der ihn niemand gesucht hatte. Die 48-Monats-Zeile besteht aus rund zwei
+unabhängigen Perioden und ist deshalb auch kein Beleg.
+
+Deshalb wird das Kriterium umgebaut und keine andere Benchmark eingesetzt. Die
+Kante muss Gate 1 belegen, historisch und mit Kontrollen. Die zwölf
+Live-Monate prüfen, was sie prüfen können, nämlich die **Umsetzung**: Der
+Live-Verlauf deckt sich mit dem Replay derselben Bars, und jede Abweichung ist
+erklärt (so wie ADR-068 den ersten Paper-Einstieg gegen den Replay gelegt hat).
+Calmar gegen BTC wird weiter berichtet und entscheidet nichts.
+
+**Offen, und das entscheidet der Nutzer: die Weiche.** Gate 1 verlangt 0,84.
+Das liegt über allem, was das Repo je brutto gemessen hat, und jede Familie,
+die sich auf Tageskursen zu Retail-Kosten anbietet, ist geprüft. Die eigene
+Regel verbietet einen achten Versuch derselben Klasse Idee (ZIEL.md). Es
+bleiben zwei Wege:
+
+1. **Das Nein jetzt annehmen**, statt am 2027-03-01. Die Paper-Konten laufen
+   als Plausibilitätsprüfung weiter, Gate 1 bleibt offen für eine
+   handgeschriebene, vorab festgelegte Hypothese mit wirklich neuer
+   Information. Weitere Versuche gibt es sonst keine mehr.
+2. **Ein neues Projekt mit Information, die nicht im Kurs steckt**, etwa Text.
+   Nur dort hätte ein Sprachmodell einen möglichen Vorteil, und nur dort
+   passten Laya-artige Werkzeuge. Zwei Bedingungen stehen vorab fest: Es wird
+   ausschließlich vorwärts geprüft, weil vortrainierte Modelle den Ausgang
+   jedes historischen Fensters kennen, und es bekommt eigene, vorab
+   festgelegte Kriterien. Die Evidenz käme langsam, die Paper-Konten sammeln
+   rund 5 effektive Round-Trips pro Jahr.
+
+Meine Empfehlung ist Weg 1. Entschieden ist er nicht.
+
+### Nebenbefund: NIM antwortet auf das Default-Modell mit 404
+
+Am 2026-09-23 liefert `integrate.api.nvidia.com` für
+`nvidia/nemotron-3-ultra-550b-a55b` HTTP 404 auf `chat/completions`, obwohl
+das Modell unter `/v1/models` gelistet ist. `nvidia/nemotron-3-super-120b-a12b`
+antwortet mit 200. `tests/test_nim_live.py` schlägt deshalb dreimal fehl,
+unabhängig von diesem ADR; am Vortag bestanden dieselben drei (ADR-079). Das
+Default-Modell bleibt, wie es ist: Ein einzelner 404 beweist noch keine
+Abkündigung, und der Loop ist gesperrt. Betroffen wäre sonst nur
+`qt alloc --provider nim`, und für den gilt seit ADR-060 ohnehin kein vierter
+Lauf.
+
+### Konsequenz
+
+* `qt research` ohne `--stub` ist gesperrt (`LLM_KANDIDATEN_FREIGEGEBEN = False`).
+* Die Kritik gibt Wahrscheinlichkeiten beobachtbarer Ereignisse aus, und
+  `qt trials --kritik` rechnet sie ab. `qt trials --umschlag-nachmessen`
+  misst den Umschlag nach, ohne einen Versuch zu zählen.
+* Für eine Wiedereröffnung des Loops: erst die Umschlagsprüfung des Gates vor
+  dem Walk-Forward, dann die Kritik nur als abgerechneter Prognostiker.
+* ZIEL.md: Das Qualitätskriterium prüft die Umsetzung, nicht die Kante; die
+  Kante belegt allein Gate 1.
+* Offen: die Weiche zwischen „Nein annehmen“ und einem Text-Projekt.
+
+---
+
 ## ADR-079 — Die halb behobenen Befunde zu Ende gebracht
 **Datum:** 2026-09-22
 

@@ -117,6 +117,15 @@ class ResearchTelemetry:
         return "\n".join(f"  {label:<{width}}  {value:>5}" for label, value in rows)
 
 
+#: **Keine LLM-Kandidaten auf Preisdaten mehr (ADR-080).** 16 Kandidaten kamen
+#: bis zum Screening, keiner hat bestanden, 15 davon lagen ueber dem
+#: Umschlagbudget -- und jeder hat die DSR-Latte fuer alle kuenftigen
+#: Hypothesen dauerhaft angehoben. Eine Konstante und keine Option, aus
+#: demselben Grund wie bei den Gate-Schwellen (ADR-057): wer die Sperre
+#: aufhebt, hinterlaesst einen Diff. Stub-Laeufe bleiben erlaubt, sie kosten
+#: keinen Versuch (ADR-057).
+LLM_KANDIDATEN_FREIGEGEBEN = False
+
 #: Bruttobudget der Positionsgroessen-Schicht (ADR-069). Dieselbe Zahl wie
 #: `BacktestConfig.max_gross_exposure` -- und bewusst **keine** Option des
 #: Loops: wer sie aendert, hinterlaesst einen Diff, so wie bei den
@@ -314,7 +323,9 @@ def run_research_loop(
             registry.record_critique(
                 candidate_id,
                 recommendation=verdict.recommendation,
-                overfitting_risk=verdict.overfitting_risk,
+                p_umschlag=verdict.p_umschlag_ueber_budget,
+                p_oos_positiv=verdict.p_oos_sharpe_positiv,
+                p_dsr=verdict.p_dsr_bestanden,
                 magic_constants=verdict.magic_price_constants,
                 unrealistic_turnover=verdict.unrealistic_turnover,
                 excess_dof=verdict.excess_degrees_of_freedom,

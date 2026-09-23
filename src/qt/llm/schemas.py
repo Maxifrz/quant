@@ -276,11 +276,40 @@ class CandidateCritique(BaseModel):
     recommendation: Literal["proceed", "reject"] = Field(
         description="proceed = testen, reject = Walk-Forward ueberspringen."
     )
-    overfitting_risk: float = Field(
-        default=0.0,
+    # **Jede Zahl ist die Wahrscheinlichkeit eines Ereignisses, das die
+    # Pipeline ohnehin misst** (ADR-080). Bis dahin stand hier
+    # `overfitting_risk`, beschrieben als "wie stark der Code nach Anpassung
+    # an Vergangenes aussieht" -- eine Skala ohne Ereignis, also nicht
+    # abrechenbar. Gemessen an 16 Urteilen: Spanne 0,10 bis 0,25, alle 16
+    # Kandidaten durchgefallen, Rangkorrelation mit dem OOS-Sharpe +0,08.
+    # Laya macht vor, wie es geht: `noul` ist P(Aussage wahr), und jede
+    # Antwort wird mit einer strikt properen Scoring Rule abgerechnet.
+    p_umschlag_ueber_budget: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
-        description="Wie stark der Code nach Anpassung an Vergangenes aussieht.",
+        description=(
+            "Wahrscheinlichkeit, dass der Kandidat im Backtest mehr als 7-mal "
+            "sein Eigenkapital pro Jahr umschlaegt."
+        ),
+    )
+    p_oos_sharpe_positiv: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Wahrscheinlichkeit, dass der verkettete Out-of-Sample-Sharpe des "
+            "Walk-Forward-Laufs nach Kosten ueber null liegt."
+        ),
+    )
+    p_dsr_bestanden: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Wahrscheinlichkeit, dass der Kandidat die Schwelle der Deflated "
+            "Sharpe Ratio besteht."
+        ),
     )
     magic_price_constants: bool = Field(
         default=False,
@@ -304,11 +333,11 @@ class CandidateCritique(BaseModel):
         description="Begruendung, mit Bezug auf die Stelle im Code.",
     )
 
-    @field_validator("overfitting_risk")
+    @field_validator("p_umschlag_ueber_budget", "p_oos_sharpe_positiv", "p_dsr_bestanden")
     @classmethod
-    def finite_risk(cls, value: float) -> float:
-        if not math.isfinite(value):
-            raise ValueError("overfitting_risk muss endlich sein.")
+    def finite_probability(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("Eine Wahrscheinlichkeit muss endlich sein.")
         return value
 
     @property

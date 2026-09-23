@@ -7,9 +7,10 @@ Stand 2026-09-04. Ergänzt ROADMAP.md (was gebaut wird) um die Frage, *wofür*.
 ## Das Ziel
 
 > **Bis 2028-09-01 handelt ein System dieses Projekts echtes Geld und hat über
-> 12 zusammenhängende Live-Monate nach allen Kosten Gewinn gemacht — bei einem
+> 12 zusammenhängende Live-Monate nach allen Kosten Gewinn gemacht — ~~bei einem
 > besseren Verhältnis von Rendite zu Drawdown als Buy-and-Hold BTC im selben
-> Zeitraum, und ohne den 25-%-Kill-Switch auszulösen.**
+> Zeitraum~~ mit einem Live-Verlauf, der sich mit dem Replay derselben Bars
+> deckt (ADR-080), und ohne den 25-%-Kill-Switch auszulösen.**
 
 Vier Bedingungen, alle gleichzeitig:
 
@@ -17,14 +18,30 @@ Vier Bedingungen, alle gleichzeitig:
 |---|---|
 | Echtheit | echtes Geld, echte Fills, mindestens 12 zusammenhängende Monate |
 | Ertrag | nach allen Kosten positiv |
-| Qualität | Calmar (Rendite / MaxDD) über dem von Buy-and-Hold BTC |
+| ~~Qualität~~ Umsetzung | ~~Calmar (Rendite / MaxDD) über dem von Buy-and-Hold BTC~~ Live-Verlauf deckt sich mit dem Replay derselben Bars, jede Abweichung ist erklärt (ADR-080) |
 | Überleben | kein Kill-Switch-Auslöser |
+
+> **Nachtrag ADR-080: Die Kante belegt Gate 1, nicht diese Tabelle.** Die
+> Qualitätszeile sollte zeigen, dass das System etwas kann. Gemessen kann sie
+> das über zwölf Monate nicht: In 342 rollierenden 12-Monats-Fenstern schlägt
+> `macross` den Calmar von BTC in 49 %, eine konstante BTC/Cash-Mischung
+> **ohne jedes Timing** in 52 %. Eine andere Benchmark hilft nicht, gegen die
+> risikogleiche Mischung liegt `macross` in 45 % vorn. Zwölf Monate aus ein,
+> zwei Märkten sind zu wenig Evidenz für jede Benchmark. Die Zeile prüft
+> deshalb, was zwölf Monate prüfen können: ob live dasselbe passiert wie im
+> Replay. Calmar gegen BTC wird weiter berichtet und entscheidet nichts.
 
 **Warum Calmar und nicht Rendite.** In Krypto ist Rendite fast vollständig
 Beta. Wer 2020–2021 long war, sah großartig aus. Der einzige Beitrag, den
 dieses Projekt je gemessen hat, ist *derselbe Ertrag mit weniger Absturz*
 (ADR-035) — und genau das misst Calmar. Rohe Rendite als Ziel wäre in einem
 Bullenmarkt durch Nichtstun erreichbar und in einem Bärenmarkt durch nichts.
+
+> **Nachtrag ADR-080:** Als Kennzahl über einen ganzen Zyklus bleibt Calmar
+> richtig: 2019–2026 liegt `macross` bei 0,74, BTC bei 0,64, und die
+> Mischung mit derselben mittleren Exposition bei 0,59. Weniger zu halten
+> erklärt den Vorsprung also nicht. Falsch war nur der Horizont, auf den die
+> Zeile ihn anwandte.
 
 ### Der Termin, der wirklich zählt, ist viel früher
 
@@ -357,6 +374,13 @@ Erst jetzt, weil erst jetzt feststeht, wonach gesucht wird.
    > jetzt bei **15**.
 2. Research-Loop und eigene Ideen gegen die erweiterte Marktbasis.
 
+   > **Nachtrag ADR-080: Der Research-Loop ist für echte Läufe gesperrt.**
+   > 16 LLM-Kandidaten bis zum Screening, keiner bestanden, 15 davon über dem
+   > Umschlagbudget, und die Kritik hat keinen davon markiert. Mit der
+   > Umschlagsprüfung des Gates vor dem Walk-Forward wären 15 nie Versuche
+   > geworden; die DSR verlangte dann 0,74 statt 0,84. Eigene, vorab
+   > festgelegte Ideen bleiben der einzige Weg zu Gate 1.
+
    > **Eine neue Strategiefamilie steht seit 2026-09-03 bereit (ADR-058):
    > Querschnitt statt Timing.** Sie stellt die Märkte gegeneinander, statt
    > jeden für sich zu betrachten — damit wird die Korrelation von 0,26, die
@@ -451,6 +475,15 @@ Was in dem Fall ausdrücklich **nicht** passiert: die Schwelle senken, die
 Kontrollen lockern, oder ein achtes Mal dieselbe Klasse Idee versuchen. Der
 Versuchszähler steht bei **24** und vergisst nichts (ADR-032, ADR-057).
 Nachsehen statt erinnern: `uv run qt trials`.
+
+> **Nachtrag ADR-080: Die Frage steht jetzt, nicht erst am 2027-03-01.** Gate 1
+> verlangt 0,84; das beste Brutto-Signal des Repos liegt bei rund 0,46, und
+> jede Familie, die Tageskurse zu Retail-Kosten hergeben, ist geprüft. Offen
+> ist eine Weiche, die der Nutzer stellt: das Nein **jetzt** annehmen, mit
+> Paper-Konten als Plausibilitätsprüfung und Gate 1 nur noch für eine vorab
+> festgelegte Hypothese mit wirklich neuer Information, oder ein **neues
+> Projekt** mit Information, die nicht im Kurs steckt, ausschließlich vorwärts
+> geprüft. Empfohlen ist der erste Weg. Entschieden ist keiner.
 
 ---
 

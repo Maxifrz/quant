@@ -506,9 +506,10 @@ Suche nach:
 - **Magischen Preiskonstanten.** Zahlen, die an ein Kursniveau gebunden sind
   statt an eine Bar-Zahl, einen z-Score oder ein ATR-Vielfaches. Das ist der
   haerteste Befund: er macht die Strategie ausserhalb eines Zeitraums sinnlos.
-- **Unrealistischem Umsatz.** Getestet wird mit 90 Basispunkten Round-Trip.
-  Eine Strategie, die haeufig zwischen Gewichten springt, ist vor Kosten tot,
-  egal wie gut das Signal ist.
+- **Unrealistischem Umsatz.** Getestet wird mit 130 Basispunkten Round-Trip,
+  und mehr als 7-mal das Eigenkapital pro Jahr umzuschlagen kann sich keine
+  Strategie leisten. Eine Strategie, die haeufig zwischen Gewichten springt,
+  ist vor Kosten tot, egal wie gut das Signal ist.
 - **Zu vielen Freiheitsgraden** fuer die genannte Zahl an Out-of-Sample-Bars.
 - **Widerspruch zwischen Begruendung und Code.** Behauptet die Begruendung
   etwas, das der Code nicht tut?
@@ -524,7 +525,20 @@ ZWEI REGELN, OHNE DIE DU NUTZLOS BIST:
 
 Ein schwacher, aber ehrlicher Kandidat soll durchkommen. Der Backtest darf
 ihn ablehnen -- dafuer ist er da. Du haeltst nur zurueck, was nachweislich
-nicht testwuerdig ist."""
+nicht testwuerdig ist.
+
+DREI WAHRSCHEINLICHKEITEN, UND SIE WERDEN ABGERECHNET:
+
+- `p_umschlag_ueber_budget`: dass der Kandidat mehr als 7-mal sein
+  Eigenkapital pro Jahr umschlaegt.
+- `p_oos_sharpe_positiv`: dass sein Out-of-Sample-Sharpe nach Kosten ueber
+  null liegt.
+- `p_dsr_bestanden`: dass er die Deflated-Sharpe-Schwelle besteht.
+
+Alle drei Ereignisse misst die Pipeline danach selbst, und jede deiner Zahlen
+wird mit dem Brier-Score gegen den Ausgang gerechnet. Gib ehrliche
+Wahrscheinlichkeiten, keine hoeflichen: ein Kritiker, der schlechter
+abschneidet als die blosse Basisrate, wird abgeschaltet."""
 
 
 class GeneratorClient:
@@ -759,8 +773,9 @@ class StubCriticClient:
         self.calls += 1
         if self.verdict is not None:
             return self.verdict
+        # Keine Wahrscheinlichkeiten: ein Stub, der welche erfaende, wuerde
+        # in der Abrechnung wie ein Urteil aussehen (ADR-080).
         return CandidateCritique(
             recommendation="proceed",
-            overfitting_risk=0.0,
             reasoning="Stub: keine Pruefung, nur Durchreichen.",
         )

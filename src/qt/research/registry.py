@@ -160,6 +160,15 @@ _COLUMNS: dict[str, str] = {
     "run_id": "VARCHAR",
     "run_index": "INTEGER",
     "proposal_name": "VARCHAR",
+    # Die Kritik als Wahrscheinlichkeiten beobachtbarer Ereignisse, und der
+    # gemessene Umschlag, gegen den die erste davon abgerechnet wird
+    # (ADR-080). `umschlag_quelle` sagt, wie gemessen wurde -- damit jede
+    # Abrechnung nennen kann, woran sie misst.
+    "critic_p_umschlag": "DOUBLE",
+    "critic_p_oos_positiv": "DOUBLE",
+    "critic_p_dsr": "DOUBLE",
+    "umschlag_pro_jahr": "DOUBLE",
+    "umschlag_quelle": "VARCHAR",
 }
 
 RUNS_TABLE = "runs"
@@ -325,7 +334,10 @@ class ResearchRegistry:
         candidate_id: str,
         *,
         recommendation: str,
-        overfitting_risk: float = 0.0,
+        overfitting_risk: float | None = None,
+        p_umschlag: float | None = None,
+        p_oos_positiv: float | None = None,
+        p_dsr: float | None = None,
         magic_constants: bool = False,
         unrealistic_turnover: bool = False,
         excess_dof: bool = False,
@@ -340,6 +352,10 @@ class ResearchRegistry:
         soll auch dann noch lesbar sein, wenn sich das Schema der Kritik
         laengst geaendert hat. Ein serialisiertes Modell waere ab dem naechsten
         Feldwechsel nur noch mit dem Code von damals zu entschluesseln.
+
+        `overfitting_risk` bleibt nur fuer den Altbestand: die Kritik gibt es
+        seit ADR-080 nicht mehr aus, weil es kein Ereignis gab, gegen das es
+        sich haette abrechnen lassen.
         """
         self._update(
             candidate_id,
@@ -347,7 +363,10 @@ class ResearchRegistry:
                 "critic_model": str(model),
                 "critic_effort": str(effort),
                 "critic_recommendation": str(recommendation),
-                "critic_overfitting_risk": float(overfitting_risk),
+                "critic_overfitting_risk": _opt_float(overfitting_risk),
+                "critic_p_umschlag": _opt_float(p_umschlag),
+                "critic_p_oos_positiv": _opt_float(p_oos_positiv),
+                "critic_p_dsr": _opt_float(p_dsr),
                 "critic_magic_constants": bool(magic_constants),
                 "critic_unrealistic_turnover": bool(unrealistic_turnover),
                 "critic_excess_dof": bool(excess_dof),
@@ -410,6 +429,18 @@ class ResearchRegistry:
             self._conn.execute("ROLLBACK")
             raise
         self._conn.execute("COMMIT")
+
+    def record_umschlag(self, candidate_id: str, umschlag: float, quelle: str) -> None:
+        """Gemessenen Umschlag je Eigenkapital und Jahr festhalten (ADR-080).
+
+        Eine Messung, keine Bewertung: sie macht niemanden zum Versuch und
+        entscheidet nichts. Sie ist der Ausgang, gegen den die Kritik ihre
+        Umschlags-Wahrscheinlichkeit abgerechnet bekommt.
+        """
+        self._update(
+            candidate_id,
+            {"umschlag_pro_jahr": _opt_float(umschlag), "umschlag_quelle": str(quelle)},
+        )
 
     def mark_promoted(self, candidate_id: str, note: str = "") -> None:
         """Kandidaten als in die Bibliothek uebernommen markieren.

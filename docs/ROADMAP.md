@@ -109,7 +109,10 @@
 > ### Wofür das alles
 >
 > Das Ziel und der Weg dahin stehen in **`docs/ZIEL.md`**: echtes Geld,
-> 12 Monate, besserer Calmar als Buy-and-Hold. Der Termin, der wirklich zählt,
+> 12 Monate, und live muss dasselbe passieren wie im Replay. Bis ADR-080 stand
+> hier „besserer Calmar als Buy-and-Hold“. Über zwölf Monate besteht das eine
+> Mischung ohne jedes Timing so oft wie `macross` (52 % gegen 49 % der
+> Fenster), es prüfte also keine Kante. Der Termin, der wirklich zählt,
 > ist **2027-03-01 (Gate 1)** — bis dahin muss ein Kandidat alle Kontrollen
 > bestanden haben, sonst lautet die Antwort „kein Edge gefunden".
 >
@@ -167,6 +170,12 @@
 > jetzt zum zweiten Mal getippt, nachdem er beim ersten Mal falsch war.
 >
 > ### Der Stand in einem Satz
+>
+> **Seit ADR-080 ist der LLM-Teil des Projekts gemessen, und er trägt nicht.**
+> Der Allokator ist dreimal gescheitert. Von 16 LLM-Kandidaten hat keiner
+> bestanden, 15 lagen über dem Umschlagbudget, und die Kritik hat keinen davon
+> markiert. `qt research` ist für echte Läufe gesperrt. Offen ist eine Weiche,
+> die der Nutzer stellt (Punkt 6 unten).
 >
 > **Neun Hypothesen geprüft, neun gescheitert — und alle neun Strategien haben
 > jetzt eine Negativkontrolle, die keine besteht.** Dazu acht Kandidaten aus
@@ -340,13 +349,20 @@
 >    eine Toleranz um eine Position. Bei 39 Märkten war es damit 1,95× der
 >    eigenen Position, also 39-mal lockerer als für eine Ein-Symbol-Strategie.
 >    Dieselbe Fehlerfamilie wie ADR-053 und ADR-065, drittes Auftreten.
-> 4. **Research-Loop** — am 2026-09-04 gelaufen, drei Kandidaten, keiner
+> 4. **Research-Loop — seit ADR-080 für echte Läufe gesperrt.** Zuletzt am
+>    2026-09-04 gelaufen, drei Kandidaten, keiner
 >    besteht (ADR-072). Der Versuchszähler steht damit auf 24, und jeder
 >    weitere Lauf verschärft die DSR-Schwelle dauerhaft für alle künftigen
 >    Kandidaten (ADR-032). Gemessen: 21 → 24 Versuche heben den erwarteten
 >    besten Sharpe aus **reinem Rauschen** von 1,922 auf 1,980.
 >
->    **Der nächste billige Vorfilter ist die Kritik-Stufe.** Ein Kandidat mit
+>    ~~**Der nächste billige Vorfilter ist die Kritik-Stufe.**~~ **Abgerechnet
+>    in ADR-080, und der Vorfilter ist nicht die Kritik.** Nachgemessen lagen
+>    15 der 16 beurteilten Kandidaten über 7×, und die Kritik hat keinen
+>    markiert. Die Reparatur ist die Umschlagsprüfung, die das Gate schon hat,
+>    vor dem Walk-Forward im Loop; mit ihr wären 15 nie Versuche geworden.
+>    `qt trials --kritik` zeigt die Abrechnung.
+>    Ursprünglicher Text: Ein Kandidat mit
 >    307× Umschlag pro Jahr ist vollständig durch Sandbox, Kritik und
 >    Sanity-Check gelaufen; `critic_unrealistic_turnover` steht als Feld in
 >    der Registry und hat nicht angeschlagen. Das ist billiger zu reparieren
@@ -355,7 +371,9 @@
 >    durch (ADR-060) — **aber nur mit installiertem `nim`-Extra.** Am
 >    2026-09-22 war der Schlüssel da und NIM trotzdem tot, weil der frische
 >    Container `openai` nicht hatte (ADR-078). Ob es hier läuft, sagt
->    `uv run pytest tests/test_nim_live.py`, nicht dieser Satz.
+>    `uv run pytest tests/test_nim_live.py`, nicht dieser Satz. Am 2026-09-23
+>    sagte er nein: das Default-Modell `nemotron-3-ultra-550b-a55b` antwortet
+>    mit 404, `nemotron-3-super-120b-a12b` mit 200 (ADR-080).
 >
 >    **Ein Lauf gegen die Stubs kostet nichts** — er schreibt nach
 >    `registry_stub.duckdb` und nicht in die Registry (ADR-057). Damit lässt
@@ -380,6 +398,22 @@
 >    dokumentiert real, nicht hypothetisch — Punkt 1 dieser Liste war
 >    dasselbe Muster bei der Routine, und `scripts/paper_tick.sh` trägt die
 >    Lehre daraus im eigenen Docstring.
+> 6. **Die Weiche aus ADR-080 — entscheidet der Nutzer.** Gate 1 verlangt bei
+>    25 Versuchen und 4.751 OOS-Bars einen Sharpe von 0,84. Das beste
+>    Brutto-Signal des Repos liegt bei rund 0,46, und jede Familie, die
+>    Tageskurse zu Retail-Kosten hergeben, ist geprüft. Zwei Wege:
+>
+>    - **Das Nein jetzt annehmen.** Die Paper-Konten laufen als
+>      Plausibilitätsprüfung weiter. Gate 1 bleibt offen, aber nur für eine
+>      handgeschriebene, vorab festgelegte Hypothese mit wirklich neuer
+>      Information. Empfohlen.
+>    - **Ein neues Projekt mit Information, die nicht im Kurs steckt**, etwa
+>      Text. Nur dort hätte ein Sprachmodell einen möglichen Vorteil, und nur
+>      dort passten Laya-artige Werkzeuge. Es wird ausschließlich vorwärts
+>      geprüft, weil vortrainierte Modelle den Ausgang jedes historischen
+>      Fensters kennen, und es braucht eigene, vorab festgelegte Kriterien.
+>
+>    Bis zur Entscheidung gibt es keine neuen Versuche.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt

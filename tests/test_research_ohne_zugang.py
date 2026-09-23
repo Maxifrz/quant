@@ -72,8 +72,13 @@ def leere_umgebung(monkeypatch, tmp_path):
 def ohne_zugang(monkeypatch, tmp_path, leere_umgebung):
     from qt.data import store
     from qt.llm import cache
-    from qt.research import registry
+    from qt.research import loop, registry
 
+    # Seit ADR-080 ist der echte Lauf gesperrt. Diese Tests pruefen den Pfad
+    # dahinter -- er bleibt, fuer den Tag, an dem jemand die Sperre aufhebt.
+    # Ohne diese Zeile bestuenden einige von ihnen aus dem falschen Grund:
+    # auch die Sperre endet mit Exit 1 und ohne "Normalfall".
+    monkeypatch.setattr(loop, "LLM_KANDIDATEN_FREIGEGEBEN", True)
     monkeypatch.setattr(registry, "DEFAULT_PATH", tmp_path / "registry.duckdb")
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "llm_cache")
     monkeypatch.setattr(store, "read_bars", lambda *a, **k: None)
