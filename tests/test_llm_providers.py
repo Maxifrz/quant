@@ -335,7 +335,7 @@ def test_die_form_wird_standardmaessig_nicht_erzwungen():
 
     assert "response_format" not in fake.calls[0]
     system = fake.calls[0]["messages"][0]["content"]
-    assert "overfitting_risk" in system, "Ohne erzwungene Form traegt der Prompt die Form"
+    assert "p_dsr_bestanden" in system, "Ohne erzwungene Form traegt der Prompt die Form"
 
 
 def test_guided_bleibt_als_bewusster_schalter():

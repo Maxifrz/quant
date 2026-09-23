@@ -953,8 +953,29 @@ def research(
         StubCriticClient,
         StubGeneratorClient,
     )
+    from qt.research import loop as loop_mod
     from qt.research.loop import auf_datenstand, datenstand, run_research_loop
     from qt.research.registry import STUB_PATH, ResearchRegistry
+
+    # **Gesperrt seit ADR-080**, und zwar bevor irgendetwas geoeffnet wird.
+    # Lesen (`--show`) und Buchfuehrung (`--mark-promoted`) bleiben erlaubt,
+    # der Stub auch: er erzeugt keine Kandidaten aus einem Modell.
+    nur_buchfuehrung = show is not None or mark_promoted is not None
+    if not stub and not nur_buchfuehrung and not loop_mod.LLM_KANDIDATEN_FREIGEGEBEN:
+        typer.echo(
+            "Gesperrt seit ADR-080: dieses Projekt erzeugt keine LLM-Kandidaten "
+            "auf Preisdaten mehr.\n"
+            "  16 Kandidaten kamen bis zum Screening, keiner hat bestanden, und "
+            "15 davon lagen\n"
+            "  ueber dem Umschlagbudget. Jeder weitere Versuch hebt die "
+            "DSR-Latte fuer alle\n"
+            "  kuenftigen Hypothesen, und die Trefferquote war null.\n"
+            "Wer das aendert, setzt `LLM_KANDIDATEN_FREIGEGEBEN` in "
+            "qt/research/loop.py und\n"
+            "hinterlaesst einen Diff. Ohne Versuch und ohne Kosten geht weiter: "
+            "qt research --stub"
+        )
+        raise typer.Exit(code=1)
 
     model = _resolve_model(provider, model)
     # Ein Lauf gegen die Stubs schreibt in eine eigene Datei. Sonst hebt ein
@@ -2035,6 +2056,22 @@ def trials_cmd(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Nur zeigen, was fehlen wuerde")
     ] = False,
+    kritik: Annotated[
+        bool,
+        typer.Option(
+            "--kritik",
+            help="Die Kritik-Stufe abrechnen: ihre Wahrscheinlichkeiten gegen "
+            "das, was eintrat (ADR-080).",
+        ),
+    ] = False,
+    umschlag_nachmessen: Annotated[
+        bool,
+        typer.Option(
+            "--umschlag-nachmessen",
+            help="Fehlenden Umschlag der von der Kritik beurteilten Kandidaten "
+            "auf BTC/USD 1d messen und eintragen. Kein Versuch, keine Auswahl.",
+        ),
+    ] = False,
 ) -> None:
     """Der Versuchszaehler der Deflated Sharpe Ratio, und was ihn ausmacht.
 
@@ -2047,6 +2084,10 @@ def trials_cmd(
 
     from qt.research.backfill import HYPOTHESEN, QUELLE, nachtragen
     from qt.research.registry import ResearchRegistry
+
+    if kritik or umschlag_nachmessen:
+        _kritik_abrechnung(nachmessen=umschlag_nachmessen)
+        return
 
     with ResearchRegistry.open() as registry:
         if backfill or dry_run:
@@ -2084,6 +2125,36 @@ def trials_cmd(
             )
         except Exception:  # noqa: BLE001 -- reine Zusatzinfo
             pass
+
+
+def _kritik_abrechnung(nachmessen: bool) -> None:
+    """`qt trials --kritik`: jede Zahl der Kritik gegen ihren Ausgang (ADR-080)."""
+    from qt.research.abrechnung import (
+        UMSCHLAG_MARKT,
+        UMSCHLAG_TIMEFRAME,
+        bericht,
+        umschlag_nachmessen,
+    )
+    from qt.research.registry import ResearchRegistry
+
+    with ResearchRegistry.open() as registry:
+        if nachmessen:
+            from qt.data.store import read_bars, to_bars
+
+            try:
+                df = read_bars(UMSCHLAG_MARKT, UMSCHLAG_TIMEFRAME)
+            except FileNotFoundError as exc:
+                typer.echo(str(exc))
+                raise typer.Exit(code=1) from exc
+            bars = {UMSCHLAG_MARKT: to_bars(UMSCHLAG_MARKT, UMSCHLAG_TIMEFRAME, df)}
+            typer.echo(
+                f"Umschlag nachmessen auf {UMSCHLAG_MARKT} {UMSCHLAG_TIMEFRAME} -- "
+                "kein Versuch, keine Auswahl (ADR-080):"
+            )
+            if not umschlag_nachmessen(registry, bars, echo=typer.echo):
+                typer.echo("  Nichts nachzumessen.")
+            typer.echo("")
+        typer.echo(bericht(registry.history()))
 
 
 @app.command("ic")
