@@ -13,10 +13,13 @@ Risk-Engine, die sie beschneiden kann.
 mit Walk-Forward und Risk-Engine, der LLM-Allokator samt Blind Briefing,
 Antwort-Cache und Gate, sowie die Pfad-Simulation mit CVaR-Zielfunktion.
 
-Der LLM-Teil ist **gebaut, aber in seiner Wirksamkeit ungeprüft**: in der
-Bauumgebung gab es keinen API-Schlüssel. Geprüft ist, dass ein schlechtes Modell
-nichts kaputtmachen kann — ungeprüft, ob ein gutes Modell etwas verbessert.
-Siehe [docs/ROADMAP.md](docs/ROADMAP.md).
+Der LLM-Teil ist **gebaut und gemessen, und er trägt nicht** (ADR-080). Der
+Allokator ist dreimal an seinem Gate gescheitert. Von 16 Kandidaten des
+Research-Loops hat keiner bestanden, und die Kritik-Stufe hat keinen der 15
+markiert, die über dem Umschlagbudget lagen. Echte Läufe von `qt research` sind
+deshalb gesperrt. Was trägt, ist die Prüfmaschine: Walk-Forward, Deflated
+Sharpe Ratio mit Versuchszähler, Permutationskontrollen und Gate 1 als Code.
+Siehe [docs/ZIEL.md](docs/ZIEL.md) und [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
