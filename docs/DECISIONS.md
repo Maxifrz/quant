@@ -5,6 +5,156 @@ Neueste zuerst. Format: Entscheidung — Warum — Konsequenz.
 
 ---
 
+## ADR-081 — Memecoin-Papiertest: vorab registriert, bevor es einen Testtag gibt
+**Datum:** 2026-09-26
+
+Nach ADR-080 kam die Frage, ob sich Memecoins mit angepasster Logik handeln
+lassen. Meine Antwort war nein, mit Belegen: 98,6 % der pump.fun-Tokens enden
+als Pump-and-Dump (Solidus Labs, Mai 2025), nur 0,4 % der Wallets hatten mehr
+als 10.000 $ realisiert (Dune, Januar 2025), und die Gegenseite sind Bots und
+Insider. Das Angebot war ein Papiertest, der die Frage schnell beantwortet,
+weil hier anders als bei Tageskursen Tausende Ereignisse am Tag anfallen. Der
+Nutzer hat zugestimmt. Dieser Eintrag legt den Test fest, **bevor der erste
+Testtag beginnt**; alle Zahlen stehen in `qt/meme/registrierung.py`.
+
+### Die Frage
+
+Verdient eine einfache, systematische Regel beim Handel neuer pump.fun-Tokens
+Geld, wenn man **keinen Geschwindigkeitsvorteil** hat? Also nicht im selben
+Block kauft wie der Ersteller und seine Sniper, sondern nach einer Minute,
+mit realistischen Kosten.
+
+### Was vor der Registrierung angesehen wurde, und was nicht
+
+Nur Technik: ob sich die Starts aufzählen lassen (ja, über die Signaturen der
+Mint-Autorität, gut 50.000 am Tag), wie die Ereignisse aufgebaut sind, wie
+schnell die Endpunkte antworten und wie weit ihre Historie reicht. **Kein
+Kurs, keine Rendite, keine Verteilung irgendeines Ergebnisses.** Die drei
+Transaktionen, die als Parser-Fixtures im Repo liegen, stammen vom
+Kalibriertag und sind nur auf ihre Felder geprüft.
+
+Beim Nachsehen hat sich eine Aussage aus meiner Antwort als zu grob erwiesen:
+„Rug Pulls und Honeypots machen jeden simulierten Verkauf zur Fiktion“ gilt
+auf DEXen allgemein, **auf der pump.fun-Kurve nicht.** Dort kann niemand
+Liquidität abziehen, und jeder Token lässt sich verkaufen. Der Preis ist eine
+feste Funktion der Reserven (konstantes Produkt, 30 SOL und 1,073 Mrd. Tokens
+virtuell zum Start), und die Gebühr steht in jedem Handelsereignis (0,95 %
+Protokoll plus 0,30 % Ersteller). **Jeder Kauf und Verkauf lässt sich damit
+exakt nachrechnen** — das macht diesen Test sauberer als jeden
+Tageskurs-Backtest im Repo. Das Risiko, dass der Ersteller abverkauft, steckt
+in den Daten und muss nicht modelliert werden.
+
+### Grundgesamtheit und Stichprobe
+
+* **Alle Starts** über pump.fun (Create und CreateV2): erfolgreiche
+  Transaktionen über die Mint-Autorität `TSLvdd…eokM` mit einem
+  `CreateEvent`. Die toten sind eingeschlossen; eine Liste von einer
+  Kursseite enthielte nur Überlebende.
+* **Je UTC-Tag 500 Starts**, gleichverteilt gezogen. Die Reihenfolge ist ein
+  Mischen mit einer Saat aus SHA-256 des Datums: niemand wählt sie, jeder kann
+  sie nachrechnen. Die ersten 500 mit `CreateEvent` bilden die Stichprobe.
+  Fehler beim Abruf werden verbucht, **nicht ersetzt**; ein Ersatz würde
+  bevorzugt die ruhigen Tokens nachziehen.
+* **Kalibriertag 2026-09-26**: liefert nur die R1-Schwelle für den ersten
+  Testtag. **Testtage 2026-09-27 bis 2026-10-24**, 28 Tage.
+
+### Zeitplan und Kurvenstand je Token
+
+`t0` ist die Blockzeit des Starts. Der Kurvenstand zu einem Zeitpunkt T ist
+der Stand nach dem letzten erfolgreichen Handel mit Blockzeit ≤ T.
+
+| Zeitpunkt | wozu |
+|---|---|
+| nach dem Start | Ausgangspunkt, inklusive Kauf des Erstellers |
+| t0 + 60 s | Signal |
+| t0 + 62 s | Einstieg, zwei Sekunden Latenz |
+| t0 + 1.864 s | Ausstieg: 30 Minuten Haltedauer plus zwei Sekunden Latenz |
+
+Ist die Kurve beim Einstieg schon voll, gibt es keinen Handel. Wird sie
+zwischen Einstieg und Ausstieg voll, wird **bei der Graduierung** verkauft,
+in den neuen Pool.
+
+### Die Regeln
+
+* **R0, die Kontrolle:** kauft jeden Start der Stichprobe. Sie misst, was
+  Teilnehmen kostet.
+* **R1, die Hypothese:** kauft, wenn der SOL-Zufluss der ersten Minute
+  **ohne** die Transaktion des Starts über dem 95-%-Quantil des Vortags
+  liegt. Die Schwelle kommt aus dem Vortag, damit nichts aus der Zukunft des
+  Testtags einfließt. Das ist die „angepasste Logik“, wie sie in dieser Szene
+  üblich ist: früh erkennen, wo Interesse entsteht.
+
+Eine Hypothese und eine Kontrolle. Mehr Regeln hieße mehr Versuche, und
+jeder zusätzliche macht ein zufällig gutes Ergebnis wahrscheinlicher.
+
+### Rechnung und Kosten
+
+* Einsatz 0,25 SOL inklusive pump.fun-Gebühr. Die Gebühr ist die des
+  Handels, der den Kurvenstand bestimmt.
+* Kauf und Verkauf exakt über das konstante Produkt. Beim Ausstieg zählt
+  **unser eigener Kauf in der Kurve mit** — sonst bezahlte ein Handel auf
+  einer unberührten Kurve seine Preiswirkung zweimal.
+* Verkauf nach der Graduierung in einen Pool aus dem SOL der Kurve und den
+  zurückgehaltenen Tokens, über das konstante Produkt, abzüglich pauschal 1 %
+  Poolgebühr.
+* 0,0002 SOL Netzwerkgebühr je Transaktion, zwei je Handel. Die Miete für
+  das Tokenkonto kommt beim Schließen zurück und zählt nicht.
+* Drei Szenarien für das, was die Rechnung nicht sieht:
+
+| Szenario | Abschlag je Seite | Abschlag beim Graduierungsverkauf |
+|---|---|---|
+| günstig | 0 % | 0 % |
+| **primär** | **1 %** | **5 %** |
+| streng | 3 % | 15 % |
+
+**Nur das primäre Szenario entscheidet.**
+
+### Die Entscheidung
+
+Rendite je Handel in SOL, gepoolt über alle vollständigen Testtage (≥ 95 %
+fehlerfreie Datensätze). Das Intervall ist ein Block-Bootstrap über Tage,
+10.000 Ziehungen, Saat 81. Die Tage sind die Blöcke, weil die Stimmung am
+Memecoin-Markt alle Tokens eines Tages gemeinsam trifft.
+
+| Urteil | Bedingung (R1, primär) |
+|---|---|
+| **UNENTSCHIEDEN** | weniger als 21 vollständige Testtage oder weniger als 100 R1-Handel |
+| **NEIN** | mittlere Rendite ≤ 0 |
+| **VIELLEICHT** | untere Intervallgrenze > 0 **und** R1 besser als R0 **und** in beiden Hälften des Zeitraums positiv |
+| **UNENTSCHIEDEN** | alles andere |
+
+* **Unentschieden zählt für jede Geldentscheidung als Nein.** Der Zeitraum
+  wird nicht verlängert: Wer verlängert, bis es passt, testet nichts.
+* **Vielleicht ist kein Ja.** Die Rechnung ist systematisch zu freundlich:
+  keine gescheiterten Transaktionen und kein Konkurrent im selben Slot, nur
+  Pauschalen dafür. Ein Vielleicht führt zu einem zweiten, vorab
+  registrierten Test mit gemessener Latenz und nie direkt zu echtem Geld.
+  Darüber entscheidet der Nutzer.
+* **Kein Zwischenblick.** `qt meme auswerten` verweigert vor dem
+  2026-10-25 06:00 UTC jede Rendite; `qt meme stand` zeigt nur die
+  Vollständigkeit.
+
+### Sammlung
+
+* Die Daten liegen dauerhaft on-chain. Publicnode hält aber nur rund 40
+  Stunden vor, die offizielle Adresse alles, nur langsam (0,7 Abfragen pro
+  Sekunde gegen 5). Gemessen am 2026-09-26.
+* Deshalb sammelt ein GitHub-Workflow zweimal täglich (02:17 und 14:17 UTC)
+  jeden fälligen Tag. Primär läuft das über Publicnode, bei Lücken über die
+  offizielle Adresse. Das Ergebnis wird nach `data/meme/` committet. Das Repo
+  ist öffentlich, die Minuten kosten nichts.
+* Ein Tag ist fällig, wenn auch sein letzter Start seinen Ausstieg hinter
+  sich hat, plus eine Stunde.
+
+### Buchführung
+
+Der Test läuft außerhalb des Versuchszählers der Registry. Er prüft nicht auf
+dem Panel von Gate 1, sondern eine eigene Frage auf einem eigenen Markt, mit
+einer Hypothese und einer Kontrolle. Die LLM-Sperre aus ADR-080 berührt er
+nicht: Kein Modell ist beteiligt.
+
+---
+
 ## ADR-080 — Laya verglichen, das Projekt neu gedacht: die LLM-Kandidaten sind gesperrt, die Kritik wird abgerechnet
 **Datum:** 2026-09-23
 
