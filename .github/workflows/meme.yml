@@ -1,0 +1,83 @@
+# Memecoin-Papiertest (ADR-081): sammelt zweimal am Tag jeden faelligen Tag.
+#
+# Warum ein Workflow und kein Container: Publicnode haelt nur rund 40 Stunden
+# Historie vor, die offizielle RPC alles, aber mit 0,7 statt 5 Abfragen pro
+# Sekunde. Wer die Sammlung verpasst, holt sie spaeter langsam nach -- oder
+# gar nicht, wenn es niemand merkt. Ein Zeitplan auf `main` merkt es.
+#
+# **Der Lauf schreibt Kurvenstaende, keine Renditen.** Das Urteil rechnet
+# `qt meme auswerten`, und das erst ab dem 2026-10-25 06:00 UTC. Er sendet
+# keine Transaktion und kennt keinen Schluessel.
+name: Memecoin-Papiertest
+
+on:
+  schedule:
+    # 02:17: der Vortag ist seit 01:31 faellig. 14:17: zweiter Versuch fuer
+    # alles, was nachts scheiterte, solange Publicnode es noch vorhaelt.
+    - cron: "17 2 * * *"
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+    inputs:
+      pruefen:
+        description: "Nur pruefen, ob die RPC-Endpunkte von hier aus antworten"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Nie zwei Laeufe gleichzeitig: beide wuerden denselben Tag sammeln und sich
+# beim Push in die Quere kommen. Der zweite wartet.
+concurrency:
+  group: memecoin-papiertest
+  cancel-in-progress: false
+
+jobs:
+  sammeln:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv einrichten
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Abhaengigkeiten
+        run: uv sync
+
+      - name: Endpunkte pruefen
+        if: ${{ inputs.pruefen }}
+        run: uv run qt meme sammeln --pruefen
+
+      - name: Faellige Tage sammeln
+        if: ${{ !inputs.pruefen }}
+        # Das Zeitlimit liegt unter dem des Jobs, damit der naechste Schritt
+        # den Zwischenstand noch committen kann (alle 50 Datensaetze).
+        timeout-minutes: 300
+        run: uv run qt meme sammeln
+
+      - name: Stand
+        if: ${{ always() && !inputs.pruefen }}
+        run: uv run qt meme stand
+
+      - name: Committen
+        if: ${{ always() && !inputs.pruefen }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/meme
+          if git diff --cached --quiet; then
+            echo "Nichts Neues."
+            exit 0
+          fi
+          git commit -q -m "Memecoin-Papiertest: Sammlung $(date -u +%Y-%m-%dT%H:%MZ) [skip ci]"
+          for versuch in 1 2 3 4; do
+            if git pull -q --rebase origin main && git push -q origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((versuch * 10))
+          done
+          exit 1
