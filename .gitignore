@@ -40,6 +40,12 @@ __pycache__/
 # Die Stub-Registry ist Wegwerfzustand aus Rauchtests und gehoert nicht ins
 # Repo -- im Gegensatz zur echten daneben.
 /data/research/registry_stub.duckdb
+# Ausnahme drei: die Kurvenstaende des Memecoin-Papiertests (ADR-081). Ein
+# Workflow sammelt sie zweimal am Tag und committet sie; der Container, der
+# sie holt, ist danach weg. Nachholen liesse sich nur ueber die langsame
+# offizielle RPC -- und ein Datensatz, der beim zweiten Holen anders ausfaellt,
+# waere eine stille Aenderung am Test. Rund 0,6 MB je Tag, 29 Tage.
+!/data/meme/
 /reports/
 # Der LLM-Cache ist ausgenommen, sobald ein teurer Lauf drinsteckt: der
 # Gate-Lauf kostet 145 Aufrufe und knapp vier Stunden, und der Cache macht ihn

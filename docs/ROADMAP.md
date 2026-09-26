@@ -414,6 +414,18 @@
 >      Fensters kennen, und es braucht eigene, vorab festgelegte Kriterien.
 >
 >    Bis zur Entscheidung gibt es keine neuen Versuche.
+> 7. **Memecoin-Papiertest (ADR-081) — läuft vorwärts, außerhalb des
+>    Versuchszählers.** Die Frage lautet: Verdient eine einfache Regel beim
+>    Handel neuer pump.fun-Tokens Geld, ohne Geschwindigkeitsvorteil? Dazu
+>    gibt es je UTC-Tag 500 zufällig gezogene Starts, auch die toten, mit
+>    einer Hypothese (R1) und einer Kontrolle (R0). Jeder Handel ist auf der
+>    Kurve exakt nachgerechnet. Die Testtage laufen vom 2026-09-27 bis zum
+>    2026-10-24, gesammelt wird zweimal täglich per Workflow.
+>
+>    **Das Urteil gibt es erst ab dem 2026-10-25 06:00 UTC** über
+>    `qt meme auswerten`. Bis dahin zeigt `qt meme stand` nur, ob die Sammlung
+>    läuft. Mögliche Urteile sind NEIN, UNENTSCHIEDEN oder VIELLEICHT, nie
+>    Ja. Echtes Geld folgt daraus in keinem Fall direkt.
 >
 > **Der LLM-Allokator steht nicht mehr auf dieser Liste.** Er stand hier als
 > Punkt 3 mit einem berechtigten Vorbehalt; der ist geprüft und erledigt

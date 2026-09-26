@@ -21,6 +21,12 @@ deshalb gesperrt. Was trägt, ist die Prüfmaschine: Walk-Forward, Deflated
 Sharpe Ratio mit Versuchszähler, Permutationskontrollen und Gate 1 als Code.
 Siehe [docs/ZIEL.md](docs/ZIEL.md) und [docs/ROADMAP.md](docs/ROADMAP.md).
 
+Nebenher läuft ein **vorab registrierter Memecoin-Papiertest** (ADR-081). Er
+zieht 500 zufällige pump.fun-Starts je Tag, auch die toten, und rechnet jeden
+Handel exakt auf der Kurve nach. Kein Modell ist beteiligt, es fließt kein
+Geld, und das Programm hält keinen Schlüssel. Das Urteil gibt es erst ab dem
+2026-10-25; bis dahin zeigt `uv run qt meme stand` nur die Vollständigkeit.
+
 ---
 
 ## Schnellstart

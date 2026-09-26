@@ -23,6 +23,10 @@ placebo_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(placebo_app, name="placebo")
+meme_app = typer.Typer(
+    help="Memecoin-Papiertest, vorab registriert (ADR-081)", no_args_is_help=True
+)
+app.add_typer(meme_app, name="meme")
 live_app = typer.Typer(
     help="Echtes Geld: lesen, abgleichen, und nur mit zwei Schaltern handeln",
     no_args_is_help=True,
@@ -2424,3 +2428,106 @@ def live_tick() -> None:
         "verlieren (docs/ZIEL.md)."
     )
     raise typer.Exit(code=1)
+
+
+# -- Memecoin-Papiertest (ADR-081) ----------------------------------------------
+
+
+@meme_app.command("sammeln")
+def meme_sammeln(
+    tag: Annotated[
+        str | None,
+        typer.Option(
+            help="Nur diesen UTC-Tag (JJJJ-MM-TT). Ohne Angabe alle faelligen, "
+            "noch offenen Tage."
+        ),
+    ] = None,
+    pruefen: Annotated[
+        bool,
+        typer.Option("--pruefen", help="Nur pruefen, ob die Endpunkte antworten. Sammelt nichts."),
+    ] = False,
+) -> None:
+    """Faellige Tage des Papiertests sammeln: Kurvenstaende, keine Renditen.
+
+    Laeuft zweimal taeglich als GitHub-Workflow (`.github/workflows/meme.yml`).
+    Ein Tag ist faellig, wenn auch sein letzter Start den Ausstieg hinter sich
+    hat. Wiederholbar: fertige Tage bleiben, fehlerhafte Saetze werden erneut
+    versucht.
+    """
+    from datetime import date
+
+    from qt.meme import registrierung as reg
+    from qt.meme.rpc import RpcFehler, SolanaRpc
+    from qt.meme.sammeln import offene_tage, tag_sammeln
+
+    if pruefen:
+        erreichbar = 0
+        for endpunkt in SolanaRpc().endpunkte:
+            einzeln = SolanaRpc(endpunkte=[endpunkt], versuche=3)
+            try:
+                seite = einzeln.aufruf(
+                    "getSignaturesForAddress", [reg.MINT_AUTORITAET, {"limit": 5}]
+                )
+                typer.echo(f"  {endpunkt.url}: ok, juengster Start {seite[0]['blockTime']}")
+                erreichbar += 1
+            except RpcFehler as exc:
+                typer.echo(f"  {endpunkt.url}: FEHLER {exc}")
+        raise typer.Exit(code=0 if erreichbar else 1)
+
+    jetzt = datetime.now(timezone.utc)
+    if tag is not None:
+        gewaehlt = date.fromisoformat(tag)
+        if gewaehlt not in reg.alle_tage():
+            typer.echo(f"{gewaehlt} ist kein Tag dieses Tests ({reg.KALIBRIERTAG} bis {reg.LETZTER_TESTTAG}).")
+            raise typer.Exit(code=1)
+        if not reg.faellig(gewaehlt, jetzt):
+            typer.echo(f"{gewaehlt} ist noch nicht faellig: sein letzter Start hat den Ausstieg nicht hinter sich.")
+            raise typer.Exit(code=1)
+        tage = [gewaehlt]
+    else:
+        tage = offene_tage(jetzt)
+    if not tage:
+        typer.echo("Nichts faellig.")
+        return
+
+    fehler = 0
+    rpc = SolanaRpc()
+    for t in tage:
+        typer.echo(f"Sammle {t} ...")
+        try:
+            meta = tag_sammeln(rpc, t, echo=typer.echo)
+        except RpcFehler as exc:
+            typer.echo(f"  {t}: abgebrochen ({exc}). Der naechste Lauf versucht es erneut.")
+            fehler += 1
+            continue
+        status = "vollstaendig" if meta["vollstaendig"] else "UNVOLLSTAENDIG"
+        typer.echo(
+            f"  {t}: {meta['fehlerfrei']}/{meta['stichprobe']} fehlerfrei aus "
+            f"{meta['starts_gesamt']} Starts, {meta['dauer_s']} s, {status}"
+        )
+    raise typer.Exit(code=1 if fehler else 0)
+
+
+@meme_app.command("stand")
+def meme_stand() -> None:
+    """Wie weit die Sammlung ist. Keine Rendite, kein Kurs -- jeden Tag ansehbar."""
+    from qt.meme.auswertung import stand
+
+    typer.echo(stand())
+
+
+@meme_app.command("auswerten")
+def meme_auswerten() -> None:
+    """Das Urteil des Papiertests -- erst ab dem 2026-10-25 06:00 UTC.
+
+    **Es gibt absichtlich keine Option, die das vorzieht** (ADR-081). Ein
+    vorab registrierter Test, den man unterwegs ansieht, ist keiner mehr.
+    """
+    from qt.meme.auswertung import ZuFrueh, auswerten
+
+    try:
+        bericht = auswerten(datetime.now(timezone.utc))
+    except ZuFrueh as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    typer.echo(bericht.text())

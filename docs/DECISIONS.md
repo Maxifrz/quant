@@ -153,6 +153,93 @@ dem Panel von Gate 1, sondern eine eigene Frage auf einem eigenen Markt, mit
 einer Hypothese und einer Kontrolle. Die LLM-Sperre aus ADR-080 berührt er
 nicht: Kein Modell ist beteiligt.
 
+### Nachtrag vor dem ersten Testtag (2026-09-26, vor 00:00 UTC)
+
+Beim Bau des Sammlers zeigten Transaktionen vom Kalibriertag Dinge, die die
+Registrierung nicht kannte. Angesehen wurde wieder nur Technik: Felder,
+Konsistenz der Reserven, Fehlerarten. Kurse, Renditen und Signalwerte
+blieben ungesehen. Die Festlegungen unten stehen vor dem ersten Testtag im
+Repo. **Regeln, Szenarien, Entscheidungstabelle und Termine bleiben, wie sie
+sind.**
+
+1. **Nur Kurven in SOL.** Manche Starts haben eine Kurve in einer anderen
+   Währung (`quote_mint` im `CreateEvent`). Ein Einsatz in SOL lässt sich
+   darauf nicht rechnen. Diese Starts gehören nicht zur Grundgesamtheit,
+   werden übersprungen und je Tag gezählt (`nicht_sol`). In der Probe waren
+   es 2 von 100.
+2. **Mayhem-Mode-Coins bleiben drin.** In der Probe waren es 26 von 100. Bei
+   ihnen handelt 24 Stunden lang ein Agent von pump.fun gebührenfrei und
+   verschiebt die virtuelle SOL-Basis der Kurve (`set_mayhem_virtual_params`).
+   Sie auszuschließen hieße, ein Viertel der Starts wegzulassen, und zwar
+   das mit dem meisten Handel. Deshalb:
+   * Gerechnet wird immer auf dem jeweiligen Stand. Zwischen zwei Handeln des
+     Agenten ist die Kurve ein konstantes Produkt.
+   * Unsere Gebühr ist nie die des Agenten (null). Sie ist die des letzten
+     Handels, der eine zahlte, höchstens 20 Transaktionen zurück. Findet
+     sich keiner, gilt die des Erstellerkaufs, sonst die häufigste
+     Anfangsgebühr des Tages.
+   * Das SOL, das bei der Graduierung in den Pool geht, folgt aus dem
+     Produkt des Stands, nicht aus dem des Starts. Bei normalen Coins ist
+     das dasselbe, rund 85 SOL.
+3. **Jeder Stand wird geprüft.** Die Token-Seite muss bei allen Coins exakt
+   stimmen: `vtok0 − vtok = rtok0 − rtok`. Das Produkt der Reserven darf bei
+   normalen Coins höchstens 1 % vom Startwert abweichen; bei Mayhem-Coins
+   entfällt nur diese eine Prüfung. Scheitert eine Prüfung, ist der
+   Datensatz ein Fehler. Er wird verbucht, nicht ersetzt.
+4. **Ereignisse kommen aus den Inner Instructions.** pump.fun gibt jedes
+   Ereignis zweimal aus: im Log und als Selbstaufruf (`emit_cpi`). Solana
+   kürzt lange Logs, und am Kalibriertag fehlte so an 2 von 80 Starts genau
+   der Handel, der den Stand bestimmt. Die Inner Instructions werden nie
+   gekürzt und nennen das Programm eindeutig. Deshalb gilt:
+   * Gelesen wird zuerst aus den Inner Instructions.
+   * Das Log ist nur der Rückfall, und auch dort zählen nur Zeilen, die
+     pump.fun selbst ausgibt.
+   * Ereignisse fremder Programme zählen nicht, etwa ein Router mit eigenem
+     `TradeEvent`, der denselben Diskriminator hat.
+   * Ein gekürztes Log ohne Handelsereignis ist ein Fehler, kein „kein Handel".
+5. **Die Gebühr setzt sich aus drei Teilen zusammen: Protokoll, Ersteller und
+   Zuschläge.** Die Sätze sind nach Marktkapitalisierung gestaffelt und
+   stehen in jedem Handelsereignis. Es gilt der Satz des Handels, der den
+   Stand bestimmt.
+   * Buyback ist kein Aufschlag, sondern die Hälfte der Protokollgebühr. In
+     jedem gemessenen Handel lag `buyback / fee` bei höchstens 0,500.
+   * Holder-Rewards ersetzen die Erstellergebühr. Gezählt wird der höhere
+     der beiden Sätze, einmal.
+   * Cashback zählt als Kosten und wird nie gutgeschrieben.
+
+   Das Handelsereignis weicht vom veröffentlichten IDL ab. Deshalb sucht der
+   Parser den Namen der Anweisung, statt einen festen Offset zu lesen.
+6. **Mit uns wäre die Kurve früher voll gewesen.** Reichen die beim Ausstieg
+   übrigen Tokens nicht für unseren Kauf, zählt der Verkauf bei der
+   Graduierung. Macht schon unser Kauf die Kurve voll, gibt es die restlichen
+   Tokens und das übrige SOL zurück.
+7. **Ohne Vortag zählt ein Tag nicht.** Ist der Kalibriertag unvollständig,
+   hat R1 am ersten Testtag keine Schwelle. Dieser Testtag zählt dann nicht,
+   statt nur mit R0 in die Wertung zu gehen. Er liefert aber die Schwelle
+   für den zweiten.
+8. **Fehlerhafte Tage und Abbrüche.** Hat ein Tag weniger als 95 %
+   fehlerfreie Datensätze, wird er bis zu dreimal nachgesammelt, jedes Mal
+   nur mit seinen fehlerhaften Sätzen. Danach bleibt er, wie er ist, und
+   zählt nicht. Alle 50 Datensätze wird zwischengespeichert, damit ein
+   abgebrochener Lauf nicht von vorn beginnt.
+9. **Kein Blick durch die Hintertür.** `qt meme stand` liest nur die
+   Zählungen je Tag, nie die Datensätze. `qt meme auswerten` hat keine
+   Option, die das Datum vorzieht; ein Test prüft beides. Die Rohdaten
+   liegen öffentlich in `data/meme/`. Wer daraus vor dem 2026-10-25 selbst
+   Renditen rechnet, hat den Test verdorben, auch wenn es niemand merkt.
+
+**Probe am Kalibriertag,** nur Technik: 100 Starts, davon 98 fehlerfrei und
+2 nicht in SOL. 26 waren Mayhem-Coins. Je Start brauchte es rund 4,3
+Abfragen, für 100 Starts knapp zwei Minuten über Publicnode. Der Simulator
+(`qt/meme/papier.py`) ist bis heute nur auf synthetischen Daten gelaufen.
+
+**Die Sammlung** läuft über `.github/workflows/meme.yml` und nur von `main`
+aus, denn GitHub startet Zeitpläne nur auf dem Standardzweig. Der
+Kalibriertag ist ab 2026-09-27 01:31 UTC fällig, die erste planmäßige
+Sammlung läuft um 02:17 UTC. Wird sie verpasst, geht nichts verloren: Die
+Daten liegen on-chain, und die offizielle RPC hat die ganze Historie. Die
+Sammlung wird dann nur langsamer.
+
 ---
 
 ## ADR-080 — Laya verglichen, das Projekt neu gedacht: die LLM-Kandidaten sind gesperrt, die Kritik wird abgerechnet
