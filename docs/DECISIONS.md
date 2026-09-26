@@ -141,8 +141,9 @@ Memecoin-Markt alle Tokens eines Tages gemeinsam trifft.
   Sekunde gegen 5). Gemessen am 2026-09-26.
 * Deshalb sammelt ein GitHub-Workflow zweimal täglich (02:17 und 14:17 UTC)
   jeden fälligen Tag. Primär läuft das über Publicnode, bei Lücken über die
-  offizielle Adresse. Das Ergebnis wird nach `data/meme/` committet. Das Repo
-  ist öffentlich, die Minuten kosten nichts.
+  offizielle Adresse. Das Ergebnis wird nach `data/meme/` committet. ~~Das Repo
+  ist öffentlich, die Minuten kosten nichts.~~ Falsch, siehe die Korrektur
+  unten.
 * Ein Tag ist fällig, wenn auch sein letzter Start seinen Ausstieg hinter
   sich hat, plus eine Stunde.
 
@@ -239,6 +240,34 @@ Kalibriertag ist ab 2026-09-27 01:31 UTC fällig, die erste planmäßige
 Sammlung läuft um 02:17 UTC. Wird sie verpasst, geht nichts verloren: Die
 Daten liegen on-chain, und die offizielle RPC hat die ganze Historie. Die
 Sammlung wird dann nur langsamer.
+
+### Korrektur nach dem Merge (2026-09-26, vor dem ersten Testtag)
+
+Unter „Sammlung“ stand: „Das Repo ist öffentlich, die Minuten kosten
+nichts.“ **Das stimmte nicht, und geprüft hatte ich es nicht.** Das Repo war
+privat. Seit dem 2026-09-25 hat GitHub in ihm keinem Job mehr einen Runner
+zugeteilt, auch den Tests nicht. Jeder Lauf endete nach Sekunden ohne Log,
+zuletzt der Lauf für den Merge dieses Eintrags (36253479221). Bei einem
+privaten Repo passt das zu aufgebrauchten Minuten oder einem Ausgabenlimit.
+
+Die CI war damit seit dem 25.09. aus, und niemand hat es bemerkt. Das ist
+dieselbe Lage wie vor ADR-073, nur leiser: Die roten Kreuze standen an
+Tick-Commits, die niemand ansieht, und PR #9 wurde ohne Testlauf gemergt.
+Lokal lief die Suite grün (1172 Tests).
+
+Der Nutzer hat entschieden, das Repo öffentlich zu machen. Für öffentliche
+Repos sind die Standard-Runner kostenlos. Vorher wurde die ganze Historie
+auf Geheimnisse geprüft: 125 Commits, alle hinzugefügten Zeilen und jede
+Version der Registry-Datenbank. Es fand sich kein Schlüssel, kein Token und
+keine `.env`. Punkt 9 des Nachtrags spricht von Rohdaten, die „öffentlich“
+liegen; das gilt ab dem Umschalten.
+
+**Die Lehre gilt über diesen Test hinaus.** Eine Annahme über die Umgebung
+stand ungeprüft in einer Registrierung. Ihr Fehler hätte den Test
+stillgelegt, und zwar lautlos: Ein Workflow, der nie startet, schreibt
+keinen Fehler in die Daten, und `qt meme stand` zeigt offene Tage nur dem,
+der nachsieht. Nachgesehen wird deshalb nach der ersten planmäßigen
+Sammlung, nicht erst am Auswertungstag.
 
 ---
 
