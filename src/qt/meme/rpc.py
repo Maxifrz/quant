@@ -3,7 +3,9 @@
 Gemessen am 2026-09-26, nicht angenommen:
 
 * **Publicnode** liefert rund 5 Abfragen pro Sekunde ohne Drosselung, haelt
-  aber nur etwa 40 Stunden Historie vor ("Block ... cleaned up").
+  aber nur kurz Historie vor: am 2026-09-26 rund 40 Stunden, am 2026-10-02
+  nur noch 20. Wo sie endet, antwortet ein Knoten mit einer kurzen Seite, ein
+  anderer mit Fehler -32020 ("Transaction ... not found").
 * **api.mainnet-beta.solana.com** hat die ganze Historie, drosselt aber schon
   nach wenigen Abfragen (HTTP 429) und schafft dann 0,7 pro Sekunde.
 * Publicnode sperrt den Standard-User-Agent von Python (Cloudflare 1010).
@@ -25,11 +27,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 USER_AGENT = "qt-meme-papiertest/0.1 (+https://github.com/Maxifrz/quant)"
-
-#: Fehlercodes, mit denen ein Knoten sagt: "habe ich nicht (mehr)". Dann hilft
-#: nur ein anderer Knoten, kein zweiter Versuch am selben.
-_NICHT_DA = {-32001, -32004, -32007, -32009, -32011}
-
 
 @dataclass(slots=True)
 class Endpunkt:
@@ -120,10 +117,14 @@ class SolanaRpc:
                     raise _NichtDa(f"{endpunkt.url}: {exc}") from exc
                 continue
             if "error" in antwort:
-                fehler = antwort["error"]
-                if fehler.get("code") in _NICHT_DA or "cleaned up" in str(fehler.get("message", "")):
-                    raise _NichtDa(f"{endpunkt.url}: {fehler}")
-                raise RpcFehler(f"{methode}: {fehler}")
+                # Jeder JSON-RPC-Fehler heisst erst einmal "dieser Knoten kann
+                # das nicht", und der naechste wird gefragt. Bis 2026-10-01
+                # stand hier eine Liste bekannter Codes; dann antwortete
+                # Publicnode auf einen Cursor jenseits seiner Historie mit
+                # -32020, und die Sammlung brach drei Laeufe lang ab, obwohl
+                # die offizielle Adresse die Daten hatte (ADR-081). Scheitern
+                # alle Knoten, meldet `aufruf` den letzten Fehler.
+                raise _NichtDa(f"{endpunkt.url}: {antwort['error']}")
             return antwort.get("result")
         raise _NichtDa(f"{endpunkt.url}: {self.versuche} Versuche gedrosselt")
 

@@ -41,7 +41,11 @@ TX_OPTIONEN = {"encoding": "json", "maxSupportedTransactionVersion": 1, "commitm
 
 #: Obergrenzen gegen Endlosschleifen, weit ueber dem Erwarteten: ein Tag hatte
 #: am 2026-09-26 rund 50 Seiten Starts, eine Kurve selten mehr als eine Seite.
-MAX_SEITEN_STARTS = 600
+#: Die Starts werden von jetzt aus zurueckgeblaettert; 2.000 Seiten reichen fuer
+#: einen Tag, der rund 45 Tage zurueckliegt (vorher 600, rund 13 Tage). So
+#: bleibt jeder Testtag bis nach der Auswertung nachholbar, auch wenn die
+#: Sammlung tagelang steht.
+MAX_SEITEN_STARTS = 2000
 MAX_SEITEN_KURVE = 200
 MAX_RUECKSCHRITTE = 60
 #: Wie weit hinter den Stand zurueck nach einer bezahlten Gebuehr gesucht

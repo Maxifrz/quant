@@ -269,6 +269,32 @@ keinen Fehler in die Daten, und `qt meme stand` zeigt offene Tage nur dem,
 der nachsieht. Nachgesehen wird deshalb nach der ersten planmäßigen
 Sammlung, nicht erst am Auswertungstag.
 
+### Betrieb bis 2026-10-02
+
+* **Seit dem 27.09. ist das Repo öffentlich.** Die erste Sammlung hat der
+  Nutzer um 10:02 UTC von Hand gestartet. Seitdem läuft der Zeitplan, aber
+  GitHub startet ihn fünf bis sechseinhalb Stunden zu spät: statt 02:17 gegen
+  08:30 UTC, statt 14:17 gegen 19:20 UTC. Ein Tag wird damit rund 32 Stunden
+  nach seinem Beginn gesammelt.
+* **Vollständig sind der Kalibriertag und die Testtage 27. bis 29.09.:** 491,
+  484, 487 und 485 von 500 Datensätzen fehlerfrei. Die Fehler sind
+  gekürzte Logs ohne Handelsereignis und Stände, die sich nicht finden
+  ließen. Beide werden verbucht, nicht ersetzt.
+* **Ab dem 01.10. brach jeder Lauf ab, drei hintereinander.** Publicnode
+  hält nur noch rund 20 Stunden Historie vor, nicht mehr 40. Auf einen
+  Cursor jenseits davon antwortete der Knoten mit -32020 („Transaction …
+  not found“) statt mit einer kurzen Seite. Der Client kannte den Code
+  nicht und gab auf, statt die offizielle Adresse zu fragen. Behoben ist das
+  so: Jeder RPC-Fehler geht an den nächsten Knoten, und erst wenn alle
+  scheitern, bricht der Lauf ab. Kein Tag hat dabei einen seiner drei
+  Versuche verbraucht, weil der Abbruch vor dem ersten Schreiben kam.
+* **Nachgeholt wird über die offizielle Adresse.** Gemessen am 02.10.: Die
+  Starts des 30.09. waren in 151 Sekunden aufgezählt, 98 Seiten davon über
+  die offizielle Adresse, und fünf Datensätze brauchten 15 Sekunden. Ein
+  Tag dauert damit rund eine halbe Stunde. Damit auch ein lange liegen
+  gebliebener Tag nachholbar bleibt, blättert die Aufzählung jetzt bis zu
+  2.000 Seiten zurück, das sind rund 45 Tage (vorher 600, rund 13 Tage).
+
 ---
 
 ## ADR-080 — Laya verglichen, das Projekt neu gedacht: die LLM-Kandidaten sind gesperrt, die Kritik wird abgerechnet
