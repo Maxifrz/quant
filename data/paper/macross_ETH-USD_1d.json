@@ -7,10 +7,16 @@
   "fees_paid": 596.4214711729622,
   "halt_reasons": [],
   "halted": false,
-  "last_processed_ts": "2026-10-14T00:00:00+00:00",
+  "last_processed_ts": "2026-10-15T00:00:00+00:00",
   "n_fills": 1,
   "peak_equity": 112254.6210787148,
-  "pending": [],
+  "pending": [
+    {
+      "qty": -40.443662614197684,
+      "reason": "target_weight=0.0000",
+      "symbol": "ETH/USD"
+    }
+  ],
   "positions": {
     "ETH/USD": {
       "avg_price": 2457.8282999999997,
@@ -19,9 +25,9 @@
   },
   "risk_notes": [],
   "target": {
-    "ETH/USD": 1.0
+    "ETH/USD": 0.0
   },
   "turnover": 99403.57852882704,
-  "updated_at": "2026-10-14T01:14:17.515354+00:00",
+  "updated_at": "2026-10-15T01:14:54.942156+00:00",
   "warmup_end": "2026-09-05T00:00:00+00:00"
 }
