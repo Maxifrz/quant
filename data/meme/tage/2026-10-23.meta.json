@@ -1,0 +1,29 @@
+{
+  "dauer_s": 926.3,
+  "fehlerarten": {
+    "ValueError: log_abgeschnitten": 12,
+    "ValueError: zustand_nicht_gefunden": 1
+  },
+  "fehlerfrei": 487,
+  "fertig": true,
+  "gesammelt_am": "2026-10-24T07:44:26+00:00",
+  "kein_start": 6,
+  "mayhem": 218,
+  "nicht_sol": 196,
+  "rpc": {
+    "https://api.mainnet-beta.solana.com": {
+      "aufrufe": 22,
+      "gedrosselt": 0
+    },
+    "https://solana-rpc.publicnode.com": {
+      "aufrufe": 5015,
+      "gedrosselt": 0
+    }
+  },
+  "starts_fingerabdruck": "a6bf6014e1a40374",
+  "starts_gesamt": 48973,
+  "stichprobe": 500,
+  "tag": "2026-10-23",
+  "versuche": 1,
+  "vollstaendig": true
+}
